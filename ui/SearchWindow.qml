@@ -20,7 +20,11 @@ PanelWindow {
         id: content
         anchors.horizontalCenter: parent.horizontalCenter
         width: 600
-        height: searchInput.text.length > 0 ? 450 : 70
+        height: {
+            if (searchInput.text.length === 0 || resultsModel.count === 0) return 70;
+            let listHeight = resultsModel.count * 64;
+            return Math.min(70 + listHeight + 15, 450);
+        }
 
         Behavior on height {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }

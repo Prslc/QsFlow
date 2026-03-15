@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 mod application;
 mod firefox;
 mod search;
+mod github;
 mod utils;
 
 #[tokio::main]
@@ -60,6 +61,8 @@ async fn main() -> Result<()> {
                 "b" => firefox::firefox_search(firefox::Mode::Bookmarks, search_text),
                 "h" => firefox::firefox_search(firefox::Mode::History, search_text),
                 "s" => search::search_suggestions(search_text).await,
+                "g" => github::github_search(search_text),
+
                 _ => application::search_apps(&input),
             };
 

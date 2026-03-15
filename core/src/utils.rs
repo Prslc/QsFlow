@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use dirs;
-use std::env;
 use glob::glob;
 use serde::Serialize;
+use std::env;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Clone)]
@@ -17,7 +17,7 @@ pub fn get_project_root() -> Option<PathBuf> {
     env::current_exe()
         .ok()?
         .parent()? // bin
-        .parent()  // project root
+        .parent() // project root
         .map(|p| p.to_path_buf())
 }
 
@@ -31,7 +31,11 @@ pub fn get_resource_path(sub_path: &str) -> Option<String> {
 
 /// exec command
 pub fn execute_command(cmd: &str) {
-    let clean_cmd = cmd.replace("%u", "").replace("%U", "").replace("%f", "").replace("%F", "");
+    let clean_cmd = cmd
+        .replace("%u", "")
+        .replace("%U", "")
+        .replace("%f", "")
+        .replace("%F", "");
 
     std::process::Command::new("sh")
         .arg("-c")
@@ -63,6 +67,7 @@ pub fn get_firefox_db_path() -> Result<PathBuf> {
 /// Searches for an application icon or returns the project's default icon.
 pub fn find_icon_path(name: &str) -> Option<String> {
     let default_icon: &str = "images/application_default.png";
+
     // 1. Check if the name is an absolute path already
     if name.is_empty() {
         return get_resource_path(default_icon);
@@ -100,6 +105,11 @@ pub fn find_icon_path(name: &str) -> Option<String> {
                 return Some(path);
             }
         }
+    }
+
+    // search local images
+    if let Some(internal) = get_resource_path(&format!("images/{}.png", name)) {
+        return Some(internal);
     }
 
     // default icon
