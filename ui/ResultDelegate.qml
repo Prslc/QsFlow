@@ -9,6 +9,10 @@ ItemDelegate {
 
     highlighted: ListView.isCurrentItem
 
+    // simple mode
+    readonly property bool isSimpleMode: (model.summary === undefined || model.summary === "")
+                                      && (model.icon === undefined || model.icon === "")
+
     background: Rectangle {
         radius: 8
         color: root.highlighted ? "#24283b" : "transparent"
@@ -23,7 +27,8 @@ ItemDelegate {
         // icon
         Image {
             id: iconSource
-            source: model.icon ? model.icon : ""
+            asynchronous: true
+            source: (model.icon && model.icon !== "") ? "file://" + model.icon : ""
             width: 32
             height: 32
             anchors.verticalCenter: parent.verticalCenter
@@ -41,19 +46,23 @@ ItemDelegate {
                 text: model.title
                 color: "#c0caf5"
                 font.bold: true
-                font.pixelSize: 14
+                font.pixelSize: root.isSimpleMode ? 16 : 14
+
                 elide: Text.ElideRight
                 width: parent.width
-            }
 
-            // Summary
+                Behavior on font.pixelSize {
+                    NumberAnimation { duration: 100 }
+                }
+            }
+            // summary
             Text {
-                text: model.summary ? model.summary : ""
+                text: model.summary || ""
                 color: "#565f89"
                 font.pixelSize: 12
                 elide: Text.ElideRight
                 width: parent.width
-                visible: model.summary !== undefined && model.summary !== ""
+                visible: text !== ""
             }
         }
     }

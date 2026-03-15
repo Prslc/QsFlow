@@ -10,7 +10,7 @@ pub enum Mode {
     History,
 }
 
-pub fn search_items(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
+pub fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
     let db_path = utils::get_firefox_db_path()?;
 
     let tmp_file = NamedTempFile::new()?;
@@ -49,7 +49,7 @@ pub fn search_items(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
             title: title.unwrap_or_else(|| "[no title]".to_string()),
             summary: Some(url.clone()),
             on_click: Some(url),
-            icon: None,
+            icon: Some("".to_string()),
         })
     })?;
 

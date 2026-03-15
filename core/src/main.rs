@@ -1,37 +1,74 @@
 use anyhow::Result;
-use std::io::{self, BufRead, Write};
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 
-mod firefox;
-mod utils;
 mod application;
+mod firefox;
+mod search;
+mod utils;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let stdin = io::stdin();
+    let mut reader = BufReader::new(stdin).lines();
 
-    for line in stdin.lock().lines() {
-        let input = line?;
-        let input = input.trim();
-        if input.is_empty() {
-            println!("[]");
-            io::stdout().flush()?;
-            continue;
+    // pipe
+    let (tx, mut rx) = mpsc::channel::<String>(32);
+
+    tokio::spawn(async move {
+        let mut stdout = io::stdout();
+        while let Some(json) = rx.recv().await {
+            let _ = stdout.write_all(json.as_bytes()).await;
+            let _ = stdout.write_all(b"\n").await;
+            let _ = stdout.flush().await;
+        }
+    });
+
+    let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
+
+    while let Some(line) = reader.next_line().await? {
+        let input = line.trim().to_string();
+
+        // abort task
+        if let Some(handle) = current_task.take() {
+            handle.abort();
         }
 
-        // keyword search
-        let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
-            (key.trim(), text.trim())
-        } else {
-            ("", input) // globe search
-        };
+        let tx_clone = tx.clone();
 
-        let results = match plugin_key {
-            "b" => firefox::search_items(firefox::Mode::Bookmarks, search_text)?,
-            "h" => firefox::search_items(firefox::Mode::History, search_text)?,
-            _ => application::search_apps(input)?,
-        };
+        // exec new task
+        current_task = Some(tokio::spawn(async move {
+            if input.is_empty() {
+                let _ = tx_clone.send("[]".to_string()).await;
+                return;
+            }
 
-        println!("{}", serde_json::to_string(&results)?);
-        io::stdout().flush()?;
+            // exec application
+            if input.starts_with("run ") {
+                let cmd = input.trim_start_matches("run ").to_string();
+                utils::execute_command(&cmd);
+                return;
+            }
+
+            let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
+                (key.trim(), text.trim())
+            } else {
+                ("", input.as_str())
+            };
+
+            let results_res = match plugin_key {
+                "b" => firefox::firefox_search(firefox::Mode::Bookmarks, search_text),
+                "h" => firefox::firefox_search(firefox::Mode::History, search_text),
+                "s" => search::search_suggestions(search_text).await,
+                _ => application::search_apps(&input),
+            };
+
+            if let Ok(results) = results_res {
+                if let Ok(json) = serde_json::to_string(&results) {
+                    let _ = tx_clone.send(json).await;
+                }
+            }
+        }));
     }
 
     Ok(())

@@ -70,7 +70,7 @@ pub fn search_apps(query: &str) -> Result<Vec<ResultItem>> {
                             results.push(ResultItem {
                                 title: t,
                                 summary: comment,
-                                on_click: exec,
+                                on_click: exec.map(|e| format!("run:{}", e)),
                                 icon: icon_path,
                             });
                         }

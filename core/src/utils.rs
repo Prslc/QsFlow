@@ -29,6 +29,17 @@ pub fn get_resource_path(sub_path: &str) -> Option<String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+/// exec command
+pub fn execute_command(cmd: &str) {
+    let clean_cmd = cmd.replace("%u", "").replace("%U", "").replace("%f", "").replace("%F", "");
+
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("setsid {} >/dev/null 2>&1 &", clean_cmd))
+        .spawn()
+        .ok();
+}
+
 /// Returns the user's HOME directory.
 pub fn get_home() -> Result<PathBuf> {
     dirs::home_dir().context("Failed to get user HOME directory")

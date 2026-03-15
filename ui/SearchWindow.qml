@@ -69,9 +69,9 @@ PanelWindow {
 
                 Keys.onReturnPressed: {
                     let item = resultsModel.get(resultsList.currentIndex)
-                    if (item && item.on_click)
-                        Qt.openUrlExternally(item.on_click)
-                    Qt.quit()
+                    if (item && item.on_click) {
+                        window.launch(item.on_click)
+                    }
                 }
             }
 
@@ -91,12 +91,35 @@ PanelWindow {
                 currentIndex: 0
                 delegate: ResultDelegate {
                     onClicked: {
-                        if (model.on_click)
-                            Qt.openUrlExternally(model.on_click)
-                        Qt.quit()
+                        window.launch(model.on_click)
                     }
                 }
             }
         }
+    }
+    function launch(target) {
+        if (!target) return
+
+        let isUrl = target.startsWith("http") ||
+                    target.startsWith("file:") ||
+                    target.startsWith("mailto:")
+
+        if (target.startsWith("run:")) {
+            window.searchTriggered("run " + target.substring(4))
+            exitTimer.start()
+        } else if (isUrl) {
+            Qt.openUrlExternally(target)
+            Qt.quit()
+        } else {
+            window.searchTriggered("run " + target)
+            exitTimer.start()
+        }
+    }
+
+    // wait exec over
+    Timer {
+        id: exitTimer
+        interval: 150
+        onTriggered: Qt.quit()
     }
 }
