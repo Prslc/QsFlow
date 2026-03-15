@@ -47,8 +47,9 @@ pub fn search_items(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
         let url: String = row.get(1)?;
         Ok(ResultItem {
             title: title.unwrap_or_else(|| "[no title]".to_string()),
-            summary: url.clone(),
+            summary: Some(url.clone()),
             on_click: Some(url),
+            icon: None,
         })
     })?;
 

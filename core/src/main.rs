@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 
 mod firefox;
 mod utils;
+mod application;
 
 fn main() -> Result<()> {
     let stdin = io::stdin();
@@ -16,14 +17,17 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let mut parts = input.splitn(2, ' ');
-        let plugin_key = parts.next().unwrap_or("").trim();
-        let search_text = parts.next().unwrap_or("").trim();
+        // keyword search
+        let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
+            (key.trim(), text.trim())
+        } else {
+            ("", input) // globe search
+        };
 
         let results = match plugin_key {
             "b" => firefox::search_items(firefox::Mode::Bookmarks, search_text)?,
             "h" => firefox::search_items(firefox::Mode::History, search_text)?,
-            _ => vec![],
+            _ => application::search_apps(input)?,
         };
 
         println!("{}", serde_json::to_string(&results)?);
