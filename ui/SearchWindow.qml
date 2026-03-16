@@ -1,9 +1,23 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Wayland
 
 PanelWindow {
     id: window
+
+    Component.onCompleted: {
+        if (this.WlrLayershell !== undefined) {
+            this.WlrLayershell.layer = WlrLayer.Overlay;    // Overlay display
+            this.WlrLayershell.namespace = "QsFlow";
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: Qt.quit()
+    }
+
     property ListModel resultsModel
     property var theme: backend.theme
 
@@ -57,7 +71,6 @@ PanelWindow {
                 background: null
 
                 Keys.onEscapePressed: Qt.quit()
-                onActiveFocusChanged: if (!activeFocus) Qt.quit()
 
                 onTextChanged: window.searchTriggered(text)
 

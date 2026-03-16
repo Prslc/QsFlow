@@ -34,7 +34,7 @@ pub fn find_icon_path(name: &str) -> Option<String> {
         base_dirs.push(flatpak_user_icon_path);
     }
 
-    // 3. Fallback to your project's default icon
+    // 3. Fallback to default icon
     for dir in base_dirs {
         for ext in ["svg", "png"] {
             let path = format!("{}/{}.{}", dir, name, ext);
