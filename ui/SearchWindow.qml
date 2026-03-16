@@ -5,6 +5,8 @@ import Quickshell
 PanelWindow {
     id: window
     property ListModel resultsModel
+    property var theme: backend.theme
+
     signal searchTriggered(string text)
 
     anchors { top: true; left: true; right: true }
@@ -23,16 +25,16 @@ PanelWindow {
         height: {
             if (searchInput.text.length === 0 || resultsModel.count === 0) return 70;
             let listHeight = resultsModel.count * 64;
-            return Math.min(70 + listHeight + 15, 450);
+            return Math.min(70 + listHeight + 5, 450);
         }
 
         Behavior on height {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
 
-        color: "#1a1b26"
+        color: backend.theme.container
         radius: 12
-        border.color: "#7aa2f7"
+        border.color: backend.theme.primary
         border.width: 1
         clip: true
 
@@ -45,10 +47,10 @@ PanelWindow {
                 id: searchInput
                 height: 48
                 width: parent.width
-                color: "#c0caf5"
+                color: backend.theme.fg
                 font.pixelSize: 20
                 placeholderText: "QsFlow: Search..."
-                placeholderTextColor: "#565f89"
+                placeholderTextColor: Qt.alpha(backend.theme.fg, 0.5)
                 focus: true
                 background: null
 
@@ -82,7 +84,8 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 1
-                color: "#414868"
+                color: backend.theme.primary
+                opacity: 0.2
                 visible: resultsModel.count > 0
             }
 

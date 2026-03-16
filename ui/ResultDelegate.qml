@@ -15,7 +15,7 @@ ItemDelegate {
 
     background: Rectangle {
         radius: 8
-        color: root.highlighted ? "#24283b" : "transparent"
+        color: root.highlighted ? backend.theme.primary : "transparent"
     }
 
     contentItem: Row {
@@ -44,7 +44,7 @@ ItemDelegate {
             // title
             Text {
                 text: model.title
-                color: "#c0caf5"
+                color: root.highlighted ? backend.theme.on_primary : backend.theme.fg
                 font.bold: true
                 font.pixelSize: root.isSimpleMode ? 16 : 14
 
@@ -58,7 +58,7 @@ ItemDelegate {
             // summary
             Text {
                 text: model.summary || ""
-                color: "#565f89"
+                color: root.highlighted ? backend.theme.on_primary : backend.theme.fg
                 font.pixelSize: 12
                 elide: Text.ElideRight
                 width: parent.width

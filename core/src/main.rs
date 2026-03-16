@@ -23,6 +23,16 @@ async fn main() -> Result<()> {
         }
     });
 
+    let theme = system::theme::load_theme();
+
+    let theme_json = serde_json::json!({
+        "type": "theme",
+        "data": theme
+    }).to_string();
+
+    // send theme
+    let _ = tx.send(theme_json).await;
+
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
     while let Some(line) = reader.next_line().await? {
@@ -74,7 +84,12 @@ async fn main() -> Result<()> {
             };
 
             if let Ok(results) = results_res {
-                if let Ok(json) = serde_json::to_string(&results) {
+                let wrapped = serde_json::json!({
+                    "type": "results",
+                    "data": results
+                });
+
+                if let Ok(json) = serde_json::to_string(&wrapped) {
                     let _ = tx_clone.send(json).await;
                 }
             }
