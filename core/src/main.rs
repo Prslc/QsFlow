@@ -58,8 +58,8 @@ async fn main() -> Result<()> {
             };
 
             let results_res = match plugin_key {
-                "b" => firefox::firefox_search(firefox::Mode::Bookmarks, search_text),
-                "h" => firefox::firefox_search(firefox::Mode::History, search_text),
+                "b" => firefox::firefox_search(firefox::Mode::Bookmarks, search_text).await,
+                "h" => firefox::firefox_search(firefox::Mode::History, search_text).await,
                 "s" => search::search_suggestions(search_text).await,
                 "g" => github::github_search(search_text),
 
