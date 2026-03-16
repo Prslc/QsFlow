@@ -1,5 +1,6 @@
 use anyhow::Result;
-use crate::utils::{ResultItem, find_icon_path};
+use crate::models::ResultItem;
+use crate::system::icon::find_icon_path;
 
 pub fn github_search(query: &str) -> Result<Vec<ResultItem>> {
     if query.is_empty() {

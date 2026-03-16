@@ -2,11 +2,9 @@ use anyhow::Result;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
-mod application;
-mod firefox;
-mod search;
-mod github;
-mod utils;
+pub mod models;
+mod provider;
+mod system;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,7 +45,7 @@ async fn main() -> Result<()> {
             // exec application
             if input.starts_with("run ") {
                 let cmd = input.trim_start_matches("run ").to_string();
-                utils::execute_command(&cmd);
+                system::executor::execute_command(&cmd);
                 return;
             }
 
@@ -58,12 +56,21 @@ async fn main() -> Result<()> {
             };
 
             let results_res = match plugin_key {
-                "b" => firefox::firefox_search(firefox::Mode::Bookmarks, search_text).await,
-                "h" => firefox::firefox_search(firefox::Mode::History, search_text).await,
-                "s" => search::search_suggestions(search_text).await,
-                "g" => github::github_search(search_text),
+                "b" => {
+                    provider::firefox::firefox_search(
+                        provider::firefox::Mode::Bookmarks,
+                        search_text,
+                    )
+                    .await
+                }
+                "h" => {
+                    provider::firefox::firefox_search(provider::firefox::Mode::History, search_text)
+                        .await
+                }
+                "s" => provider::web::search_suggestions(search_text).await,
+                "g" => provider::github::github_search(search_text),
 
-                _ => application::search_apps(&input),
+                _ => provider::application::search_apps(&input),
             };
 
             if let Ok(results) = results_res {

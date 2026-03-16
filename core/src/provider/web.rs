@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use crate::utils::{ResultItem, find_icon_path};
+use crate::models::ResultItem;
+use crate::system::icon::find_icon_path;
 
 pub async fn search_suggestions(query: &str) -> Result<Vec<ResultItem>> {
     if query.is_empty() {

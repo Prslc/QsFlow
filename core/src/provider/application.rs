@@ -3,7 +3,8 @@ use std::env;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 use anyhow::Result;
-use crate::utils::{ResultItem, find_icon_path};
+use crate::models::ResultItem;
+use crate::system::icon::find_icon_path;
 
 pub fn search_apps(query: &str) -> Result<Vec<ResultItem>> {
     let mut results = Vec::new();

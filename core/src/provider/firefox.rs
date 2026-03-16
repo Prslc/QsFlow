@@ -1,14 +1,32 @@
-use anyhow::Result;
-use rusqlite::Connection;
+use anyhow::{Context, Result};
+use std::path::PathBuf;
 use std::fs;
+use glob::glob;
 use tempfile::NamedTempFile;
-use crate::utils;
-use crate::utils::ResultItem;
+use rusqlite::Connection;
 use tokio::task;
+
+use crate::models::ResultItem;     
+use crate::system::fs::get_home;
 
 pub enum Mode {
     Bookmarks,
     History,
+}
+
+/// Locates the Firefox `places.sqlite` database file.
+pub fn get_firefox_db_path() -> Result<PathBuf> {
+    let home = get_home()?;
+    let pattern = home.join(".config/mozilla/firefox/*.default-release");
+    let pattern_str = pattern.to_str().context("Invalid UTF-8 path string")?;
+
+    for entry in glob(pattern_str).context("Failed to read glob pattern")? {
+        if let Ok(path) = entry {
+            return Ok(path.join("places.sqlite"));
+        }
+    }
+
+    anyhow::bail!("No Firefox profile found")
 }
 
 pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
@@ -16,7 +34,7 @@ pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> 
     let query = query.to_string();
 
     let results = task::spawn_blocking(move || -> Result<Vec<ResultItem>> {
-        let db_path = utils::get_firefox_db_path()?;
+        let db_path = get_firefox_db_path()?;
 
         // copy database to tmpfs
         let tmp_file = NamedTempFile::new()?;
