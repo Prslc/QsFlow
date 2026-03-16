@@ -4,10 +4,13 @@ import QtQuick.Controls
 ItemDelegate {
     id: root
     width: ListView.view.width
-    
-    implicitHeight: contentLayout.implicitHeight + 16 
 
     highlighted: ListView.isCurrentItem
+    implicitHeight: 64
+    leftPadding: 12
+    rightPadding: 12
+    topPadding: 6
+    bottomPadding: 6
 
     // simple mode
     readonly property bool isSimpleMode: (model.summary === undefined || model.summary === "")
@@ -15,6 +18,7 @@ ItemDelegate {
 
     background: Rectangle {
         radius: 8
+        anchors.margins: 2
         color: root.highlighted ? backend.theme.primary : "transparent"
     }
 
@@ -63,6 +67,7 @@ ItemDelegate {
                 elide: Text.ElideRight
                 width: parent.width
                 visible: text !== ""
+                opacity: 0.8
             }
         }
     }

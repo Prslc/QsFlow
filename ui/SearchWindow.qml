@@ -22,11 +22,9 @@ PanelWindow {
         id: content
         anchors.horizontalCenter: parent.horizontalCenter
         width: 600
-        height: {
-            if (searchInput.text.length === 0 || resultsModel.count === 0) return 70;
-            let listHeight = resultsModel.count * 64;
-            return Math.min(70 + listHeight + 5, 450);
-        }
+        height: (searchInput.text.length === 0 || resultsModel.count === 0)
+                ? 72
+                : Math.min(childrenRect.height + 25, 470)
 
         Behavior on height {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
@@ -39,7 +37,9 @@ PanelWindow {
         clip: true
 
         Column {
-            anchors.fill: parent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
             anchors.margins: 12
             spacing: 10
 
@@ -49,6 +49,8 @@ PanelWindow {
                 width: parent.width
                 color: backend.theme.fg
                 font.pixelSize: 20
+                leftPadding: 12
+                verticalAlignment: TextInput.AlignVCenter
                 placeholderText: "QsFlow: Search..."
                 placeholderTextColor: Qt.alpha(backend.theme.fg, 0.5)
                 focus: true
@@ -92,14 +94,13 @@ PanelWindow {
             ListView {
                 id: resultsList
                 width: parent.width
-                height: 360
+                implicitHeight: Math.min(resultsModel.count * 64, 320)
                 model: resultsModel
                 clip: true
-                currentIndex: 0
+                highlightMoveDuration: 0
+                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
                 delegate: ResultDelegate {
-                    onClicked: {
-                        window.launch(model.on_click)
-                    }
+                    onClicked: window.launch(model.on_click)
                 }
             }
         }
