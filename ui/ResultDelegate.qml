@@ -5,16 +5,16 @@ ItemDelegate {
     id: root
     width: ListView.view.width
 
-    highlighted: ListView.isCurrentItem
-    implicitHeight: 64
-    leftPadding: 12
-    rightPadding: 12
-    topPadding: 6
-    bottomPadding: 6
-
     // simple mode
     readonly property bool isSimpleMode: (model.summary === undefined || model.summary === "")
                                       && (model.icon === undefined || model.icon === "")
+
+    implicitHeight: isSimpleMode ? 48 : 64
+    highlighted: ListView.isCurrentItem
+    leftPadding: 12
+    rightPadding: 12
+    topPadding: isSimpleMode ? 4 : 6
+    bottomPadding: isSimpleMode ? 4 : 6
 
     background: Rectangle {
         radius: 8
@@ -33,8 +33,8 @@ ItemDelegate {
             id: iconSource
             asynchronous: true
             source: (model.icon && model.icon !== "") ? "file://" + model.icon : ""
-            width: 32
-            height: 32
+            width: root.isSimpleMode ? 24 : 32
+            height: root.isSimpleMode ? 24 : 32
             anchors.verticalCenter: parent.verticalCenter
             visible: model.icon !== undefined && model.icon !== ""
             fillMode: Image.PreserveAspectFit
