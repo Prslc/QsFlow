@@ -1,6 +1,7 @@
 use anyhow::Result;
-use std::{fs, env, path::PathBuf};
+use std::fs;
 use crate::models::ThemeConfig;
+use crate::system::fs::get_home;
 
 pub fn load_theme() -> ThemeConfig {
     // default color
@@ -13,7 +14,7 @@ pub fn load_theme() -> ThemeConfig {
     };
 
     let _ = (|| -> Result<()> {
-        let home = env::var("HOME").map(PathBuf::from)?;
+        let home = get_home()?;
         let path = home.join(".config/gtk-4.0/dank-colors.css");
         let content = fs::read_to_string(path)?;
 
