@@ -28,7 +28,8 @@ async fn main() -> Result<()> {
     let theme_json = serde_json::json!({
         "type": "theme",
         "data": theme
-    }).to_string();
+    })
+    .to_string();
 
     // send theme
     let _ = tx.send(theme_json).await;
@@ -80,7 +81,11 @@ async fn main() -> Result<()> {
                 "s" => provider::web::search_suggestions(search_text).await,
                 "g" => provider::github::github_search(search_text),
 
-                _ => provider::application::search_apps(&input),
+                _ => provider::calculator::calculate(&input)
+                    .ok()
+                    .filter(|r| !r.is_empty())
+                    .map(Ok)
+                    .unwrap_or_else(|| provider::application::search_apps(&input)),
             };
 
             if let Ok(results) = results_res {
