@@ -13,7 +13,7 @@ Process {
         "on_primary": "#1a1b26"
     })
 
-    command: ["bin/qsflow-core"]
+    command: ["qsflow-core"]
     running: true
     stdinEnabled: true
 
