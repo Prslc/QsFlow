@@ -9,33 +9,55 @@ use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
 
-pub struct FileSearch;
+macro_rules! search_plugin {
+    ($name:ident, $id:literal, $display:literal, $kw:literal, $matcher:ident) => {
+        pub struct $name;
 
-impl Plugin for FileSearch {
-    fn meta(&self) -> &Meta {
-        &Meta {
-            id: "file-search",
-            name: "Files",
-            icon: "folder",
-            keyword: "f",
+        impl Plugin for $name {
+            fn meta(&self) -> &Meta {
+                &Meta {
+                    id: $id,
+                    name: $display,
+                    icon: "folder",
+                    keyword: $kw,
+                }
+            }
+
+            fn search(
+                &self,
+                query: &str,
+                _full: &str,
+            ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
+                let query = query.to_lowercase();
+                Box::pin(async move {
+                    tokio::task::spawn_blocking(move || do_search(&query, $matcher))
+                        .await
+                        .unwrap_or_else(|_| Ok(vec![]))
+                })
+            }
         }
-    }
-
-    fn search(
-        &self,
-        query: &str,
-        _full: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
-        let query = query.to_lowercase();
-        Box::pin(async move {
-            tokio::task::spawn_blocking(move || do_search(&query))
-                .await
-                .unwrap_or_else(|_| Ok(vec![]))
-        })
-    }
+    };
 }
 
-fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+search_plugin!(FileSearch, "file-search", "Files", "f", match_name);
+search_plugin!(PathSearch, "path-search", "Paths", "d", match_path);
+
+fn match_name(entry_name: &str, _entry_path: &str, query: &str) -> bool {
+    query.is_empty() || entry_name.to_lowercase().contains(query)
+}
+
+fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let path_lower = entry_path.to_lowercase();
+    query.split_whitespace().all(|token| path_lower.contains(token))
+}
+
+fn do_search(
+    query: &str,
+    matcher: fn(&str, &str, &str) -> bool,
+) -> Result<Vec<ResultItem>> {
     let home = match get_home() {
         Ok(h) => h,
         Err(_) => return Ok(vec![]),
@@ -73,19 +95,19 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                 continue;
             }
 
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if !query.is_empty() && !name.contains(query) {
+            let path = entry.path().to_string_lossy().into_owned();
+            let name = entry.file_name().to_string_lossy();
+
+            if !matcher(&name, &path, query) {
                 continue;
             }
 
-            let path = entry.path().to_string_lossy().into_owned();
             let file_url = format!("file://{}", path);
-            let name = entry.file_name().to_string_lossy().into_owned();
 
             let (title, icon) = if is_dir {
                 (format!("{}/", name), "folder")
             } else {
-                (name, "")
+                (name.into_owned(), "")
             };
 
             results.push(ResultItem {

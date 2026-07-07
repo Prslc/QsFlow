@@ -35,6 +35,10 @@ keyword = "g"
 [[plugins]]
 id = "file-search"
 keyword = "f"
+
+[[plugins]]
+id = "path-search"
+keyword = "d"
 "#;
 
 #[derive(Deserialize)]
