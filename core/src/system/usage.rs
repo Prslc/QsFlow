@@ -35,6 +35,7 @@ pub fn get_top(limit: i32) -> Result<Vec<serde_json::Value>> {
     get_top_with(&conn()?, limit)
 }
 
+#[allow(dead_code)]
 fn init_schema(conn: &Connection) {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS usage (

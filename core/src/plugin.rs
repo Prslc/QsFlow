@@ -14,6 +14,11 @@ keyword = ""
 enable = true
 
 [[plugins]]
+id = "system-commands"
+keyword = ""
+enable = true
+
+[[plugins]]
 id = "app-search"
 keyword = ""
 enable = true
@@ -73,6 +78,7 @@ pub struct Meta {
     pub id: &'static str,
     pub name: &'static str,
     pub icon: &'static str,
+    #[allow(dead_code)]
     pub keyword: &'static str,
 }
 
