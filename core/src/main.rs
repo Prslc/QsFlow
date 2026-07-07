@@ -16,13 +16,10 @@ async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {
-        for (id, name, icon, keyword) in plugin::list_plugins() {
-            let kw = if keyword.is_empty() {
-                "(default)"
-            } else {
-                &keyword
-            };
-            println!("{id:<24} {name:<24} {kw:<12} {icon}");
+        for (id, name, icon, keyword, enabled) in plugin::list_plugins() {
+            let kw = if keyword.is_empty() { "(default)" } else { &keyword };
+            let status = if enabled { "" } else { " [disabled]" };
+            println!("{id:<24} {name:<24} {kw:<12} {icon:<16}{status}");
         }
         return Ok(());
     }

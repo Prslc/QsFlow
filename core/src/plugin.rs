@@ -90,11 +90,12 @@ struct Entry {
     keyword: String,
 }
 
+static CONFIG: LazyLock<Config> = LazyLock::new(load_or_default);
+
 static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     let mut map: PluginMap = crate::provider::plugin_map();
-    let config = load_or_default();
     let mut entries = Vec::new();
-    for p in &config.plugins {
+    for p in &CONFIG.plugins {
         if !p.enable { continue; }
         if let Some(plugin) = map.remove(p.id.as_str()) {
             entries.push(Entry {
@@ -136,12 +137,14 @@ fn load_or_default() -> Config {
     config
 }
 
-pub fn list_plugins() -> Vec<(&'static str, &'static str, &'static str, String)> {
-    REGISTRY
+pub fn list_plugins() -> Vec<(&'static str, &'static str, &'static str, String, bool)> {
+    let map = crate::provider::plugin_map();
+    CONFIG
+        .plugins
         .iter()
-        .map(|e| {
-            let m = e.plugin.meta();
-            (m.id, m.name, m.icon, e.keyword.clone())
+        .filter_map(|p| {
+            let meta = map.get(p.id.as_str())?.meta();
+            Some((meta.id, meta.name, meta.icon, p.keyword.clone(), p.enable))
         })
         .collect()
 }
