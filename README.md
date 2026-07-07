@@ -15,7 +15,8 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 
 - **App Launcher** — fuzzy-search `.desktop` entries across XDG data directories.
 - **File & Path Search** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home;
-  open results in the default application via `xdg-open`.
+  open results in the default application. Files get type-specific icons by extension.
+- **Clipboard History** — search and paste from `cliphist` history via `c` prefix.
 - **Firefox Bookmarks & History** — read `places.sqlite` directly; no browser extension needed.
 - **Web Suggestions** — live Google search autocomplete via `s` prefix.
 - **GitHub Search** — quick link with `g` prefix.
@@ -35,6 +36,7 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **[Quickshell](https://github.com/outfoxxed/quickshell)**
 - Rust toolchain (to build the core backend)
 - Firefox (optional, for bookmarks / history)
+- [cliphist](https://github.com/sentriz/cliphist) (optional, for clipboard history)
 
 ## Installation
 
@@ -63,7 +65,8 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `h <query>` | search Firefox history |
 | `f <query>` | search files by name |
 | `d <query>` | search files by path (multi-token fuzzy) |
-| `s <query>` | DuckDuckGo suggestions |
+| `c <query>` | search clipboard history (cliphist) |
+| `s <query>` | Google suggestions |
 | `g <query>` | GitHub search |
 | `2 + 3` | inline calculator |
 | _(empty)_ | show most-used items |
@@ -106,6 +109,10 @@ keyword = "f"
 [[plugins]]
 id = "path-search"
 keyword = "d"
+
+[[plugins]]
+id = "clipboard"
+keyword = "c"
 ```
 
 Reorder entries to change priority, change `keyword` to remap prefixes, or remove

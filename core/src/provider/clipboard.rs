@@ -38,11 +38,19 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         Ok(o) => o,
         Err(_) => return Ok(vec![]),
     };
-
     let text = String::from_utf8_lossy(&output.stdout);
+    let mut results = parse_entries(query, &text);
+    let icon = find_icon_path("clipboard").or_else(|| Some("".to_string()));
+    for r in &mut results {
+        r.icon = icon.clone();
+    }
+    Ok(results)
+}
+
+fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
     let mut results = Vec::new();
 
-    for line in text.lines() {
+    for line in raw.lines() {
         let parts: Vec<&str> = line.splitn(3, '\t').collect();
         let (id, preview) = match parts.as_slice() {
             [id, _, preview] => (*id, *preview),
@@ -64,7 +72,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
             title: preview,
             summary: None,
             on_click: Some(format!("run:sh -c 'cliphist decode {} | wl-copy'", id)),
-            icon: find_icon_path("clipboard").or_else(|| Some("".to_string())),
+            icon: Some("".to_string()),
         });
 
         if results.len() >= 50 {
@@ -72,5 +80,41 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    Ok(results)
+    results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_standard_format() {
+        let raw = "1\thttps://example.com\thello world\n2\timage/png\tscreenshot";
+        let entries = parse_entries("", raw);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].title, "hello world");
+        assert!(entries[0].on_click.as_ref().unwrap().contains("decode 1"));
+        assert_eq!(entries[1].title, "screenshot");
+    }
+
+    #[test]
+    fn filter_by_query() {
+        let raw = "1\ttext/plain\tfirefox\n2\ttext/plain\tterminal";
+        assert_eq!(parse_entries("fire", raw).len(), 1);
+        assert_eq!(parse_entries("xyz", raw).len(), 0);
+    }
+
+    #[test]
+    fn truncate_long_preview() {
+        let long = "a".repeat(200);
+        let raw = format!("1\ttext/plain\t{}", long);
+        let entries = parse_entries("", &raw);
+        assert!(entries[0].title.len() <= 83); // 80 chars max + "…"
+        assert!(entries[0].title.ends_with('…'));
+    }
+
+    #[test]
+    fn empty_input() {
+        assert!(parse_entries("", "").is_empty());
+    }
 }
