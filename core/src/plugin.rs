@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
 
@@ -48,22 +48,29 @@ struct Entry {
     keyword: String,
 }
 
-static CONFIG: LazyLock<Config> = LazyLock::new(load_or_default);
+static CONFIG: OnceLock<Config> = OnceLock::new();
+static REGISTRY: OnceLock<Vec<Entry>> = OnceLock::new();
 
-static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
-    let mut map: PluginMap = crate::provider::plugin_map();
-    let mut entries = Vec::new();
-    for p in &CONFIG.plugins {
-        if !p.enable { continue; }
-        if let Some(plugin) = map.remove(p.id.as_str()) {
-            entries.push(Entry {
-                plugin,
-                keyword: p.keyword.clone(),
-            });
+fn config() -> &'static Config {
+    CONFIG.get_or_init(load_or_default)
+}
+
+fn registry() -> &'static Vec<Entry> {
+    REGISTRY.get_or_init(|| {
+        let mut map: PluginMap = crate::provider::plugin_map();
+        let mut entries = Vec::new();
+        for p in &config().plugins {
+            if !p.enable { continue; }
+            if let Some(plugin) = map.remove(p.id.as_str()) {
+                entries.push(Entry {
+                    plugin,
+                    keyword: p.keyword.clone(),
+                });
+            }
         }
-    }
-    entries
-});
+        entries
+    })
+}
 
 fn load_or_default() -> Config {
     let mut config: Config = toml::from_str(DEFAULT_CONFIG).expect("invalid default config");
@@ -97,7 +104,7 @@ fn load_or_default() -> Config {
 
 pub fn list_plugins() -> Vec<(&'static str, &'static str, &'static str, String, bool)> {
     let map = crate::provider::plugin_map();
-    CONFIG
+    config()
         .plugins
         .iter()
         .filter_map(|p| {
@@ -114,7 +121,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         .unwrap_or(("", input));
 
     // explicit keyword
-    for entry in REGISTRY.iter().filter(|e| e.keyword == keyword) {
+    for entry in registry().iter().filter(|e| e.keyword == keyword) {
         if let Ok(results) = entry.plugin.search(query, input).await
             && !results.is_empty()
         {
@@ -124,7 +131,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
 
     // default fallback chain
     if !keyword.is_empty() {
-        for entry in REGISTRY.iter().filter(|e| e.keyword.is_empty()) {
+        for entry in registry().iter().filter(|e| e.keyword.is_empty()) {
             if let Ok(results) = entry.plugin.search(query, input).await
                 && !results.is_empty()
             {
