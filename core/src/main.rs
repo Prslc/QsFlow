@@ -81,11 +81,19 @@ async fn main() -> Result<()> {
                 "s" => provider::web::search_suggestions(search_text).await,
                 "g" => provider::github::github_search(search_text),
 
-                _ => provider::calculator::calculate(&input)
-                    .ok()
-                    .filter(|r| !r.is_empty())
-                    .map(Ok)
-                    .unwrap_or_else(|| provider::application::search_apps(&input)),
+                _ => {
+                    let owned_input = input.clone();
+                    let calc_result = provider::calculator::calculate(&owned_input)
+                        .ok()
+                        .filter(|r| !r.is_empty());
+
+                    match calc_result {
+                        Some(r) => Ok(r),
+                        None => tokio::task::spawn_blocking(move || {
+                            provider::application::search_apps(&owned_input)
+                        }).await.unwrap_or_else(|_| Ok(vec![])),
+                    }
+                },
             };
 
             if let Ok(results) = results_res {
