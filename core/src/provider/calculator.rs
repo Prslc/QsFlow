@@ -57,3 +57,53 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
         Err(_) => Ok(vec![]),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn first(expr: &str) -> String {
+        do_search(expr).unwrap().first().map(|r| r.title.clone()).unwrap_or_default()
+    }
+
+    #[test]
+    fn basic_arithmetic() {
+        assert_eq!(first("2 + 3"), "5");
+        assert_eq!(first("10 - 7"), "3");
+        assert_eq!(first("6 * 4"), "24");
+        assert_eq!(first("15 / 3"), "5");
+    }
+
+    #[test]
+    fn empty_input() {
+        assert!(do_search("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn division_by_zero() {
+        assert!(do_search("1/0").unwrap().is_empty());
+    }
+
+    #[test]
+    fn non_math_input() {
+        assert!(do_search("firefox").unwrap().is_empty());
+        assert!(do_search("hello world").unwrap().is_empty());
+    }
+
+    #[test]
+    fn decimals() {
+        let result = first("3.14 * 2");
+        assert!(result.starts_with("6.28"));
+    }
+
+    #[test]
+    fn negative() {
+        assert_eq!(first("-5 + 8"), "3");
+        assert_eq!(first("0 - 10"), "-10");
+    }
+
+    #[test]
+    fn power() {
+        assert_eq!(first("2 ^ 10"), "1024");
+    }
+}
