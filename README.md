@@ -81,6 +81,7 @@ On first run, `~/.config/qsflow/plugins.toml` is generated automatically:
 [[plugins]]
 id = "calculator"
 keyword = ""
+enable = true
 
 [[plugins]]
 id = "app-search"
@@ -115,8 +116,9 @@ id = "clipboard"
 keyword = "c"
 ```
 
-Reorder entries to change priority, change `keyword` to remap prefixes, or remove
-a `[[plugins]]` block to disable it.
+Reorder entries to change priority, change `keyword` to remap prefixes, or set
+`enable = false` to disable a plugin without removing its block.  Removed or
+unknown plugin IDs are silently ignored.
 
 Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
 built-in defaults).
