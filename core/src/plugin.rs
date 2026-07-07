@@ -119,6 +119,16 @@ fn load_or_default() -> Config {
     config
 }
 
+pub fn list_plugins() -> Vec<(&'static str, &'static str, &'static str, String)> {
+    REGISTRY
+        .iter()
+        .map(|e| {
+            let m = e.plugin.meta();
+            (m.id, m.name, m.icon, e.keyword.clone())
+        })
+        .collect()
+}
+
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
     let (keyword, query) = input
         .split_once(' ')
