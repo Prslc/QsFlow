@@ -39,7 +39,8 @@ impl Plugin for AppSearch {
 
 fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let mut results = Vec::new();
-    let query_lower = query.to_lowercase();
+    let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
+    let pattern = nucleo::Utf32String::from(query.to_lowercase());
 
     let mut app_dirs: Vec<PathBuf> = env::var("XDG_DATA_DIRS")
         .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
@@ -101,29 +102,38 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
             }
 
             if let Some(t) = title {
-                let is_match = query.is_empty()
-                    || t.to_lowercase().contains(&query_lower)
-                    || comment
-                        .as_ref()
-                        .map(|c| c.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false);
+                let score = if query.is_empty() {
+                    1
+                } else {
+                    let title_utf32 = nucleo::Utf32String::from(t.to_lowercase());
+                    let name_score = matcher
+                        .fuzzy_match(title_utf32.slice(..), pattern.slice(..))
+                        .unwrap_or(0);
 
-                if is_match {
+                    let comment_score = comment.as_ref().and_then(|c| {
+                        let c_utf32 = nucleo::Utf32String::from(c.to_lowercase());
+                        matcher.fuzzy_match(c_utf32.slice(..), pattern.slice(..))
+                    }).unwrap_or(0);
+
+                    name_score.max(comment_score)
+                };
+
+                if score > 0 {
                     let icon_path = icon_name.and_then(|n| find_icon_path(&n));
-                    results.push(ResultItem {
+                    results.push((score, ResultItem {
                         title: t,
                         summary: comment,
                         on_click: exec.map(|e| format!("run:{}", e)),
                         icon: icon_path,
-                    });
+                    }));
                 }
             }
         }
     }
 
-    results.sort_by(|a, b| a.title.cmp(&b.title));
-    results.dedup_by(|a, b| a.title == b.title);
+    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.dedup_by(|a, b| a.1.title == b.1.title);
     results.truncate(50);
 
-    Ok(results)
+    Ok(results.into_iter().map(|(_, item)| item).collect())
 }
