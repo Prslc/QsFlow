@@ -13,7 +13,7 @@ impl Plugin for WebSearch {
         &Meta {
             id: "web-search",
             name: "Web Search",
-            icon: "browser",
+            icon: "google",
             keyword: "s",
         }
     }
@@ -33,25 +33,30 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    let url = format!("https://duckduckgo.com/ac/?q={}", query);
+    let url = format!(
+        "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
+        query
+    );
     let response = reqwest::get(&url).await.context("Failed to fetch suggestions")?;
     let json: Vec<serde_json::Value> = response.json().await.context("Failed to parse suggestions")?;
 
     let mut results = vec![ResultItem {
         title: format!("Search: {}", query),
-        summary: Some("Search on DuckDuckGo".to_string()),
-        on_click: Some(format!("https://duckduckgo.com/?q={}", query)),
-        icon: find_icon_path("browser").or_else(|| Some("".to_string())),
+        summary: Some("Search on Google".to_string()),
+        on_click: Some(format!("https://www.google.com/search?q={}", query)),
+        icon: find_icon_path("google").or_else(|| Some("".to_string())),
     }];
 
-    for item in json {
-        if let Some(phrase) = item["phrase"].as_str() {
-            results.push(ResultItem {
-                title: phrase.to_string(),
-                summary: Some("".to_string()),
-                on_click: Some(format!("https://duckduckgo.com/?q={}", phrase)),
-                icon: Some("".to_string()),
-            });
+    if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
+        for item in suggestions {
+            if let Some(phrase) = item.as_str() {
+                results.push(ResultItem {
+                    title: phrase.to_string(),
+                    summary: Some("".to_string()),
+                    on_click: Some(format!("https://www.google.com/search?q={}", phrase)),
+                    icon: Some("".to_string()),
+                });
+            }
         }
     }
 

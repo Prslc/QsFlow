@@ -17,7 +17,7 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **File & Path Search** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home;
   open results in the default application via `xdg-open`.
 - **Firefox Bookmarks & History** — read `places.sqlite` directly; no browser extension needed.
-- **Web Suggestions** — live DuckDuckGo autocomplete via `s` prefix.
+- **Web Suggestions** — live Google search autocomplete via `s` prefix.
 - **GitHub Search** — quick link with `g` prefix.
 - **Inline Calculator** — evaluate math expressions automatically; no prefix required.
 - **Usage History** — frequently-launched items surface on empty input, ranked by count;
