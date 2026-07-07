@@ -1,7 +1,29 @@
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
 use crate::system::fs::get_resource_path;
 use std::path::Path;
 
+static CACHE: LazyLock<Mutex<HashMap<String, Option<String>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 pub fn find_icon_path(name: &str) -> Option<String> {
+    if let Ok(cache) = CACHE.lock() {
+        if let Some(cached) = cache.get(name) {
+            return cached.clone();
+        }
+    }
+
+    let result = do_find(name);
+
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.insert(name.to_string(), result.clone());
+    }
+
+    result
+}
+
+fn do_find(name: &str) -> Option<String> {
     let default_icon = "images/application_default.png";
 
     if name.is_empty() {
