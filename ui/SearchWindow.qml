@@ -39,13 +39,16 @@ PanelWindow {
     focusable: true
     color: "transparent"
 
+    readonly property int rowH: 64
+    readonly property int maxRows: 5
+
     Rectangle {
         id: content
         anchors.horizontalCenter: parent.horizontalCenter
         width: 600
         height: (searchInput.text.length === 0 && resultsModel.count === 0)
                 ? 72
-                : Math.min(childrenRect.height + 25, 470)
+                : Math.min(93 + Math.min(resultsModel.count, maxRows) * rowH, 470)
 
         Behavior on height {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
