@@ -34,7 +34,7 @@ fn do_find(name: &str) -> Option<String> {
     }
 
     let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
-    let categories = ["places", "apps", "mimetypes", "devices"];
+    let categories = ["places", "apps", "mimetypes", "devices", "panel", "actions"];
     let sizes = ["scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16"];
     let exts = ["svg", "png"];
 
