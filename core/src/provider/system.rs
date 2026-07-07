@@ -1,10 +1,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result;
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use anyhow::Result;
 
 pub struct SystemCommands;
 
@@ -30,11 +30,26 @@ impl Plugin for SystemCommands {
 
 fn do_search(input: &str) -> Vec<ResultItem> {
     let commands = [
-        ("Lock", "lock", "system-lock-screen", "loginctl lock-session"),
+        (
+            "Lock",
+            "lock",
+            "system-lock-screen",
+            "loginctl lock-session",
+        ),
         ("Suspend", "suspend", "system-suspend", "systemctl suspend"),
         ("Reboot", "reboot", "system-reboot", "systemctl reboot"),
-        ("Shutdown", "shutdown", "system-shutdown", "systemctl poweroff"),
-        ("Logout", "logout", "system-log-out", "loginctl terminate-session $XDG_SESSION_ID"),
+        (
+            "Shutdown",
+            "shutdown",
+            "system-shutdown",
+            "systemctl poweroff",
+        ),
+        (
+            "Logout",
+            "logout",
+            "system-log-out",
+            "loginctl terminate-session $XDG_SESSION_ID",
+        ),
     ];
 
     let mut results = Vec::new();

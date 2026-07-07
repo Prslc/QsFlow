@@ -57,7 +57,11 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
             continue;
         }
 
-        for entry in WalkDir::new(dir).max_depth(2).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(dir)
+            .max_depth(2)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if entry.path().extension().and_then(|s| s.to_str()) != Some("desktop") {
                 continue;
             }
@@ -110,22 +114,28 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                         .fuzzy_match(title_utf32.slice(..), pattern.slice(..))
                         .unwrap_or(0);
 
-                    let comment_score = comment.as_ref().and_then(|c| {
-                        let c_utf32 = nucleo::Utf32String::from(c.to_lowercase());
-                        matcher.fuzzy_match(c_utf32.slice(..), pattern.slice(..))
-                    }).unwrap_or(0);
+                    let comment_score = comment
+                        .as_ref()
+                        .and_then(|c| {
+                            let c_utf32 = nucleo::Utf32String::from(c.to_lowercase());
+                            matcher.fuzzy_match(c_utf32.slice(..), pattern.slice(..))
+                        })
+                        .unwrap_or(0);
 
                     name_score.max(comment_score)
                 };
 
                 if score > 0 {
                     let icon_path = icon_name.and_then(|n| find_icon_path(&n));
-                    results.push((score, ResultItem {
-                        title: t,
-                        summary: comment,
-                        on_click: exec.map(|e| format!("run:{}", e)),
-                        icon: icon_path,
-                    }));
+                    results.push((
+                        score,
+                        ResultItem {
+                            title: t,
+                            summary: comment,
+                            on_click: exec.map(|e| format!("run:{}", e)),
+                            icon: icon_path,
+                        },
+                    ));
                 }
             }
         }

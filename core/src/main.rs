@@ -17,7 +17,11 @@ async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
 async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {
         for (id, name, icon, keyword) in plugin::list_plugins() {
-            let kw = if keyword.is_empty() { "(default)" } else { &keyword };
+            let kw = if keyword.is_empty() {
+                "(default)"
+            } else {
+                &keyword
+            };
             println!("{id:<24} {name:<24} {kw:<12} {icon}");
         }
         return Ok(());
@@ -35,10 +39,14 @@ async fn main() -> Result<()> {
         }
     });
 
-    emit(&tx, &serde_json::json!({
-        "type": "theme",
-        "data": system::theme::load_theme()
-    })).await;
+    emit(
+        &tx,
+        &serde_json::json!({
+            "type": "theme",
+            "data": system::theme::load_theme()
+        }),
+    )
+    .await;
 
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
@@ -48,7 +56,11 @@ async fn main() -> Result<()> {
         // non-search commands — handle inline, no debounce
         if input.is_empty() {
             let items = system::usage::get_top(20).unwrap_or_default();
-            emit(&tx, &serde_json::json!({ "type": "results", "data": items })).await;
+            emit(
+                &tx,
+                &serde_json::json!({ "type": "results", "data": items }),
+            )
+            .await;
             continue;
         }
         if input.starts_with("select ") {
@@ -72,7 +84,11 @@ async fn main() -> Result<()> {
         let tx = tx.clone();
         current_task = Some(tokio::spawn(async move {
             let results = plugin::dispatch(&input).await;
-            emit(&tx, &serde_json::json!({ "type": "results", "data": results })).await;
+            emit(
+                &tx,
+                &serde_json::json!({ "type": "results", "data": results }),
+            )
+            .await;
         }));
     }
 

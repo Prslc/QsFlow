@@ -8,10 +8,10 @@ static CACHE: LazyLock<Mutex<HashMap<String, Option<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn find_icon_path(name: &str) -> Option<String> {
-    if let Ok(cache) = CACHE.lock() {
-        if let Some(cached) = cache.get(name) {
-            return cached.clone();
-        }
+    if let Ok(cache) = CACHE.lock()
+        && let Some(cached) = cache.get(name)
+    {
+        return cached.clone();
     }
 
     let result = do_find(name);

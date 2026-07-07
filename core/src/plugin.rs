@@ -129,12 +129,12 @@ fn load_or_default() -> Config {
         }
 
         // overlay user keyword overrides
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(user) = toml::from_str::<Config>(&content) {
-                for up in &user.plugins {
-                    if let Some(dp) = config.plugins.iter_mut().find(|p| p.id == up.id) {
-                        dp.keyword = up.keyword.clone();
-                    }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(user) = toml::from_str::<Config>(&content)
+        {
+            for up in &user.plugins {
+                if let Some(dp) = config.plugins.iter_mut().find(|p| p.id == up.id) {
+                    dp.keyword = up.keyword.clone();
                 }
             }
         }
@@ -161,20 +161,20 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
 
     // explicit keyword
     for entry in REGISTRY.iter().filter(|e| e.keyword == keyword) {
-        if let Ok(results) = entry.plugin.search(query, input).await {
-            if !results.is_empty() {
-                return results;
-            }
+        if let Ok(results) = entry.plugin.search(query, input).await
+            && !results.is_empty()
+        {
+            return results;
         }
     }
 
     // default fallback chain
-    if keyword != "" {
-        for entry in REGISTRY.iter().filter(|e| e.keyword == "") {
-            if let Ok(results) = entry.plugin.search(query, input).await {
-                if !results.is_empty() {
-                    return results;
-                }
+    if !keyword.is_empty() {
+        for entry in REGISTRY.iter().filter(|e| e.keyword.is_empty()) {
+            if let Ok(results) = entry.plugin.search(query, input).await
+                && !results.is_empty()
+            {
+                return results;
             }
         }
     }

@@ -16,9 +16,9 @@ fn file_icon(name: &str) -> &'static str {
         "mp3" | "wav" | "flac" | "ogg" | "aac" | "opus" => "audio-x-generic",
         "pdf" => "application-pdf",
         "zip" | "tar" | "gz" | "rar" | "7z" | "bz2" | "xz" => "package-x-generic",
-        "txt" | "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "java" | "go" | "rb"
-        | "lua" | "sh" | "bash" | "zsh" | "toml" | "yaml" | "yml" | "json" | "xml"
-        | "html" | "css" | "md" | "conf" | "ini" | "cfg" | "log" => "text-x-generic",
+        "txt" | "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "java" | "go" | "rb" | "lua"
+        | "sh" | "bash" | "zsh" | "toml" | "yaml" | "yml" | "json" | "xml" | "html" | "css"
+        | "md" | "conf" | "ini" | "cfg" | "log" => "text-x-generic",
         _ => "text-x-generic",
     }
 }
@@ -65,13 +65,12 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
         return true;
     }
     let path_lower = entry_path.to_lowercase();
-    query.split_whitespace().all(|token| path_lower.contains(token))
+    query
+        .split_whitespace()
+        .all(|token| path_lower.contains(token))
 }
 
-fn do_search(
-    query: &str,
-    matcher: fn(&str, &str, &str) -> bool,
-) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<ResultItem>> {
     let home = match get_home() {
         Ok(h) => h,
         Err(_) => return Ok(vec![]),

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use dirs;
 use std::env;
 use std::path::PathBuf;
-use dirs;
 
 pub fn get_home() -> Result<PathBuf> {
     dirs::home_dir().context("Failed to get user HOME directory")

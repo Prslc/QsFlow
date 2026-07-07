@@ -58,7 +58,7 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
             _ => continue,
         };
 
-        if !query.is_empty() && !preview.to_lowercase().contains(&query) {
+        if !query.is_empty() && !preview.to_lowercase().contains(query) {
             continue;
         }
 

@@ -49,7 +49,8 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
         let conn = Connection::open(tmp.path())?;
 
         let sql = match mode {
-            Mode::Bookmarks => "
+            Mode::Bookmarks => {
+                "
                 SELECT moz_places.title, moz_places.url
                 FROM moz_bookmarks
                 JOIN moz_places ON moz_bookmarks.fk = moz_places.id
@@ -57,8 +58,10 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
                   AND (?1 = '' OR moz_places.title LIKE ?2 OR moz_places.url LIKE ?2)
                 ORDER BY moz_bookmarks.dateAdded DESC
                 LIMIT 50
-            ",
-            Mode::History => "
+            "
+            }
+            Mode::History => {
+                "
                 SELECT moz_places.title, moz_places.url
                 FROM moz_places
                 JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id
@@ -66,7 +69,8 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
                   AND (?1 = '' OR moz_places.title LIKE ?2 OR moz_places.url LIKE ?2)
                 ORDER BY moz_historyvisits.visit_date DESC
                 LIMIT 50
-            ",
+            "
+            }
         };
 
         let pattern = format!("%{}%", query);
@@ -118,5 +122,17 @@ macro_rules! firefox_plugin {
     };
 }
 
-firefox_plugin!(FirefoxBookmarks, Bookmarks, "firefox-bookmarks", "Firefox Bookmarks", "b");
-firefox_plugin!(FirefoxHistory, History, "firefox-history", "Firefox History", "h");
+firefox_plugin!(
+    FirefoxBookmarks,
+    Bookmarks,
+    "firefox-bookmarks",
+    "Firefox Bookmarks",
+    "b"
+);
+firefox_plugin!(
+    FirefoxHistory,
+    History,
+    "firefox-history",
+    "Firefox History",
+    "h"
+);

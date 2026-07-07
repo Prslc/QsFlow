@@ -1,10 +1,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::{Context, Result};
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use anyhow::{Context, Result};
 
 pub struct WebSearch;
 
@@ -37,8 +37,13 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
         query
     );
-    let response = reqwest::get(&url).await.context("Failed to fetch suggestions")?;
-    let json: Vec<serde_json::Value> = response.json().await.context("Failed to parse suggestions")?;
+    let response = reqwest::get(&url)
+        .await
+        .context("Failed to fetch suggestions")?;
+    let json: Vec<serde_json::Value> = response
+        .json()
+        .await
+        .context("Failed to parse suggestions")?;
 
     let mut results = vec![ResultItem {
         title: format!("Search: {}", query),

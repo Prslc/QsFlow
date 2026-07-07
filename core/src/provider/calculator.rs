@@ -1,10 +1,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result;
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use anyhow::Result;
 
 pub struct Calculator;
 
@@ -63,7 +63,11 @@ mod tests {
     use super::*;
 
     fn first(expr: &str) -> String {
-        do_search(expr).unwrap().first().map(|r| r.title.clone()).unwrap_or_default()
+        do_search(expr)
+            .unwrap()
+            .first()
+            .map(|r| r.title.clone())
+            .unwrap_or_default()
     }
 
     #[test]

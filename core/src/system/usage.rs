@@ -18,7 +18,7 @@ fn conn() -> Result<Connection> {
             count INTEGER NOT NULL DEFAULT 1,
             last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
             item_json TEXT NOT NULL
-        );"
+        );",
     )?;
     Ok(conn)
 }
@@ -43,14 +43,14 @@ fn init_schema(conn: &Connection) {
             count INTEGER NOT NULL DEFAULT 1,
             last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
             item_json TEXT NOT NULL
-        );"
-    ).ok();
+        );",
+    )
+    .ok();
 }
 
 fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     let item: serde_json::Value = serde_json::from_str(item_json)?;
-    let key = item["on_click"].as_str()
-        .context("item missing on_click")?;
+    let key = item["on_click"].as_str().context("item missing on_click")?;
 
     conn.execute(
         "INSERT INTO usage (key, count, last_used_at, item_json)
@@ -70,9 +70,8 @@ fn forget_with(conn: &Connection, key: &str) -> Result<()> {
 }
 
 fn get_top_with(conn: &Connection, limit: i32) -> Result<Vec<serde_json::Value>> {
-    let mut stmt = conn.prepare(
-        "SELECT item_json FROM usage ORDER BY count DESC, last_used_at DESC LIMIT ?1"
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT item_json FROM usage ORDER BY count DESC, last_used_at DESC LIMIT ?1")?;
     let rows = stmt.query_map([limit], |row| {
         let json: String = row.get(0)?;
         Ok(serde_json::from_str(&json).unwrap_or_default())
