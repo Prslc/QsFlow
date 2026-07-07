@@ -98,6 +98,16 @@ PanelWindow {
                     )
                 }
 
+                Keys.onDeletePressed: {
+                    let idx = resultsList.currentIndex
+                    let item = resultsModel.get(idx)
+                    if (item && item.on_click) {
+                        backend.write("forget " + item.on_click + "\n")
+                        resultsModel.remove(idx)
+                        resultsList.currentIndex = Math.min(idx, resultsModel.count - 1)
+                    }
+                }
+
                 Keys.onReturnPressed: {
                     let item = resultsModel.get(resultsList.currentIndex)
                     if (item && item.on_click) {

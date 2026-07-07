@@ -67,6 +67,13 @@ async fn main() -> Result<()> {
                 return;
             }
 
+            // forget usage
+            if input.starts_with("forget ") {
+                let key = input.trim_start_matches("forget ");
+                let _ = system::usage::forget(key);
+                return;
+            }
+
             // exec application
             if input.starts_with("run ") {
                 let cmd = input.trim_start_matches("run ").to_string();

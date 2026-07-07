@@ -41,6 +41,12 @@ pub fn record(item_json: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn forget(key: &str) -> Result<()> {
+    let conn = conn()?;
+    conn.execute("DELETE FROM usage WHERE key = ?1", rusqlite::params![key])?;
+    Ok(())
+}
+
 pub fn get_top(limit: i32) -> Result<Vec<serde_json::Value>> {
     let conn = conn()?;
     let mut stmt = conn.prepare(
