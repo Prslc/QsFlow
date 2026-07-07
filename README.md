@@ -1,6 +1,10 @@
 <div align="center">
 
-# QsFlow
+# QsFlow (QuickShell)
+
+<img src="images/application_default.png" alt="App Icon" width="150" height="150"><br>
+
+English | [Chinese](docs/README_CN.md)
 
 </div>
 
@@ -94,6 +98,7 @@ enable = true
 [[plugins]]
 id = "app-search"
 keyword = ""
+enable = true
 
 [[plugins]]
 id = "firefox-bookmarks"
