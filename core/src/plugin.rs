@@ -3,7 +3,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::LazyLock;
 
-use anyhow::Context;
 use serde::Deserialize;
 
 use crate::models::ResultItem;
@@ -74,11 +73,7 @@ struct Entry {
 
 static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     let mut map: PluginMap = crate::provider::plugin_map();
-
-    let config: Config = load_config().unwrap_or_else(|_| {
-        toml::from_str(DEFAULT_CONFIG).expect("invalid default config")
-    });
-
+    let config = load_or_default();
     let mut entries = Vec::new();
     for p in &config.plugins {
         if let Some(plugin) = map.remove(p.id.as_str()) {
@@ -91,18 +86,33 @@ static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     entries
 });
 
-fn load_config() -> anyhow::Result<Config> {
-    let home = crate::system::fs::get_home()?;
-    let path = home.join(".config/qsflow/plugins.toml");
-    if !path.exists() {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
+fn load_or_default() -> Config {
+    let mut config: Config = toml::from_str(DEFAULT_CONFIG).expect("invalid default config");
+
+    if let Ok(home) = crate::system::fs::get_home() {
+        let path = home.join(".config/qsflow/plugins.toml");
+
+        // first run: write default config
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::write(&path, DEFAULT_CONFIG).ok();
         }
-        std::fs::write(&path, DEFAULT_CONFIG).ok();
+
+        // overlay user keyword overrides
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(user) = toml::from_str::<Config>(&content) {
+                for up in &user.plugins {
+                    if let Some(dp) = config.plugins.iter_mut().find(|p| p.id == up.id) {
+                        dp.keyword = up.keyword.clone();
+                    }
+                }
+            }
+        }
     }
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    toml::from_str(&content).context("invalid plugin config")
+
+    config
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
