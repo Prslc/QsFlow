@@ -17,6 +17,8 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **File & Path Search** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home;
   open results in the default application. Files get type-specific icons by extension.
 - **Clipboard History** — search and paste from `cliphist` history via `c` prefix.
+- **System Commands** — type `lock`, `reboot`, `shutdown`, `suspend`, or `logout`
+  to run system actions directly from the launcher.
 - **Firefox Bookmarks & History** — read `places.sqlite` directly; no browser extension needed.
 - **Web Suggestions** — live Google search autocomplete via `s` prefix.
 - **GitHub Search** — quick link with `g` prefix.
@@ -68,6 +70,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `c <query>` | search clipboard history (cliphist) |
 | `s <query>` | Google suggestions |
 | `g <query>` | GitHub search |
+| `lock` / `reboot` / `shutdown` | system commands |
 | `2 + 3` | inline calculator |
 | _(empty)_ | show most-used items |
 | `Enter` | launch selected result |
@@ -80,6 +83,11 @@ On first run, `~/.config/qsflow/plugins.toml` is generated automatically:
 ```toml
 [[plugins]]
 id = "calculator"
+keyword = ""
+enable = true
+
+[[plugins]]
+id = "system-commands"
 keyword = ""
 enable = true
 
