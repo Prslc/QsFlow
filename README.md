@@ -14,14 +14,20 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 ## Features
 
 - **App Launcher** — fuzzy-search `.desktop` entries across XDG data directories.
+- **File & Path Search** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home;
+  open results in the default application via `xdg-open`.
 - **Firefox Bookmarks & History** — read `places.sqlite` directly; no browser extension needed.
 - **Web Suggestions** — live DuckDuckGo autocomplete via `s` prefix.
 - **GitHub Search** — quick link with `g` prefix.
 - **Inline Calculator** — evaluate math expressions automatically; no prefix required.
-- **Usage History** — frequently-launched items surface on empty input, ranked by count.
-- **GTK Theme Integration** — reads accent colors from your GTK4 theme CSS.
+- **Usage History** — frequently-launched items surface on empty input, ranked by count;
+  press `Delete` to remove an entry.
+- **GTK Theme Integration** — reads accent colors from your GTK4 theme CSS, falling
+  back to built-in defaults.
 - **Plugin System** — TOML-driven plugin registry; enable, disable, reorder, or remap
-  keywords without touching code.
+  keywords without touching code. New plugins are picked up automatically on startup.
+- **Icon Resolution** — resolves application icons from Papirus, Breeze, Adwaita, and
+  hicolor themes, plus Flatpak exports and legacy pixmaps. Results are cached per session.
 
 ## Requirements
 
@@ -55,6 +61,8 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `firefox` | fuzzy-search installed applications |
 | `b <query>` | search Firefox bookmarks |
 | `h <query>` | search Firefox history |
+| `f <query>` | search files by name |
+| `d <query>` | search files by path (multi-token fuzzy) |
 | `s <query>` | DuckDuckGo suggestions |
 | `g <query>` | GitHub search |
 | `2 + 3` | inline calculator |
@@ -90,6 +98,14 @@ keyword = "s"
 [[plugins]]
 id = "github"
 keyword = "g"
+
+[[plugins]]
+id = "file-search"
+keyword = "f"
+
+[[plugins]]
+id = "path-search"
+keyword = "d"
 ```
 
 Reorder entries to change priority, change `keyword` to remap prefixes, or remove
@@ -101,5 +117,7 @@ built-in defaults).
 ## Credit
 
 - **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick shell toolkit that powers the Wayland overlay.
+- **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — Firefox profile and usage database access.
+- **[walkdir](https://github.com/BurntSushi/walkdir)** — recursive directory traversal for file and path search.
