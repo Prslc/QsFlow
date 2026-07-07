@@ -2,7 +2,8 @@ use anyhow::Result;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
-pub mod models;
+mod models;
+mod plugin;
 mod provider;
 mod system;
 
@@ -10,37 +11,6 @@ async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
     if let Ok(json) = serde_json::to_string(payload) {
         let _ = tx.send(json).await;
     }
-}
-
-async fn do_search(input: &str) -> Vec<models::ResultItem> {
-    let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
-        (key.trim(), text.trim())
-    } else {
-        ("", input)
-    };
-
-    let result = match plugin_key {
-        "b" => provider::firefox::firefox_search(
-            provider::firefox::Mode::Bookmarks, search_text,
-        ).await,
-        "h" => provider::firefox::firefox_search(
-            provider::firefox::Mode::History, search_text,
-        ).await,
-        "s" => provider::web::search_suggestions(search_text).await,
-        "g" => provider::github::github_search(search_text),
-
-        _ => {
-            let owned_input = input.to_string();
-            if let Ok(r) = provider::calculator::calculate(&owned_input) {
-                if !r.is_empty() { return r; }
-            }
-            tokio::task::spawn_blocking(move || {
-                provider::application::search_apps(&owned_input)
-            }).await.unwrap_or_else(|_| Ok(vec![]))
-        },
-    };
-
-    result.unwrap_or_default()
 }
 
 #[tokio::main]
@@ -93,7 +63,7 @@ async fn main() -> Result<()> {
 
         let tx = tx.clone();
         current_task = Some(tokio::spawn(async move {
-            let results = do_search(&input).await;
+            let results = plugin::dispatch(&input).await;
             emit(&tx, &serde_json::json!({ "type": "results", "data": results })).await;
         }));
     }

@@ -1,9 +1,34 @@
-use anyhow::Result;
+use std::future::Future;
+use std::pin::Pin;
 
+use anyhow::Result;
 use crate::models::ResultItem;
+use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 
-pub fn calculate(expr: &str) -> Result<Vec<ResultItem>> {
+pub struct Calculator;
+
+impl Plugin for Calculator {
+    fn meta(&self) -> &Meta {
+        &Meta {
+            id: "calculator",
+            name: "Calculator",
+            icon: "calculator",
+            keyword: "",
+        }
+    }
+
+    fn search(
+        &self,
+        _query: &str,
+        full: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
+        let expr = full.to_string();
+        Box::pin(async move { do_search(&expr) })
+    }
+}
+
+fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
     if expr.is_empty() {
         return Ok(vec![]);
     }

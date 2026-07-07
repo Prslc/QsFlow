@@ -1,20 +1,23 @@
-use anyhow::Result;
-use std::path::PathBuf;
 use std::fs;
-use tempfile::NamedTempFile;
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
+
+use anyhow::Result;
 use rusqlite::Connection;
+use tempfile::NamedTempFile;
 use tokio::task;
 
-use crate::models::ResultItem;     
+use crate::models::ResultItem;
+use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 
-pub enum Mode {
+enum Mode {
     Bookmarks,
     History,
 }
 
-/// Locates the Firefox `places.sqlite` database file.
-pub fn get_firefox_db_path() -> Result<PathBuf> {
+fn find_db() -> Result<PathBuf> {
     let home = get_home()?;
     let bases = [
         home.join(".mozilla/firefox"),
@@ -35,18 +38,14 @@ pub fn get_firefox_db_path() -> Result<PathBuf> {
     anyhow::bail!("No Firefox profile with places.sqlite found")
 }
 
-pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
-    let mode = mode;
+async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
     let query = query.to_string();
+    task::spawn_blocking(move || {
+        let db_path = find_db()?;
+        let tmp = NamedTempFile::new()?;
+        fs::copy(&db_path, tmp.path())?;
 
-    let results = task::spawn_blocking(move || -> Result<Vec<ResultItem>> {
-        let db_path = get_firefox_db_path()?;
-
-        // copy database to tmpfs
-        let tmp_file = NamedTempFile::new()?;
-        fs::copy(&db_path, tmp_file.path())?;
-
-        let conn = Connection::open(tmp_file.path())?;
+        let conn = Connection::open(tmp.path())?;
 
         let sql = match mode {
             Mode::Bookmarks => "
@@ -69,10 +68,9 @@ pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> 
             ",
         };
 
-        let search_pattern = format!("%{}%", query);
-
+        let pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([query.as_str(), &search_pattern], |row| {
+        let rows = stmt.query_map([query.as_str(), &pattern], |row| {
             let title: Option<String> = row.get(0)?;
             let url: String = row.get(1)?;
             Ok(ResultItem {
@@ -87,10 +85,36 @@ pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> 
         for row in rows {
             results.push(row?);
         }
-
         Ok(results)
     })
-    .await??;
-
-    Ok(results)
+    .await?
 }
+
+macro_rules! firefox_plugin {
+    ($name:ident, $mode:ident, $id:literal, $display:literal, $kw:literal) => {
+        pub struct $name;
+
+        impl Plugin for $name {
+            fn meta(&self) -> &Meta {
+                &Meta {
+                    id: $id,
+                    name: $display,
+                    icon: "firefox",
+                    keyword: $kw,
+                }
+            }
+
+            fn search(
+                &self,
+                query: &str,
+                _full: &str,
+            ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
+                let query = query.to_string();
+                Box::pin(async move { do_search(Mode::$mode, &query).await })
+            }
+        }
+    };
+}
+
+firefox_plugin!(FirefoxBookmarks, Bookmarks, "firefox-bookmarks", "Firefox Bookmarks", "b");
+firefox_plugin!(FirefoxHistory, History, "firefox-history", "Firefox History", "h");
