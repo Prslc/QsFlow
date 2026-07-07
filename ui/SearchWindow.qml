@@ -36,7 +36,7 @@ PanelWindow {
         id: content
         anchors.horizontalCenter: parent.horizontalCenter
         width: 600
-        height: (searchInput.text.length === 0 || resultsModel.count === 0)
+        height: (searchInput.text.length === 0 && resultsModel.count === 0)
                 ? 72
                 : Math.min(childrenRect.height + 25, 470)
 
@@ -91,12 +91,13 @@ PanelWindow {
                 Keys.onReturnPressed: {
                     let item = resultsModel.get(resultsList.currentIndex)
                     if (item && item.on_click) {
-                        backend.write("select " + JSON.stringify({
+                        let json = JSON.stringify({
                             title: item.title,
-                            summary: item.summary,
+                            summary: item.summary || "",
                             on_click: item.on_click,
-                            icon: item.icon
-                        }) + "\n")
+                            icon: item.icon || ""
+                        })
+                        backend.write("select " + json + "\n")
                         window.launch(item.on_click)
                     }
                 }

@@ -51,10 +51,6 @@ Process {
     }
 
     function sendSearch(text) {
-        if (text.length === 0) {
-            if (model) model.clear()
-            return
-        }
         write(text + "\n")
     }
 }
