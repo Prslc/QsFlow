@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::fs;
-use glob::glob;
 use tempfile::NamedTempFile;
 use rusqlite::Connection;
 use tokio::task;
@@ -17,16 +16,17 @@ pub enum Mode {
 /// Locates the Firefox `places.sqlite` database file.
 pub fn get_firefox_db_path() -> Result<PathBuf> {
     let home = get_home()?;
-    let pattern = home.join(".config/mozilla/firefox/*.default-release");
-    let pattern_str = pattern.to_str().context("Invalid UTF-8 path string")?;
+    let base = home.join(".mozilla/firefox");
 
-    for entry in glob(pattern_str).context("Failed to read glob pattern")? {
-        if let Ok(path) = entry {
-            return Ok(path.join("places.sqlite"));
+    for entry in std::fs::read_dir(&base).context("Failed to read Firefox profile directory")? {
+        let entry = entry?;
+        let db = entry.path().join("places.sqlite");
+        if db.exists() {
+            return Ok(db);
         }
     }
 
-    anyhow::bail!("No Firefox profile found")
+    anyhow::bail!("No Firefox profile with places.sqlite found")
 }
 
 pub async fn firefox_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
