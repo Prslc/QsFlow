@@ -9,6 +9,20 @@ use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
 
+fn file_icon(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or("") {
+        "jpg" | "jpeg" | "png" | "gif" | "svg" | "webp" | "bmp" | "ico" => "image-x-generic",
+        "mp4" | "mkv" | "avi" | "webm" | "mov" | "flv" => "video-x-generic",
+        "mp3" | "wav" | "flac" | "ogg" | "aac" | "opus" => "audio-x-generic",
+        "pdf" => "application-pdf",
+        "zip" | "tar" | "gz" | "rar" | "7z" | "bz2" | "xz" => "package-x-generic",
+        "txt" | "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "java" | "go" | "rb"
+        | "lua" | "sh" | "bash" | "zsh" | "toml" | "yaml" | "yml" | "json" | "xml"
+        | "html" | "css" | "md" | "conf" | "ini" | "cfg" | "log" => "text-x-generic",
+        _ => "text-x-generic",
+    }
+}
+
 macro_rules! search_plugin {
     ($name:ident, $id:literal, $display:literal, $kw:literal, $matcher:ident) => {
         pub struct $name;
@@ -107,7 +121,8 @@ fn do_search(
             let (title, icon) = if is_dir {
                 (format!("{}/", name), "folder")
             } else {
-                (name.into_owned(), "text-x-generic")
+                let icon = file_icon(&name);
+                (name.into_owned(), icon)
             };
 
             results.push(ResultItem {
