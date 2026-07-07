@@ -7,6 +7,7 @@ use walkdir::WalkDir;
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
+use crate::system::icon::find_icon_path;
 
 pub struct FileSearch;
 
@@ -66,7 +67,9 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
             });
 
         for entry in walker.filter_map(|e| e.ok()) {
-            if !entry.file_type().is_file() {
+            let ft = entry.file_type();
+            let is_dir = ft.is_dir();
+            if !is_dir && !ft.is_file() {
                 continue;
             }
 
@@ -77,12 +80,19 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
 
             let path = entry.path().to_string_lossy().into_owned();
             let file_url = format!("file://{}", path);
+            let name = entry.file_name().to_string_lossy().into_owned();
+
+            let (title, icon) = if is_dir {
+                (format!("{}/", name), "folder")
+            } else {
+                (name, "")
+            };
 
             results.push(ResultItem {
-                title: entry.file_name().to_string_lossy().into_owned(),
-                summary: Some(path.clone()),
+                title,
+                summary: Some(path),
                 on_click: Some(file_url),
-                icon: Some("".to_string()),
+                icon: find_icon_path(icon).or_else(|| Some("".to_string())),
             });
 
             if results.len() >= 50 {

@@ -116,7 +116,8 @@ fn load_or_default() -> Config {
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
-    let (keyword, query) = input.split_once(' ')
+    let (keyword, query) = input
+        .split_once(' ')
         .map(|(k, q)| (k.trim(), q.trim()))
         .unwrap_or(("", input));
 
