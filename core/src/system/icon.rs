@@ -1,11 +1,9 @@
-use crate::system::fs::{get_home, get_resource_path};
+use crate::system::fs::get_resource_path;
 use std::path::Path;
 
-/// Searches for an application icon or returns the project's default icon.
 pub fn find_icon_path(name: &str) -> Option<String> {
-    let default_icon: &str = "images/application_default.png";
+    let default_icon = "images/application_default.png";
 
-    // 1. Check if the name is an absolute path already
     if name.is_empty() {
         return get_resource_path(default_icon);
     }
@@ -13,42 +11,56 @@ pub fn find_icon_path(name: &str) -> Option<String> {
         return Some(name.to_string());
     }
 
-    // 2. Search in standard Linux icon paths
-    let mut base_dirs = vec![
-        // System-wide SVG icons (highest quality)
-        "/usr/share/icons/hicolor/scalable/apps".to_string(),
-        // System-wide fixed-size PNG icons (fallback)
-        "/usr/share/icons/hicolor/48x48/apps".to_string(),
-        // Legacy path for miscellaneous application icons
-        "/usr/share/pixmaps".to_string(),
-        // Flatpak system-wide exported icons
-        "/var/lib/flatpak/exports/share/icons/hicolor/scalable/apps".to_string(),
-    ];
+    let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
+    let categories = ["places", "apps", "mimetypes", "devices"];
+    let sizes = ["scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16"];
+    let exts = ["svg", "png"];
 
-    if let Ok(home) = get_home() {
-        // Flatpak user-specific exported icons
-        let flatpak_user_icon_path = home
-            .join(".local/share/flatpak/exports/share/icons/hicolor/scalable/apps")
-            .to_string_lossy()
-            .into_owned();
-        base_dirs.push(flatpak_user_icon_path);
-    }
-
-    // 3. Fallback to default icon
-    for dir in base_dirs {
-        for ext in ["svg", "png"] {
-            let path = format!("{}/{}.{}", dir, name, ext);
-            if Path::new(&path).exists() {
-                return Some(path);
+    for theme in themes {
+        for category in categories {
+            for size in sizes {
+                for ext in exts {
+                    let path = format!("/usr/share/icons/{}/{}/{}/{}.{}", theme, size, category, name, ext);
+                    if Path::new(&path).exists() {
+                        return Some(path);
+                    }
+                }
             }
         }
     }
 
-    // search local images
-    if let Some(internal) = get_resource_path(&format!("images/{}.png", name)) {
-        return Some(internal);
+    // pixmaps — legacy path, many apps drop icons here
+    for ext in exts {
+        let path = format!("/usr/share/pixmaps/{}.{}", name, ext);
+        if Path::new(&path).exists() {
+            return Some(path);
+        }
     }
 
-    // default icon
+    // flatpak exports
+    let mut flatpak_bases = vec!["/var/lib/flatpak/exports/share".to_string()];
+    if let Ok(home) = std::env::var("HOME") {
+        flatpak_bases.push(format!("{}/.local/share/flatpak/exports/share", home));
+    }
+    for base in &flatpak_bases {
+        for category in categories {
+            for size in sizes {
+                for ext in exts {
+                    let path = format!("{}/icons/hicolor/{}/{}/{}.{}", base, size, category, name, ext);
+                    if Path::new(&path).exists() {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    // project images
+    for ext in exts {
+        if let Some(p) = get_resource_path(&format!("images/{}.{}", name, ext)) {
+            return Some(p);
+        }
+    }
+
     get_resource_path(default_icon)
 }
