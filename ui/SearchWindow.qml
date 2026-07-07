@@ -8,9 +8,16 @@ PanelWindow {
 
     Component.onCompleted: {
         if (this.WlrLayershell !== undefined) {
-            this.WlrLayershell.layer = WlrLayer.Overlay;    // Overlay display
+            this.WlrLayershell.layer = WlrLayer.Overlay;
             this.WlrLayershell.namespace = "QsFlow";
         }
+        initTimer.start()
+    }
+
+    Timer {
+        id: initTimer
+        interval: 100
+        onTriggered: window.searchTriggered("")
     }
 
     MouseArea {
