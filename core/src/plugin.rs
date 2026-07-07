@@ -91,7 +91,10 @@ fn load_config() -> anyhow::Result<Config> {
     let home = crate::system::fs::get_home()?;
     let path = home.join(".config/qsflow/plugins.toml");
     if !path.exists() {
-        anyhow::bail!("no user config");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(&path, DEFAULT_CONFIG).ok();
     }
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read {}", path.display()))?;
