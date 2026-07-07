@@ -135,6 +135,7 @@ fn load_or_default() -> Config {
             for up in &user.plugins {
                 if let Some(dp) = config.plugins.iter_mut().find(|p| p.id == up.id) {
                     dp.keyword = up.keyword.clone();
+                    dp.enable = up.enable;
                 }
             }
         }
