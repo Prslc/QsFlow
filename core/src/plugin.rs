@@ -11,38 +11,47 @@ const DEFAULT_CONFIG: &str = r#"
 [[plugins]]
 id = "calculator"
 keyword = ""
+enable = true
 
 [[plugins]]
 id = "app-search"
 keyword = ""
+enable = true
 
 [[plugins]]
 id = "firefox-bookmarks"
 keyword = "b"
+enable = true
 
 [[plugins]]
 id = "firefox-history"
 keyword = "h"
+enable = true
 
 [[plugins]]
 id = "web-search"
 keyword = "s"
+enable = true
 
 [[plugins]]
 id = "github"
 keyword = "g"
+enable = true
 
 [[plugins]]
 id = "file-search"
 keyword = "f"
+enable = true
 
 [[plugins]]
 id = "path-search"
 keyword = "d"
+enable = true
 
 [[plugins]]
 id = "clipboard"
 keyword = "c"
+enable = true
 "#;
 
 #[derive(Deserialize)]
@@ -54,7 +63,11 @@ struct Config {
 struct PluginEntry {
     id: String,
     keyword: String,
+    #[serde(default = "default_enable")]
+    enable: bool,
 }
+
+fn default_enable() -> bool { true }
 
 pub struct Meta {
     pub id: &'static str,
@@ -84,6 +97,7 @@ static REGISTRY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     let config = load_or_default();
     let mut entries = Vec::new();
     for p in &config.plugins {
+        if !p.enable { continue; }
         if let Some(plugin) = map.remove(p.id.as_str()) {
             entries.push(Entry {
                 plugin,
