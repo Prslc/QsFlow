@@ -143,3 +143,5 @@ built-in defaults).
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — Firefox profile and usage database access.
 - **[walkdir](https://github.com/BurntSushi/walkdir)** — recursive directory traversal for file and path search.
+- **[nucleo](https://github.com/helix-editor/nucleo)** — fuzzy matching for application search.
+- **[rustc-hash](https://github.com/rust-lang/rustc-hash)** — fast non-cryptographic hashing for plugin maps and icon cache.
