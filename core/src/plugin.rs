@@ -7,49 +7,7 @@ use serde::Deserialize;
 
 use crate::models::ResultItem;
 
-const DEFAULT_CONFIG: &str = r#"
-[[plugins]]
-id = "calculator"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "system-commands"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "app-search"
-keyword = ""
-
-[[plugins]]
-id = "firefox-bookmarks"
-keyword = "b"
-
-[[plugins]]
-id = "firefox-history"
-keyword = "h"
-
-[[plugins]]
-id = "web-search"
-keyword = "s"
-
-[[plugins]]
-id = "github"
-keyword = "g"
-
-[[plugins]]
-id = "file-search"
-keyword = "f"
-
-[[plugins]]
-id = "path-search"
-keyword = "d"
-
-[[plugins]]
-id = "clipboard"
-keyword = "c"
-"#;
+const DEFAULT_CONFIG: &str = include_str!("../default-plugins.toml");
 
 #[derive(Deserialize)]
 struct Config {
