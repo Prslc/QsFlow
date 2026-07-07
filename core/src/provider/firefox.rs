@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::PathBuf;
 use std::fs;
 use tempfile::NamedTempFile;
@@ -16,13 +16,19 @@ pub enum Mode {
 /// Locates the Firefox `places.sqlite` database file.
 pub fn get_firefox_db_path() -> Result<PathBuf> {
     let home = get_home()?;
-    let base = home.join(".mozilla/firefox");
+    let bases = [
+        home.join(".mozilla/firefox"),
+        home.join(".config/mozilla/firefox"),
+    ];
 
-    for entry in std::fs::read_dir(&base).context("Failed to read Firefox profile directory")? {
-        let entry = entry?;
-        let db = entry.path().join("places.sqlite");
-        if db.exists() {
-            return Ok(db);
+    for base in &bases {
+        if let Ok(entries) = std::fs::read_dir(base) {
+            for entry in entries.flatten() {
+                let db = entry.path().join("places.sqlite");
+                if db.exists() {
+                    return Ok(db);
+                }
+            }
         }
     }
 
