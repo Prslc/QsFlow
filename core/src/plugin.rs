@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::future::Future;
+use rustc_hash::FxHashMap as HashMap;
 use std::pin::Pin;
 use std::sync::OnceLock;
 

@@ -7,12 +7,12 @@ pub mod github;
 pub mod system;
 pub mod web;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use crate::plugin::Plugin;
 
 pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
-    let mut m: HashMap<&'static str, Box<dyn Plugin>> = HashMap::new();
+    let mut m: HashMap<&'static str, Box<dyn Plugin>> = HashMap::default();
     m.insert("calculator", Box::new(calculator::Calculator));
     m.insert("app-search", Box::new(application::AppSearch));
     m.insert("firefox-bookmarks", Box::new(firefox::FirefoxBookmarks));

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use rustc_hash::FxHashMap as HashMap;
 
 use crate::system::fs::get_resource_path;
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
 pub fn find_icon_path(name: &str) -> Option<String> {
