@@ -91,6 +91,12 @@ PanelWindow {
                 Keys.onReturnPressed: {
                     let item = resultsModel.get(resultsList.currentIndex)
                     if (item && item.on_click) {
+                        backend.write("select " + JSON.stringify({
+                            title: item.title,
+                            summary: item.summary,
+                            on_click: item.on_click,
+                            icon: item.icon
+                        }) + "\n")
                         window.launch(item.on_click)
                     }
                 }

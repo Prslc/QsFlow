@@ -49,7 +49,21 @@ async fn main() -> Result<()> {
         // exec new task
         current_task = Some(tokio::spawn(async move {
             if input.is_empty() {
-                let _ = tx_clone.send("[]".to_string()).await;
+                let items = system::usage::get_top(20).unwrap_or_default();
+                let wrapped = serde_json::json!({
+                    "type": "results",
+                    "data": items
+                });
+                if let Ok(json) = serde_json::to_string(&wrapped) {
+                    let _ = tx_clone.send(json).await;
+                }
+                return;
+            }
+
+            // record usage
+            if input.starts_with("select ") {
+                let json = input.trim_start_matches("select ");
+                let _ = system::usage::record(json);
                 return;
             }
 
