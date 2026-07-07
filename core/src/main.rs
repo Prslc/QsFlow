@@ -6,12 +6,46 @@ pub mod models;
 mod provider;
 mod system;
 
+async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
+    if let Ok(json) = serde_json::to_string(payload) {
+        let _ = tx.send(json).await;
+    }
+}
+
+async fn do_search(input: &str) -> Vec<models::ResultItem> {
+    let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
+        (key.trim(), text.trim())
+    } else {
+        ("", input)
+    };
+
+    let result = match plugin_key {
+        "b" => provider::firefox::firefox_search(
+            provider::firefox::Mode::Bookmarks, search_text,
+        ).await,
+        "h" => provider::firefox::firefox_search(
+            provider::firefox::Mode::History, search_text,
+        ).await,
+        "s" => provider::web::search_suggestions(search_text).await,
+        "g" => provider::github::github_search(search_text),
+
+        _ => {
+            let owned_input = input.to_string();
+            if let Ok(r) = provider::calculator::calculate(&owned_input) {
+                if !r.is_empty() { return r; }
+            }
+            tokio::task::spawn_blocking(move || {
+                provider::application::search_apps(&owned_input)
+            }).await.unwrap_or_else(|_| Ok(vec![]))
+        },
+    };
+
+    result.unwrap_or_default()
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let stdin = io::stdin();
-    let mut reader = BufReader::new(stdin).lines();
-
-    // pipe
+    let mut reader = BufReader::new(io::stdin()).lines();
     let (tx, mut rx) = mpsc::channel::<String>(32);
 
     tokio::spawn(async move {
@@ -23,110 +57,44 @@ async fn main() -> Result<()> {
         }
     });
 
-    let theme = system::theme::load_theme();
-
-    let theme_json = serde_json::json!({
+    emit(&tx, &serde_json::json!({
         "type": "theme",
-        "data": theme
-    })
-    .to_string();
-
-    // send theme
-    let _ = tx.send(theme_json).await;
+        "data": system::theme::load_theme()
+    })).await;
 
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
     while let Some(line) = reader.next_line().await? {
         let input = line.trim().to_string();
 
-        // abort task
+        // non-search commands — handle inline, no debounce
+        if input.is_empty() {
+            let items = system::usage::get_top(20).unwrap_or_default();
+            emit(&tx, &serde_json::json!({ "type": "results", "data": items })).await;
+            continue;
+        }
+        if input.starts_with("select ") {
+            let _ = system::usage::record(input.trim_start_matches("select "));
+            continue;
+        }
+        if input.starts_with("forget ") {
+            let _ = system::usage::forget(input.trim_start_matches("forget "));
+            continue;
+        }
+        if input.starts_with("run ") {
+            system::executor::execute_command(input.trim_start_matches("run "));
+            continue;
+        }
+
+        // search — debounce via abort
         if let Some(handle) = current_task.take() {
             handle.abort();
         }
 
-        let tx_clone = tx.clone();
-
-        // exec new task
+        let tx = tx.clone();
         current_task = Some(tokio::spawn(async move {
-            if input.is_empty() {
-                let items = system::usage::get_top(20).unwrap_or_default();
-                let wrapped = serde_json::json!({
-                    "type": "results",
-                    "data": items
-                });
-                if let Ok(json) = serde_json::to_string(&wrapped) {
-                    let _ = tx_clone.send(json).await;
-                }
-                return;
-            }
-
-            // record usage
-            if input.starts_with("select ") {
-                let json = input.trim_start_matches("select ");
-                let _ = system::usage::record(json);
-                return;
-            }
-
-            // forget usage
-            if input.starts_with("forget ") {
-                let key = input.trim_start_matches("forget ");
-                let _ = system::usage::forget(key);
-                return;
-            }
-
-            // exec application
-            if input.starts_with("run ") {
-                let cmd = input.trim_start_matches("run ").to_string();
-                system::executor::execute_command(&cmd);
-                return;
-            }
-
-            let (plugin_key, search_text) = if let Some((key, text)) = input.split_once(' ') {
-                (key.trim(), text.trim())
-            } else {
-                ("", input.as_str())
-            };
-
-            let results_res = match plugin_key {
-                "b" => {
-                    provider::firefox::firefox_search(
-                        provider::firefox::Mode::Bookmarks,
-                        search_text,
-                    )
-                    .await
-                }
-                "h" => {
-                    provider::firefox::firefox_search(provider::firefox::Mode::History, search_text)
-                        .await
-                }
-                "s" => provider::web::search_suggestions(search_text).await,
-                "g" => provider::github::github_search(search_text),
-
-                _ => {
-                    let owned_input = input.clone();
-                    let calc_result = provider::calculator::calculate(&owned_input)
-                        .ok()
-                        .filter(|r| !r.is_empty());
-
-                    match calc_result {
-                        Some(r) => Ok(r),
-                        None => tokio::task::spawn_blocking(move || {
-                            provider::application::search_apps(&owned_input)
-                        }).await.unwrap_or_else(|_| Ok(vec![])),
-                    }
-                },
-            };
-
-            if let Ok(results) = results_res {
-                let wrapped = serde_json::json!({
-                    "type": "results",
-                    "data": results
-                });
-
-                if let Ok(json) = serde_json::to_string(&wrapped) {
-                    let _ = tx_clone.send(json).await;
-                }
-            }
+            let results = do_search(&input).await;
+            emit(&tx, &serde_json::json!({ "type": "results", "data": results })).await;
         }));
     }
 
