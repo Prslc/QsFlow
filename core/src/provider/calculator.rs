@@ -11,9 +11,9 @@ pub struct Calculator;
 impl Plugin for Calculator {
     fn meta(&self) -> &Meta {
         &Meta {
-            id: "calculator",
+            id: "calc",
             name: "Calculator",
-            icon: "calculator",
+            icon: "calc",
             keyword: "",
         }
     }
@@ -51,7 +51,7 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
                 title: formatted,
                 summary: Some(expr.to_string()),
                 on_click: None,
-                icon: find_icon_path("calculator"),
+                icon: find_icon_path("calc"),
             }])
         }
         Err(_) => Ok(vec![]),

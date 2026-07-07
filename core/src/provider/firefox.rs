@@ -11,6 +11,7 @@ use tokio::task;
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
+use crate::system::icon::find_icon_path;
 
 enum Mode {
     Bookmarks,
@@ -69,15 +70,16 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
         };
 
         let pattern = format!("%{}%", query);
+        let firefox_icon = find_icon_path("firefox");
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([query.as_str(), &pattern], |row| {
+        let rows = stmt.query_map([query.as_str(), &pattern], move |row| {
             let title: Option<String> = row.get(0)?;
             let url: String = row.get(1)?;
             Ok(ResultItem {
                 title: title.unwrap_or_else(|| "[no title]".to_string()),
                 summary: Some(url.clone()),
                 on_click: Some(url),
-                icon: Some("".to_string()),
+                icon: firefox_icon.clone(),
             })
         })?;
 

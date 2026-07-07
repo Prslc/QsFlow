@@ -107,7 +107,7 @@ fn do_search(
             let (title, icon) = if is_dir {
                 (format!("{}/", name), "folder")
             } else {
-                (name.into_owned(), "")
+                (name.into_owned(), "text-x-generic")
             };
 
             results.push(ResultItem {
