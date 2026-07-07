@@ -111,13 +111,6 @@ PanelWindow {
                 Keys.onReturnPressed: {
                     let item = resultsModel.get(resultsList.currentIndex)
                     if (item && item.on_click) {
-                        let json = JSON.stringify({
-                            title: item.title,
-                            summary: item.summary || "",
-                            on_click: item.on_click,
-                            icon: item.icon || ""
-                        })
-                        backend.write("select " + json + "\n")
                         window.launch(item.on_click)
                     }
                 }
@@ -148,23 +141,31 @@ PanelWindow {
     function launch(target) {
         if (!target) return
 
+        let idx = resultsList.currentIndex
+        let item = resultsModel.get(idx)
+        if (item && item.on_click) {
+            backend.write("select " + JSON.stringify({
+                title: item.title,
+                summary: item.summary || "",
+                on_click: item.on_click,
+                icon: item.icon || ""
+            }) + "\n")
+        }
+
         let isUrl = target.startsWith("http") ||
                     target.startsWith("file:") ||
                     target.startsWith("mailto:")
 
         if (target.startsWith("run:")) {
             window.searchTriggered("run " + target.substring(4))
-            exitTimer.start()
         } else if (isUrl) {
             Qt.openUrlExternally(target)
-            Qt.quit()
         } else {
             window.searchTriggered("run " + target)
-            exitTimer.start()
         }
+        exitTimer.start()
     }
 
-    // wait exec over
     Timer {
         id: exitTimer
         interval: 150
