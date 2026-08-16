@@ -65,6 +65,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `c <关键词>` | 搜索剪贴板历史 |
 | `s <关键词>` | Google 搜索建议 |
 | `g <关键词>` | GitHub 搜索 |
+| `?` | 显示可用关键词及提示 |
 | `lock` / `reboot` / `shutdown` | 系统命令 |
 | `2 + 3` | 即时计算 |
 | *(留空)* | 展示高频使用项 |

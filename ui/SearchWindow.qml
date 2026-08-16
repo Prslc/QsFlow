@@ -83,7 +83,7 @@ PanelWindow {
                 Keys.onEscapePressed: Qt.quit()
 
                 onTextChanged: {
-                    if (text.endsWith(" "))
+                    if (text.trim() === "?" || text.endsWith(" "))
                         resultsModel.clear()
                     window.searchTriggered(text)
                 }

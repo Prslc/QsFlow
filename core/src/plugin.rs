@@ -117,6 +117,22 @@ pub fn list_plugins() -> Vec<(&'static str, &'static str, &'static str, String, 
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
+    if input.trim() == "?" {
+        return registry()
+            .iter()
+            .filter(|entry| !entry.keyword.is_empty())
+            .map(|entry| {
+                let meta = entry.plugin.meta();
+                ResultItem {
+                    title: meta.name.to_string(),
+                    summary: Some(format!("{} <query> - {}", entry.keyword, meta.ready)),
+                    on_click: None,
+                    icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
+                }
+            })
+            .collect();
+    }
+
     let (keyword, query) = input
         .split_once(' ')
         .map(|(k, q)| (k.trim(), q.trim()))

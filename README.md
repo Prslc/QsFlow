@@ -74,6 +74,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `c <query>` | search clipboard history (cliphist) |
 | `s <query>` | Google suggestions |
 | `g <query>` | GitHub search |
+| `?` | show available keyword modes and hints |
 | `lock` / `reboot` / `shutdown` | system commands |
 | `2 + 3` | inline calculator |
 | _(empty)_ | show most-used items |
