@@ -120,12 +120,16 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
     if input.trim() == "?" {
         return registry()
             .iter()
-            .filter(|entry| !entry.keyword.is_empty())
             .map(|entry| {
                 let meta = entry.plugin.meta();
+                let usage = if entry.keyword.is_empty() {
+                    "* (default)".to_string()
+                } else {
+                    format!("{} <query>", entry.keyword)
+                };
                 ResultItem {
                     title: meta.name.to_string(),
-                    summary: Some(format!("{} <query> - {}", entry.keyword, meta.ready)),
+                    summary: Some(format!("{usage} - {}", meta.ready)),
                     on_click: None,
                     icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
                 }
