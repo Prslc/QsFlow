@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 use crate::models::ResultItem;
+use crate::system::icon::find_icon_path;
 
 const DEFAULT_CONFIG: &str = include_str!("../default-plugins.toml");
 
@@ -119,6 +120,19 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         .split_once(' ')
         .map(|(k, q)| (k.trim(), q.trim()))
         .unwrap_or(("", input));
+
+    if !keyword.is_empty()
+        && query.is_empty()
+        && let Some(entry) = registry().iter().find(|entry| entry.keyword == keyword)
+    {
+        let meta = entry.plugin.meta();
+        return vec![ResultItem {
+            title: meta.name.to_string(),
+            summary: Some("Ready to search".to_string()),
+            on_click: None,
+            icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
+        }];
+    }
 
     // explicit keyword
     for entry in registry().iter().filter(|e| e.keyword == keyword) {

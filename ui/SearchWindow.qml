@@ -82,7 +82,11 @@ PanelWindow {
 
                 Keys.onEscapePressed: Qt.quit()
 
-                onTextChanged: window.searchTriggered(text)
+                onTextChanged: {
+                    if (text.endsWith(" "))
+                        resultsModel.clear()
+                    window.searchTriggered(text)
+                }
 
                 Keys.onDownPressed: {
                     resultsList.currentIndex = Math.min(

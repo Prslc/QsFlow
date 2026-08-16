@@ -50,10 +50,10 @@ async fn main() -> Result<()> {
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
     while let Some(line) = reader.next_line().await? {
-        let input = line.trim().to_string();
+        let input = line.trim_start().to_string();
 
         // non-search commands — handle inline, no debounce
-        if input.is_empty() {
+        if input.trim().is_empty() {
             let items = system::usage::get_top(20).unwrap_or_default();
             emit(
                 &tx,
