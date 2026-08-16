@@ -97,7 +97,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
 }
 
 macro_rules! firefox_plugin {
-    ($name:ident, $mode:ident, $id:literal, $display:literal, $kw:literal) => {
+    ($name:ident, $mode:ident, $id:literal, $display:literal, $kw:literal, $ready:literal) => {
         pub struct $name;
 
         impl Plugin for $name {
@@ -106,6 +106,7 @@ macro_rules! firefox_plugin {
                     id: $id,
                     name: $display,
                     icon: "firefox",
+                    ready: $ready,
                     keyword: $kw,
                 }
             }
@@ -127,12 +128,14 @@ firefox_plugin!(
     Bookmarks,
     "firefox-bookmarks",
     "Firefox Bookmarks",
-    "b"
+    "b",
+    "Search Firefox bookmarks"
 );
 firefox_plugin!(
     FirefoxHistory,
     History,
     "firefox-history",
     "Firefox History",
-    "h"
+    "h",
+    "Search Firefox history"
 );

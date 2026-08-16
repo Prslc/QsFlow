@@ -24,7 +24,7 @@ fn file_icon(name: &str) -> &'static str {
 }
 
 macro_rules! search_plugin {
-    ($name:ident, $id:literal, $display:literal, $kw:literal, $matcher:ident) => {
+    ($name:ident, $id:literal, $display:literal, $kw:literal, $matcher:ident, $ready:literal) => {
         pub struct $name;
 
         impl Plugin for $name {
@@ -33,6 +33,7 @@ macro_rules! search_plugin {
                     id: $id,
                     name: $display,
                     icon: "folder",
+                    ready: $ready,
                     keyword: $kw,
                 }
             }
@@ -53,8 +54,22 @@ macro_rules! search_plugin {
     };
 }
 
-search_plugin!(FileSearch, "file-search", "Files", "f", match_name);
-search_plugin!(PathSearch, "path-search", "Paths", "d", match_path);
+search_plugin!(
+    FileSearch,
+    "file-search",
+    "Files",
+    "f",
+    match_name,
+    "Search files by name"
+);
+search_plugin!(
+    PathSearch,
+    "path-search",
+    "Paths",
+    "d",
+    match_path,
+    "Search files by path"
+);
 
 fn match_name(entry_name: &str, _entry_path: &str, query: &str) -> bool {
     query.is_empty() || entry_name.to_lowercase().contains(query)

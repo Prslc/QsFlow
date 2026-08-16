@@ -15,6 +15,7 @@ impl Plugin for Clipboard {
             id: "clipboard",
             name: "Clipboard History",
             icon: "clipboard",
+            ready: "Search clipboard history",
             keyword: "c",
         }
     }

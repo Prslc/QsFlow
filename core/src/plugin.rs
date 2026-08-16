@@ -29,6 +29,7 @@ pub struct Meta {
     pub id: &'static str,
     pub name: &'static str,
     pub icon: &'static str,
+    pub ready: &'static str,
     #[allow(dead_code)]
     pub keyword: &'static str,
 }
@@ -128,7 +129,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         let meta = entry.plugin.meta();
         return vec![ResultItem {
             title: meta.name.to_string(),
-            summary: Some("Ready to search".to_string()),
+            summary: Some(meta.ready.to_string()),
             on_click: None,
             icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
         }];

@@ -14,6 +14,7 @@ impl Plugin for Calculator {
             id: "calc",
             name: "Calculator",
             icon: "calc",
+            ready: "Enter a math expression",
             keyword: "",
         }
     }

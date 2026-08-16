@@ -14,6 +14,7 @@ impl Plugin for GitHub {
             id: "github",
             name: "GitHub",
             icon: "github",
+            ready: "Search GitHub",
             keyword: "g",
         }
     }

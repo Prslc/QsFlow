@@ -14,6 +14,7 @@ impl Plugin for WebSearch {
             id: "web-search",
             name: "Web Search",
             icon: "google",
+            ready: "Search Google suggestions",
             keyword: "s",
         }
     }
