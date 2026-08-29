@@ -26,6 +26,7 @@ powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **Firefox Bookmarks & History** — read `places.sqlite` directly; no browser extension needed.
 - **Web Suggestions** — live Google search autocomplete via `s` prefix.
 - **GitHub Search** — quick link with `g` prefix.
+- **Youdao Translation** — translate text inline via `tr` prefix; press Enter to copy the result.
 - **Inline Calculator** — evaluate math expressions automatically; no prefix required.
 - **Usage History** — frequently-launched items surface on empty input, ranked by count;
   press `Delete` to remove an entry.
@@ -74,6 +75,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `c <query>` | search clipboard history (cliphist) |
 | `s <query>` | Google suggestions |
 | `g <query>` | GitHub search |
+| `tr <query>` | Youdao translation (Enter to copy) |
 | `?` | show available keyword modes, default functions, and hints |
 | `lock` / `reboot` / `shutdown` | system commands |
 | `2 + 3` | inline calculator |
@@ -128,11 +130,28 @@ keyword = "d"
 [[plugins]]
 id = "clipboard"
 keyword = "c"
+
+[[plugins]]
+id = "translate"
+keyword = "tr"
 ```
 
 Reorder entries to change priority, change `keyword` to remap prefixes, or set
 `enable = false` to disable a plugin without removing its block.  Removed or
 unknown plugin IDs are silently ignored.
+
+The Youdao translation plugin reads credentials from
+`~/.config/qsflow/translate.toml` (a template is written on first run):
+
+```toml
+app_token = "..."
+app_secret = "..."
+lang_from = "Auto"    # optional, defaults Auto
+lang_to = "English"   # optional, defaults English
+```
+
+Language values accept display names such as `Auto`, `English`,
+`Chinese (Simplified)`. It requires `wl-copy` on `PATH` to copy results.
 
 Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
 built-in defaults).

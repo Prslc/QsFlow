@@ -40,3 +40,6 @@ keyword = "d"
 id = "clipboard"
 keyword = "c"
 
+[[plugins]]
+id = "translate"
+keyword = "tr"

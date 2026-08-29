@@ -22,6 +22,7 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - **网页搜索** — `s` 前缀获取 Google 搜索建议。
 - **GitHub 搜索** — `g` 前缀直接跳转 GitHub。
 - **即时计算器** — 自动识别并计算数学表达式，无需前缀。
+- **有道翻译** — `tr` 前缀即时翻译，回车将译文复制到剪贴板。
 - **使用历史** — 输入框留空时展示高频使用项（按次数排序），按 `Delete` 删除指定条目。
 - **GTK 主题集成** — 自动从 GTK4 主题 CSS 读取主题色，读取失败时使用内置默认值。
 - **插件系统** — TOML 驱动的插件注册表，无需改代码即可启用、禁用、调整顺序或修改触发前缀。新增插件启动时自动加载。
@@ -65,6 +66,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `c <关键词>` | 搜索剪贴板历史 |
 | `s <关键词>` | Google 搜索建议 |
 | `g <关键词>` | GitHub 搜索 |
+| `tr <关键词>` | 有道翻译（回车复制） |
 | `?` | 显示可用关键词、默认功能及提示 |
 | `lock` / `reboot` / `shutdown` | 系统命令 |
 | `2 + 3` | 即时计算 |
@@ -119,9 +121,24 @@ keyword = "d"
 [[plugins]]
 id = "clipboard"
 keyword = "c"
+
+[[plugins]]
+id = "translate"
+keyword = "tr"
 ```
 
 调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
+
+有道翻译插件从 `~/.config/qsflow/translate.toml` 读取凭据（首次运行自动生成模板）：
+
+```toml
+app_token = "..."
+app_secret = "..."
+lang_from = "Auto"    # 可选，默认 Auto
+lang_to = "English"   # 可选，默认 English
+```
+
+语言值使用显示名，如 `Auto`、`English`、`Chinese (Simplified)`。复制译文需要系统安装 `wl-copy`。
 
 主题色默认从 `~/.config/gtk-4.0/dank-colors.css` 读取，读取失败则使用内置默认值。
 

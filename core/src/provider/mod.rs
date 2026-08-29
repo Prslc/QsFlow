@@ -5,6 +5,7 @@ pub mod file;
 pub mod firefox;
 pub mod github;
 pub mod system;
+pub mod translate;
 pub mod web;
 
 use rustc_hash::FxHashMap as HashMap;
@@ -23,5 +24,6 @@ pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
     m.insert("path-search", Box::new(file::PathSearch));
     m.insert("clipboard", Box::new(clipboard::Clipboard));
     m.insert("system-commands", Box::new(system::SystemCommands));
+    m.insert("translate", Box::new(translate::Translate));
     m
 }
