@@ -63,7 +63,7 @@ impl Plugin for Translate {
         &Meta {
             id: "translate",
             name: "Youdao Translation",
-            icon: "translate",
+            icon: "translator",
             ready: "Translate text via Youdao",
             keyword: "tr",
         }
@@ -80,7 +80,9 @@ impl Plugin for Translate {
 }
 
 async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
-    let icon = find_icon_path("translate").or_else(|| Some(String::new()));
+    let icon = find_icon_path("translator")
+        .or_else(|| find_icon_path("translate"))
+        .or_else(|| Some(String::new()));
 
     if query.trim().is_empty() {
         return Ok(vec![]);
