@@ -1,14 +1,22 @@
-use std::future::Future;
-use std::pin::Pin;
+use std::fs;
+use std::{
+    future::Future,
+    pin::Pin
+};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde::Deserialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use strum::{Display, EnumString};
+use uuid::Uuid;
 
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
+use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
 
 const YOUDAO_URL: &str = "https://openapi.youdao.com/api";
@@ -91,7 +99,9 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let Some(cfg) = load_config() else {
         return Ok(vec![ResultItem {
             title: "API credentials missing".to_string(),
-            summary: Some("Fill in app_token and app_secret in ~/.config/qsflow/translate.toml".to_string()),
+            summary: Some(
+                "Fill in app_token and app_secret in ~/.config/qsflow/translate.toml".to_string(),
+            ),
             on_click: None,
             icon,
         }]);
@@ -99,7 +109,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
 
     match query_translate(query, &cfg).await {
         Ok(text) => {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+            let b64 = STANDARD.encode(text.as_bytes());
             Ok(vec![ResultItem {
                 title: text,
                 summary: Some("Press Enter to copy".to_string()),
@@ -134,7 +144,11 @@ fn build_sign(app_token: &str, q: &str, salt: &str, curtime: &str, app_secret: &
     let input = format!("{app_token}{}{salt}{curtime}{app_secret}", truncate(q));
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 const CONFIG_FILE: &str = ".config/qsflow/translate.toml";
@@ -160,15 +174,15 @@ struct RawConfig {
 }
 
 fn load_config() -> Option<TranslateConfig> {
-    let path = crate::system::fs::get_home().ok()?.join(CONFIG_FILE);
+    let path = get_home().ok()?.join(CONFIG_FILE);
     if !path.exists() {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            fs::create_dir_all(parent).ok();
         }
-        std::fs::write(&path, CONFIG_TEMPLATE).ok();
+        fs::write(&path, CONFIG_TEMPLATE).ok();
         return None;
     }
-    let content = std::fs::read_to_string(path).ok()?;
+    let content = fs::read_to_string(path).ok()?;
     parse_config(&content)
 }
 
@@ -223,11 +237,11 @@ pub fn lang_from_display_name(name: &str) -> Option<Lang> {
 
 async fn query_translate(q: &str, cfg: &TranslateConfig) -> Result<String> {
     let client = reqwest::Client::new();
-    let curtime = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let curtime = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
         .unwrap_or_default();
-    let salt = uuid::Uuid::new_v4().to_string();
+    let salt = Uuid::new_v4().to_string();
     let sign = build_sign(&cfg.app_token, q, &salt, &curtime, &cfg.app_secret);
 
     let params = [
@@ -244,12 +258,12 @@ async fn query_translate(q: &str, cfg: &TranslateConfig) -> Result<String> {
     let response = client
         .post(YOUDAO_URL)
         .form(&params)
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
         .send()
         .await
         .context("Failed to reach Youdao API")?;
 
-    let json: serde_json::Value = response
+    let json: Value = response
         .json()
         .await
         .context("Failed to parse Youdao response")?;
@@ -266,6 +280,7 @@ async fn query_translate(q: &str, cfg: &TranslateConfig) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn truncate_short_text() {
@@ -350,7 +365,7 @@ mod tests {
 
     #[test]
     fn empty_query_no_results() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         let items = rt.block_on(do_search("  ")).unwrap();
         assert!(items.is_empty());
     }
