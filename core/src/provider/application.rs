@@ -1,11 +1,8 @@
-use std::env;
-use std::fs;
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
-use walkdir::WalkDir;
+use gio::prelude::*;
 
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
@@ -38,101 +35,70 @@ impl Plugin for AppSearch {
     }
 }
 
+/// Enumerate installed applications from GLib's `GAppInfo` registry — no XDG
+/// directory scanning or `.desktop` parsing. `should_show()` honours
+/// `Hidden`/`NoDisplay`/`OnlyShowIn`/`NotShowIn`; name/comment are localised
+/// by GLib. Ranking stays fuzzy via `nucleo`. `on_click` carries the desktop
+/// id so the backend can re-fetch the `GAppInfo` and `launch()` it.
 fn do_search(query: &str) -> Result<Vec<ResultItem>> {
-    let mut results = Vec::new();
     let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
     let pattern = nucleo::Utf32String::from(query.to_lowercase());
 
-    let mut app_dirs: Vec<PathBuf> = env::var("XDG_DATA_DIRS")
-        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
-        .split(':')
-        .map(|s| PathBuf::from(s).join("applications"))
-        .collect();
+    let mut results: Vec<(u16, ResultItem)> = Vec::new();
 
-    if let Ok(home) = env::var("HOME") {
-        app_dirs.push(PathBuf::from(home).join(".local/share/applications"));
-    }
-
-    for dir in app_dirs {
-        if !dir.exists() {
+    for app in gio::AppInfo::all() {
+        if !app.should_show() {
             continue;
         }
+        let Some(id) = app.id().map(|s| s.to_string()) else {
+            continue;
+        };
 
-        for entry in WalkDir::new(dir)
-            .max_depth(2)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.path().extension().and_then(|s| s.to_str()) != Some("desktop") {
-                continue;
-            }
+        let title = app.name().to_string();
+        let comment = app.description().map(|s| s.to_string());
 
-            let content = match fs::read_to_string(entry.path()) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+        let score = if query.is_empty() {
+            1
+        } else {
+            let title_utf32 = nucleo::Utf32String::from(title.to_lowercase());
+            let name_score = matcher
+                .fuzzy_match(title_utf32.slice(..), pattern.slice(..))
+                .unwrap_or(0);
 
-            let mut title = None;
-            let mut comment = None;
-            let mut icon_name = None;
-            let mut no_display = false;
+            let comment_score = comment
+                .as_ref()
+                .and_then(|c| {
+                    let c_utf32 = nucleo::Utf32String::from(c.to_lowercase());
+                    matcher.fuzzy_match(c_utf32.slice(..), pattern.slice(..))
+                })
+                .unwrap_or(0);
 
-            for line in content.lines() {
-                let line = line.trim();
-                if line.starts_with("NoDisplay=true") {
-                    no_display = true;
-                    break;
-                }
+            name_score.max(comment_score)
+        };
 
-                if line.starts_with("Name=") && title.is_none() {
-                    title = Some(line[5..].trim().trim_matches('"').to_string());
-                } else if line.starts_with("Comment=") && comment.is_none() {
-                    comment = Some(line[8..].trim().trim_matches('"').to_string());
-                } else if line.starts_with("Icon=") && icon_name.is_none() {
-                    icon_name = Some(line[5..].trim().trim_matches('"').to_string());
-                }
-            }
+        if score > 0 {
+            let icon_path = app
+                .icon()
+                .and_then(|i| i.to_string())
+                .map(|s| s.to_string())
+                .and_then(|name| {
+                    // `g_icon_to_string` yields `!!/path` for file icons.
+                    if let Some(path) = name.strip_prefix("!!") {
+                        (!path.is_empty()).then(|| path.to_string())
+                    } else {
+                        find_icon_path(&name)
+                    }
+                });
 
-            if no_display {
-                continue;
-            }
-
-            if let Some(t) = title {
-                let score = if query.is_empty() {
-                    1
-                } else {
-                    let title_utf32 = nucleo::Utf32String::from(t.to_lowercase());
-                    let name_score = matcher
-                        .fuzzy_match(title_utf32.slice(..), pattern.slice(..))
-                        .unwrap_or(0);
-
-                    let comment_score = comment
-                        .as_ref()
-                        .and_then(|c| {
-                            let c_utf32 = nucleo::Utf32String::from(c.to_lowercase());
-                            matcher.fuzzy_match(c_utf32.slice(..), pattern.slice(..))
-                        })
-                        .unwrap_or(0);
-
-                    name_score.max(comment_score)
-                };
-
-                if score > 0 {
-                    let icon_path = icon_name.and_then(|n| find_icon_path(&n));
-                    // Launch via GAppInfo so Exec quoting, field codes, env and
-                    // DBusActivatable single-instance are honoured — not through
-                    // a shell (`run:`). Backend runs `gio launch <path>`.
-                    results.push((
-                        score,
-                        ResultItem {
-                            title: t,
-                            summary: comment,
-                            on_click: Some(format!("launch:{}", entry.path().to_string_lossy())),
-                            icon: icon_path,
-                        },
-                    ));
-                }
-            }
+            results.push((
+                score,
+                ResultItem {
+                    title,
+                    summary: comment,
+                    on_click: Some(format!("launch:{}", id)),
+                    icon: icon_path,
+                },
+            ));
         }
     }
 

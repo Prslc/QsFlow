@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1.0.102"
 base64 = "0.22"
 dirs = "6.0.0"
+gio = "0.22.9"
 
 meval = "0.2.0"
 nucleo = "0.5.0"

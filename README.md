@@ -24,8 +24,9 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 ## Features
 
 - **Fuzzy app launcher** — search `.desktop` entries across XDG data dirs.
-- **Proper app launching** — apps open via `gio launch` (respects Exec quoting,
-  field codes, env and `DBusActivatable` single-instance), never a raw `sh -c`.
+- **Proper app launching** — apps open via the GLib `GAppInfo` registry
+  (`g_app_info_launch`, honouring Exec quoting, field codes, env and
+  `DBusActivatable` single-instance), never a raw `sh -c`.
 - **Files & paths** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home; open in the default app.
 - **Clipboard history** — search and paste from `cliphist` via `c`.
 - **System commands** — `lock`, `reboot`, `shutdown`, `suspend`, `logout`.

@@ -1,4 +1,5 @@
-use std::process::{self, Stdio};
+use std::process;
+use gio::prelude::*;
 
 /// Run a shell command detached from the backend (system commands, clipboard
 /// paste, translate copy, …). Shell is intended here: `%u`/`%f` leftovers are
@@ -17,16 +18,15 @@ pub fn execute_command(cmd: &str) {
         .ok();
 }
 
-/// Launch an application through its `.desktop` file via GLib's `GAppInfo`
-/// (`gio launch <path>`). This honours Exec quoting, field codes, env and
-/// `DBusActivatable` single-instance semantics — never through a shell. The
-/// path is passed as a single argument, so spaces/special chars are safe.
-pub fn launch_app(desktop_path: &str) {
-    let _ = process::Command::new("gio")
-        .arg("launch")
-        .arg(desktop_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
+/// Launch an application by desktop id via GLib's `GAppInfo` (`g_app_info_launch`)
+/// — no shell, no external `gio` binary. Re-fetches the registered `GAppInfo`
+/// so Exec quoting, field codes, env and `DBusActivatable` single-instance are
+/// all honoured. Falls back silently (no-op) if the id is not found.
+pub fn launch_app(desktop_id: &str) {
+    for app in gio::AppInfo::all() {
+        if app.id().as_deref() == Some(desktop_id) {
+            let _ = app.launch(&[], None::<&gio::AppLaunchContext>);
+            return;
+        }
+    }
 }
