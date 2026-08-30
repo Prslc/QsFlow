@@ -8,50 +8,48 @@ PanelWindow {
 
     Component.onCompleted: {
         if (this.WlrLayershell !== undefined) {
-            this.WlrLayershell.layer = WlrLayer.Overlay;
-            this.WlrLayershell.namespace = "QsFlow";
+            this.WlrLayershell.layer = WlrLayer.Overlay
+            this.WlrLayershell.namespace = "QsFlow"
         }
-        initTimer.start()
         window.BackgroundEffect.blurRegion = blurRegion
+        entrance.restart()
+        initTimer.start()
     }
 
-    // Frosted glass: request compositor-side blur (ext-background-effect)
-    // exactly over the rounded content card, so only the card is blurred.
+    // Frosted glass: compositor-side blur (ext-background-effect) exactly over
+    // the rounded card, so only the card area is blurred.
     Region {
         id: blurRegion
         item: content
         radius: content.radius
     }
 
+    // initial empty search -> usage-ranked history
     Timer {
         id: initTimer
-        interval: 100
+        interval: 120
         onTriggered: window.searchTriggered("")
-    }
-
-    MouseArea {
-        anchors.fill: parent
-        onClicked: Qt.quit()
     }
 
     property ListModel resultsModel
     property var theme: backend.theme
-    // Keep the selection on a valid row when the result count shrinks
-    // (ListView does not always re-clamp currentIndex on removal).
+
+    // Keep the selection valid when the result count shrinks; auto-select the
+    // first row when nothing is selected yet (ListView starts at -1).
     Connections {
         target: resultsModel
         function onCountChanged() {
             if (resultsList.currentIndex > resultsModel.count - 1)
                 resultsList.currentIndex = Math.max(resultsModel.count - 1, 0)
+            else if (resultsList.currentIndex < 0 && resultsModel.count > 0)
+                resultsList.currentIndex = 0
         }
     }
 
     signal searchTriggered(string text)
 
-    anchors { top: true; left: true; right: true }
-    margins { top: 100 }
-
-    implicitHeight: 500
+    // full-screen overlay
+    anchors { top: true; left: true; right: true; bottom: true }
     exclusiveZone: 0
     aboveWindows: true
     focusable: true
@@ -74,102 +72,180 @@ PanelWindow {
         return Math.min(total, maxRows * rowH)
     }
 
+    // card geometry
+    readonly property int cardPad: 14
+    readonly property int searchH: 52
+    readonly property int footerH: 28
+    readonly property int gap: 10
+    function contentHeight() {
+        const hasResults = resultsModel.count > 0
+        let h = cardPad + searchH + gap + footerH + cardPad
+        if (hasResults)
+            h += gap + 1 + gap + listHeight()
+        return Math.min(h, 480)
+    }
+
+    // dimmed backdrop — click outside the card dismisses
     Rectangle {
-        id: content
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: 600
-        height: resultsModel.count === 0 ? 72 : Math.min(93 + listHeight(), 470)
+        id: dim
+        anchors.fill: parent
+        color: "#000000"
+        opacity: 0
+    }
+    MouseArea {
+        anchors.fill: parent
+        onClicked: Qt.quit()
+    }
 
-        Behavior on height {
-            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-        }
+    // centered card
+    Item {
+        anchors.fill: parent
 
-        color: Qt.alpha(backend.theme.container, 0.55)
-        radius: 12
-        border.color: Qt.alpha(backend.theme.primary, 0.6)
-        border.width: 1
-        clip: true
+        Rectangle {
+            id: content
+            anchors.centerIn: parent
+            width: Math.min(Math.max(560, parent.width * 0.38), 760)
+            height: contentHeight()
 
-        Column {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 12
-            spacing: 10
+            Behavior on height {
+                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            }
 
-            TextField {
-                id: searchInput
-                height: 48
-                width: parent.width
-                color: backend.theme.fg
-                font.pixelSize: 20
-                leftPadding: 12
-                verticalAlignment: TextInput.AlignVCenter
-                placeholderText: "QsFlow: Search..."
-                placeholderTextColor: Qt.alpha(backend.theme.fg, 0.5)
-                focus: true
-                background: null
+            radius: 16
+            color: Qt.alpha(backend.theme.container, 0.75)
+            border.color: Qt.alpha(backend.theme.primary, 0.35)
+            border.width: 1
+            clip: true
+            opacity: 0
+            scale: 0.97
 
-                Keys.onEscapePressed: Qt.quit()
+            // swallow clicks on card padding — only outside clicks dismiss
+            MouseArea {
+                anchors.fill: parent
+                onClicked: (mouse) => mouse.accepted = true
+            }
 
-                onTextChanged: {
-                    window.searchTriggered(text)
+            Column {
+                anchors.fill: parent
+                anchors.margins: cardPad
+                spacing: gap
+
+                SearchBar {
+                    id: searchBar
+                    width: parent.width
+                    fg: backend.theme.fg
+                    accent: backend.theme.primary
+                    dim: Qt.alpha(backend.theme.fg, 0.55)
+                    onTextChanged: window.searchTriggered(text)
+                    onLaunchRequested: {
+                        if (inputField.inputMethodComposing) return // IME confirm
+                        window.launchCurrent()
+                    }
+                    onDismissRequested: Qt.quit()
+                    onMoveUp: resultsList.currentIndex = Math.max(resultsList.currentIndex - 1, 0)
+                    onMoveDown: resultsList.currentIndex = Math.min(resultsList.currentIndex + 1, resultsModel.count - 1)
+                    onPageUp: resultsList.currentIndex = Math.max(resultsList.currentIndex - 5, 0)
+                    onPageDown: resultsList.currentIndex = Math.min(resultsList.currentIndex + 5, resultsModel.count - 1)
+                    onGoHome: resultsList.currentIndex = 0
+                    onGoEnd: resultsList.currentIndex = Math.max(resultsModel.count - 1, 0)
+                    onForgetRequested: window.forgetCurrent()
                 }
 
-                Keys.onDownPressed: {
-                    resultsList.currentIndex = Math.min(
-                        resultsList.currentIndex + 1,
-                        resultsModel.count - 1
-                    )
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: backend.theme.primary
+                    opacity: 0.18
+                    visible: resultsModel.count > 0
                 }
 
-                Keys.onUpPressed: {
-                    resultsList.currentIndex = Math.max(
-                        resultsList.currentIndex - 1,
-                        0
-                    )
-                }
-
-                Keys.onDeletePressed: {
-                    let idx = resultsList.currentIndex
-                    let item = resultsModel.get(idx)
-                    if (item && item.on_click) {
-                        backend.write("forget " + item.on_click + "\n")
-                        resultsModel.remove(idx)
-                        resultsList.currentIndex = Math.min(idx, resultsModel.count - 1)
+                ListView {
+                    id: resultsList
+                    width: parent.width
+                    height: listHeight()
+                    visible: resultsModel.count > 0
+                    model: resultsModel
+                    clip: true
+                    highlightMoveDuration: 0
+                    onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+                    delegate: ResultDelegate {
+                        onClicked: {
+                            ListView.view.currentIndex = index
+                            window.launch(model.on_click)
+                        }
                     }
                 }
 
-                Keys.onReturnPressed: {
-                    let item = resultsModel.get(resultsList.currentIndex)
-                    if (item && item.on_click) {
-                        window.launch(item.on_click)
+                // footer: key hints + result count
+                Item {
+                    width: parent.width
+                    height: footerH
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.pixelSize: 11
+                        color: Qt.alpha(backend.theme.fg, 0.5)
+                        text: resultsModel.count === 0
+                            ? "Type ? for help  ·  prefixes: b h f d c s g tr"
+                            : "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close"
                     }
-                }
-            }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: backend.theme.primary
-                opacity: 0.2
-                visible: resultsModel.count > 0
-            }
-
-            ListView {
-                id: resultsList
-                width: parent.width
-                implicitHeight: listHeight()
-                model: resultsModel
-                clip: true
-                highlightMoveDuration: 0
-                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
-                delegate: ResultDelegate {
-                    onClicked: window.launch(model.on_click)
+                    Text {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.pixelSize: 11
+                        color: Qt.alpha(backend.theme.fg, 0.45)
+                        text: resultsModel.count === 0 ? "" : resultsModel.count + " results"
+                    }
                 }
             }
         }
     }
+
+    ParallelAnimation {
+        id: entrance
+        NumberAnimation {
+            target: dim
+            property: "opacity"
+            to: 0.30
+            duration: 160
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: content
+            property: "opacity"
+            to: 1
+            duration: 200
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: content
+            property: "scale"
+            to: 1
+            duration: 200
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    function currentItem() {
+        return resultsModel.get(resultsList.currentIndex)
+    }
+
+    function launchCurrent() {
+        const item = currentItem()
+        if (item && item.on_click)
+            window.launch(item.on_click)
+    }
+
+    function forgetCurrent() {
+        const item = currentItem()
+        if (!item || !item.on_click) return
+        backend.write("forget " + item.on_click + "\n")
+        resultsModel.remove(resultsList.currentIndex)
+        resultsList.currentIndex = Math.min(resultsList.currentIndex, resultsModel.count - 1)
+    }
+
     function launch(target) {
         if (!target) return
 
