@@ -81,7 +81,7 @@ PanelWindow {
         const hasResults = resultsModel.count > 0
         let h = cardPad + searchH + gap + footerH + cardPad
         if (hasResults)
-            h += gap + 1 + gap + listHeight()
+            h += gap + listHeight()
         return Math.min(h, 480)
     }
 
@@ -113,8 +113,6 @@ PanelWindow {
 
             radius: 16
             color: Qt.alpha(backend.theme.container, 0.75)
-            border.color: Qt.alpha(backend.theme.primary, 0.35)
-            border.width: 1
             clip: true
             opacity: 0
             scale: 0.97
@@ -149,14 +147,6 @@ PanelWindow {
                     onGoHome: resultsList.currentIndex = 0
                     onGoEnd: resultsList.currentIndex = Math.max(resultsModel.count - 1, 0)
                     onForgetRequested: window.forgetCurrent()
-                }
-
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: backend.theme.primary
-                    opacity: 0.18
-                    visible: resultsModel.count > 0
                 }
 
                 ListView {

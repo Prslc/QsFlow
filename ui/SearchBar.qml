@@ -19,6 +19,12 @@ Item {
 
     signal launchRequested()
     signal dismissRequested()
+
+    Component.onCompleted: {
+        // focus: true is not enough — the window is not active at creation
+        // time, so activeFocus stays false and the focus ring never shows
+        input.forceActiveFocus()
+    }
     signal moveUp()
     signal moveDown()
     signal pageUp()
@@ -37,15 +43,8 @@ Item {
     Rectangle {
         id: field
         anchors.fill: parent
-        radius: 10
-        color: Qt.alpha(root.fg, 0.06)
-        border.width: 1
-        border.color: input.activeFocus
-            ? Qt.alpha(root.accent, 0.7)
-            : Qt.alpha(root.fg, 0.12)
-        Behavior on border.color {
-            ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
-        }
+        radius: 9
+        color: Qt.alpha(root.fg, 0.08)
     }
 
     // magnifier glyph, drawn to avoid asset/font dependencies

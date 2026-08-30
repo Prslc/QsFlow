@@ -20,10 +20,10 @@ ItemDelegate {
     bottomPadding: 0
 
     background: Rectangle {
-        radius: 10
+        radius: 8
         anchors.margins: 1
-        color: root.highlighted ? Qt.alpha(backend.theme.primary, 0.16)
-             : root.hovered   ? Qt.alpha(backend.theme.primary, 0.10)
+        color: root.highlighted ? Qt.alpha(backend.theme.primary, 0.15)
+             : root.hovered   ? Qt.alpha(backend.theme.primary, 0.08)
              : "transparent"
 
         Behavior on color {
@@ -74,7 +74,7 @@ ItemDelegate {
             // title
             Text {
                 text: model.title
-                color: root.highlighted ? backend.theme.primary : backend.theme.fg
+                color: backend.theme.fg
                 font.bold: true
                 font.pixelSize: root.isSimpleMode ? 15 : 14
                 elide: Text.ElideRight
@@ -88,7 +88,7 @@ ItemDelegate {
             // summary
             Text {
                 text: model.summary || ""
-                color: root.highlighted ? Qt.alpha(backend.theme.primary, 0.8) : backend.theme.fg
+                color: backend.theme.fg
                 font.pixelSize: 12
                 elide: Text.ElideRight
                 width: parent.width
@@ -106,7 +106,7 @@ ItemDelegate {
             id: enterHint
             text: "↵"
             font.pixelSize: 13
-            color: Qt.alpha(backend.theme.primary, 0.7)
+            color: Qt.alpha(backend.theme.primary, 0.55)
             anchors.verticalCenter: parent.verticalCenter
             visible: root.highlighted
         }
