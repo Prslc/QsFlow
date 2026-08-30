@@ -12,6 +12,15 @@ PanelWindow {
             this.WlrLayershell.namespace = "QsFlow";
         }
         initTimer.start()
+        window.BackgroundEffect.blurRegion = blurRegion
+    }
+
+    // Frosted glass: request compositor-side blur (ext-background-effect)
+    // exactly over the rounded content card, so only the card is blurred.
+    Region {
+        id: blurRegion
+        item: content
+        radius: content.radius
     }
 
     Timer {
@@ -54,9 +63,9 @@ PanelWindow {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
 
-        color: backend.theme.container
+        color: Qt.alpha(backend.theme.container, 0.55)
         radius: 12
-        border.color: backend.theme.primary
+        border.color: Qt.alpha(backend.theme.primary, 0.6)
         border.width: 1
         clip: true
 
