@@ -14,17 +14,9 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ## 截图
 
-<div align="center">
-
-![QsFlow — 亮色主题](../images/launcher.png)
-
-*亮色主题 — 高频使用项*
-
-![QsFlow — 暗色主题](../images/launcher-search.png)
-
-*暗色主题 — 模糊应用搜索（`android`）*
-
-</div>
+| 亮色主题 — 高频使用项 | 暗色主题 — 模糊应用搜索（`android`） |
+|------------------------|-------------------------------------|
+| ![QsFlow — 亮色主题](../images/launcher.png) | ![QsFlow — 暗色主题](../images/launcher-search.png) |
 
 ## 功能特性
 

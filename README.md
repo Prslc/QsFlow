@@ -17,17 +17,9 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 
 ## Screenshots
 
-<div align="center">
-
-![QsFlow — light theme](images/launcher.png)
-
-*Light theme — most-used items*
-
-![QsFlow — dark theme](images/launcher-search.png)
-
-*Dark theme — fuzzy app search (`android`)*
-
-</div>
+| Light theme — most-used items | Dark theme — fuzzy app search (`android`) |
+|-----------------------------------|-------------------------------------|
+| ![QsFlow — light theme](images/launcher.png) | ![QsFlow — dark theme](images/launcher-search.png) |
 
 ## Features
 
