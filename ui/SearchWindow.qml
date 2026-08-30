@@ -36,6 +36,15 @@ PanelWindow {
 
     property ListModel resultsModel
     property var theme: backend.theme
+    // Keep the selection on a valid row when the result count shrinks
+    // (ListView does not always re-clamp currentIndex on removal).
+    Connections {
+        target: resultsModel
+        function onCountChanged() {
+            if (resultsList.currentIndex > resultsModel.count - 1)
+                resultsList.currentIndex = Math.max(resultsModel.count - 1, 0)
+        }
+    }
 
     signal searchTriggered(string text)
 
@@ -51,13 +60,25 @@ PanelWindow {
     readonly property int rowH: 64
     readonly property int maxRows: 5
 
+    // Exact list height: simple rows (no summary/icon) render at 48px,
+    // regular rows at 64px. Kept in sync with ResultDelegate.isSimpleMode.
+    function rowHeight(item) {
+        let simple = (item.summary === undefined || item.summary === "") &&
+                     (item.icon === undefined || item.icon === "")
+        return simple ? 48 : rowH
+    }
+    function listHeight() {
+        let total = 0
+        for (let i = 0; i < resultsModel.count; i++)
+            total += rowHeight(resultsModel.get(i))
+        return Math.min(total, maxRows * rowH)
+    }
+
     Rectangle {
         id: content
         anchors.horizontalCenter: parent.horizontalCenter
         width: 600
-        height: (searchInput.text.length === 0 && resultsModel.count === 0)
-                ? 72
-                : Math.min(93 + Math.min(resultsModel.count, maxRows) * rowH, 470)
+        height: resultsModel.count === 0 ? 72 : Math.min(93 + listHeight(), 470)
 
         Behavior on height {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
@@ -92,8 +113,6 @@ PanelWindow {
                 Keys.onEscapePressed: Qt.quit()
 
                 onTextChanged: {
-                    if (text.trim() === "?" || text.endsWith(" "))
-                        resultsModel.clear()
                     window.searchTriggered(text)
                 }
 
@@ -140,7 +159,7 @@ PanelWindow {
             ListView {
                 id: resultsList
                 width: parent.width
-                implicitHeight: Math.min(resultsModel.count * 64, 320)
+                implicitHeight: listHeight()
                 model: resultsModel
                 clip: true
                 highlightMoveDuration: 0
