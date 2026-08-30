@@ -5,9 +5,10 @@ use tokio::sync::mpsc;
 mod models;
 mod plugin;
 mod provider;
+mod rpc;
 mod system;
 
-async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
+pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
     if let Ok(json) = serde_json::to_string(payload) {
         let _ = tx.send(json).await;
     }
@@ -62,6 +63,12 @@ async fn main() -> Result<()> {
             .await;
             continue;
         }
+
+        // JSON-RPC 2.0 requests — independent of the text protocol
+        if rpc::handle(&input, &tx).await {
+            continue;
+        }
+
         if input.starts_with("select ") {
             let _ = system::usage::record(input.trim_start_matches("select "));
             continue;
