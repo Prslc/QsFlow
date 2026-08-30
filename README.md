@@ -162,3 +162,5 @@ Unknown methods return `-32601`; malformed requests `-32600`; bad params
 - **[walkdir](https://github.com/BurntSushi/walkdir)** — recursive directory traversal for file and path search.
 - **[nucleo](https://github.com/helix-editor/nucleo)** — fuzzy matching for application search.
 - **[rustc-hash](https://github.com/rust-lang/rustc-hash)** — fast non-cryptographic hashing for plugin maps and icon cache.
+- **[gio (gtk-rs)](https://gtk-rs.org/)** — GLib `GAppInfo` registry for application discovery and launching.
+- **[fasteval](https://github.com/likebike/fasteval)** — calculator expression evaluation.
