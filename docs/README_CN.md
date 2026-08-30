@@ -12,21 +12,33 @@
 
 QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议、GitHub 以及进行即时数学计算。后端基于 Rust 异步实现，前端使用 [Quickshell](https://github.com/outfoxxed/quickshell) 的 QML 构建。
 
+## 截图
+
+<div align="center">
+
+![QsFlow — 亮色主题](../images/launcher.png)
+
+*亮色主题 — 高频使用项*
+
+![QsFlow — 暗色主题](../images/launcher-search.png)
+
+*暗色主题 — 模糊应用搜索（`android`）*
+
+</div>
+
 ## 功能特性
 
-- **应用启动器** — 模糊搜索 XDG 数据目录中的 `.desktop` 应用条目。
-- **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 和主目录，搜索结果可直接用默认应用打开。文件按扩展名显示对应图标。
-- **剪贴板历史** — 通过 `c` 前缀搜索 `cliphist` 记录的剪贴板历史，选中即粘贴。
-- **系统命令** — 输入 `lock`、`reboot`、`shutdown`、`suspend` 或 `logout`，直接从启动器执行操作。
-- **Firefox 书签与历史** — 直接读取 `places.sqlite`，无需浏览器扩展。
-- **网页搜索** — `s` 前缀获取 Google 搜索建议。
-- **GitHub 搜索** — `g` 前缀直接跳转 GitHub。
-- **即时计算器** — 自动识别并计算数学表达式，无需前缀。
-- **有道翻译** — `tr` 前缀即时翻译，回车将译文复制到剪贴板。
-- **使用历史** — 输入框留空时展示高频使用项（按次数排序），按 `Delete` 删除指定条目。
-- **GTK 主题集成** — 自动从 GTK4 主题 CSS 读取主题色，读取失败时使用内置默认值。
-- **插件系统** — TOML 驱动的插件注册表，无需改代码即可启用、禁用、调整顺序或修改触发前缀。新增插件启动时自动加载。
-- **图标解析** — 从 Papirus、Breeze、Adwaita 和 hicolor 主题中解析应用图标，同时兼容 Flatpak 导出图标及旧版 pixmap 图标。解析结果会话内缓存。
+- **模糊应用启动器** — 搜索 XDG 数据目录中的 `.desktop` 条目。
+- **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 与主目录，直接打开结果。
+- **剪贴板历史** — 通过 `c` 前缀搜索并粘贴 `cliphist` 记录。
+- **系统命令** — `lock`、`reboot`、`shutdown`、`suspend`、`logout`。
+- **Firefox 书签与历史** — 直接读取 `places.sqlite`。
+- **网页与 GitHub** — Google 搜索建议（`s`）与 GitHub 链接（`g`）。
+- **内联工具** — 即时计算；有道翻译（`tr`，回车复制）。
+- **使用历史** — 留空时展示高频项，按 `Delete` 删除。
+- **GTK 主题集成** — 从 GTK4 主题 CSS 读取主题色。
+- **插件系统** — TOML 注册表，可启用、禁用、调整顺序或修改前缀。
+- **图标解析** — Papirus、Breeze、Adwaita、hicolor 及 Flatpak；会话内缓存。
 
 ## 环境要求
 
@@ -36,15 +48,12 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - Firefox（可选，用于书签和历史搜索）
 - [cliphist](https://github.com/sentriz/cliphist)（可选，用于剪贴板历史）
 
-## 安装
+## 快速开始
 
 ```bash
-# 克隆并编译
 git clone https://github.com/Prslc/QsFlow.git
 cd QsFlow/core
 cargo build --release
-
-# 将二进制链接到 PATH
 ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
 ```
 
@@ -53,6 +62,8 @@ ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
 ```bash
 quickshell -p /path/to/QsFlow/ui/MainShell.qml
 ```
+
+启动器以全屏覆盖方式打开，带调暗背景与居中卡片；点击卡片外或按 `Esc` 关闭。
 
 ## 使用说明
 
@@ -67,7 +78,7 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `s <关键词>` | Google 搜索建议 |
 | `g <关键词>` | GitHub 搜索 |
 | `tr <关键词>` | 有道翻译（回车复制） |
-| `?` | 显示可用关键词、默认功能及提示 |
+| `?` | 显示关键词模式、默认功能与提示 |
 | `lock` / `reboot` / `shutdown` | 系统命令 |
 | `2 + 3` | 即时计算 |
 | *(留空)* | 展示高频使用项 |
@@ -79,48 +90,15 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 首次运行时，`~/.config/qsflow/plugins.toml` 会自动生成：
 
 ```toml
-[[plugins]]
-id = "calculator"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "system-commands"
-keyword = ""
-enable = true
-
+# ~/.config/qsflow/plugins.toml
 [[plugins]]
 id = "app-search"
-keyword = ""
+keyword = ""       # 留空 = 无前缀
 enable = true
 
 [[plugins]]
 id = "firefox-bookmarks"
 keyword = "b"
-
-[[plugins]]
-id = "firefox-history"
-keyword = "h"
-
-[[plugins]]
-id = "web-search"
-keyword = "s"
-
-[[plugins]]
-id = "github"
-keyword = "g"
-
-[[plugins]]
-id = "file-search"
-keyword = "f"
-
-[[plugins]]
-id = "path-search"
-keyword = "d"
-
-[[plugins]]
-id = "clipboard"
-keyword = "c"
 
 [[plugins]]
 id = "translate"
@@ -144,6 +122,8 @@ lang_to = "English"   # 可选，默认 English
 
 ## 致谢
 
+- **[Wox](https://github.com/wox-launcher/wox)** — 本启动器的设计灵感来源。
+- **[Flow.translate-youdao](https://github.com/Prslc/Flow.translate-youdao)** — 有道翻译插件改编自本项目。
 - **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick Shell 框架，负责 Wayland 悬浮面板渲染。
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — 高质量 SVG 图标主题。
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。
