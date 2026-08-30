@@ -34,7 +34,20 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    match meval::eval_str(expr) {
+    // fasteval has no sqrt/exp/ln/log2/pow built-ins; provide them via the
+    // namespace so the calculator keeps meval's function surface.
+    let mut ns = |name: &str, args: Vec<f64>| -> Option<f64> {
+        match name {
+            "sqrt" => args.first().map(|v| v.sqrt()),
+            "exp" => args.first().map(|v| v.exp()),
+            "ln" => args.first().map(|v| v.ln()),
+            "log2" => args.first().map(|v| v.log2()),
+            "pow" => (args.len() == 2).then(|| args[0].powf(args[1])),
+            _ => None,
+        }
+    };
+
+    match fasteval::ez_eval(expr, &mut ns) {
         Ok(value) => {
             if value.is_infinite() || value.is_nan() {
                 return Ok(vec![]);
