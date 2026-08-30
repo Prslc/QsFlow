@@ -254,7 +254,9 @@ PanelWindow {
                     target.startsWith("file:") ||
                     target.startsWith("mailto:")
 
-        if (target.startsWith("run:")) {
+        if (target.startsWith("launch:")) {
+            window.searchTriggered("launch " + target.substring(7))
+        } else if (target.startsWith("run:")) {
             window.searchTriggered("run " + target.substring(4))
         } else if (isUrl) {
             Qt.openUrlExternally(target)

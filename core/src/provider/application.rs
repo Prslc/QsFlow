@@ -74,7 +74,6 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
 
             let mut title = None;
             let mut comment = None;
-            let mut exec = None;
             let mut icon_name = None;
             let mut no_display = false;
 
@@ -89,14 +88,6 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                     title = Some(line[5..].trim().trim_matches('"').to_string());
                 } else if line.starts_with("Comment=") && comment.is_none() {
                     comment = Some(line[8..].trim().trim_matches('"').to_string());
-                } else if line.starts_with("Exec=") && exec.is_none() {
-                    let raw_exec = line[5..].trim().trim_matches('"');
-                    let clean_exec = raw_exec
-                        .split_whitespace()
-                        .filter(|s| !s.starts_with('%'))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    exec = Some(clean_exec);
                 } else if line.starts_with("Icon=") && icon_name.is_none() {
                     icon_name = Some(line[5..].trim().trim_matches('"').to_string());
                 }
@@ -128,12 +119,15 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
 
                 if score > 0 {
                     let icon_path = icon_name.and_then(|n| find_icon_path(&n));
+                    // Launch via GAppInfo so Exec quoting, field codes, env and
+                    // DBusActivatable single-instance are honoured — not through
+                    // a shell (`run:`). Backend runs `gio launch <path>`.
                     results.push((
                         score,
                         ResultItem {
                             title: t,
                             summary: comment,
-                            on_click: exec.map(|e| format!("run:{}", e)),
+                            on_click: Some(format!("launch:{}", entry.path().to_string_lossy())),
                             icon: icon_path,
                         },
                     ));

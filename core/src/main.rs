@@ -81,6 +81,10 @@ async fn main() -> Result<()> {
             system::executor::execute_command(input.trim_start_matches("run "));
             continue;
         }
+        if input.starts_with("launch ") {
+            system::executor::launch_app(input.trim_start_matches("launch "));
+            continue;
+        }
 
         // search — debounce via abort
         if let Some(handle) = current_task.take() {
