@@ -17,7 +17,7 @@ pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value)
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {
-        println!("{:<24} {:<24} {:<12} {:<24} {}", "ID", "NAME", "KEYWORD", "ICON", "STATUS");
+        println!("{:<24} {:<24} {:<12} {:<24} STATUS", "ID", "NAME", "KEYWORD", "ICON");
         println!("{:-<24} {:-<24} {:-<12} {:-<24} {:-<8}", "", "", "", "", "");
         for (id, name, icon, keyword, enabled) in plugin::list_plugins() {
             let kw = if keyword.is_empty() { "(default)" } else { &keyword };
