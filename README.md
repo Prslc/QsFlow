@@ -191,8 +191,8 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `search` | `{"text"}` | array of result items |
 | `top` | — | most-used items |
 | `select` | item object | `null` (records usage) |
-| `forget` | `on_click` string or `{"on_click"}` | `null` |
-| `run` | `"cmd"` or `{"cmd"}` | `null` |
+| `forget` | `{"on_click"}` | `null` |
+| `run` | `{"cmd"}` | `null` |
 | `list_plugins` | — | plugin metadata |
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |

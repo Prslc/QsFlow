@@ -176,8 +176,8 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `search` | `{"text"}` | 结果项数组 |
 | `top` | — | 最常用项 |
 | `select` | 结果项对象 | `null`（记录使用） |
-| `forget` | `on_click` 字符串或 `{"on_click"}` | `null` |
-| `run` | `"cmd"` 或 `{"cmd"}` | `null` |
+| `forget` | `{"on_click"}` | `null` |
+| `run` | `{"cmd"}` | `null` |
 | `list_plugins` | — | 插件元数据 |
 | `theme` | — | 主题颜色 |
 | `ping` | — | `"pong"` |

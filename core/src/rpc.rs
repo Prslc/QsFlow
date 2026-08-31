@@ -30,7 +30,6 @@ fn search_text(params: &Option<Value>) -> Result<String, ()> {
 
 fn select_payload(params: &Option<Value>) -> Result<String, ()> {
     match params {
-        Some(Value::String(s)) => Ok(s.clone()),
         Some(obj @ Value::Object(_)) => Ok(obj.to_string()),
         _ => Err(()),
     }
@@ -38,7 +37,6 @@ fn select_payload(params: &Option<Value>) -> Result<String, ()> {
 
 fn forget_key(params: &Option<Value>) -> Result<String, ()> {
     match params {
-        Some(Value::String(s)) => Ok(s.clone()),
         Some(Value::Object(map)) => map
             .get("on_click")
             .and_then(|v| v.as_str())
@@ -50,7 +48,6 @@ fn forget_key(params: &Option<Value>) -> Result<String, ()> {
 
 fn run_cmd(params: &Option<Value>) -> Result<String, ()> {
     match params {
-        Some(Value::String(s)) => Ok(s.clone()),
         Some(Value::Object(map)) => map
             .get("cmd")
             .and_then(|v| v.as_str())
@@ -291,5 +288,25 @@ mod tests {
         assert!(search_text(&Some(empty)).is_err());
         assert!(search_text(&Some(query)).is_err());
         assert!(search_text(&Some(num)).is_err());
+    }
+    #[test]
+    fn select_payload_accepts_item_object() {
+        let p: Value = serde_json::from_str(r#"{"title":"x","on_click":"run:ls"}"#).unwrap();
+        assert!(select_payload(&Some(p)).unwrap().contains("run:ls"));
+        assert!(select_payload(&Some(Value::String("run:ls".into()))).is_err());
+    }
+
+    #[test]
+    fn forget_key_accepts_on_click_object() {
+        let p: Value = serde_json::from_str(r#"{"on_click":"run:ls"}"#).unwrap();
+        assert_eq!(forget_key(&Some(p)).unwrap(), "run:ls");
+        assert!(forget_key(&Some(Value::String("run:ls".into()))).is_err());
+    }
+
+    #[test]
+    fn run_cmd_accepts_cmd_object() {
+        let p: Value = serde_json::from_str(r#"{"cmd":"echo hi"}"#).unwrap();
+        assert_eq!(run_cmd(&Some(p)).unwrap(), "echo hi");
+        assert!(run_cmd(&Some(Value::String("echo hi".into()))).is_err());
     }
 }
