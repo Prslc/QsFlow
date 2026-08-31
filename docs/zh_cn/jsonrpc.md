@@ -16,6 +16,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | 结果项对象 | `null`（记录使用） |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `resolve_icon` | `{"name"}` | 图标规范对应的绝对路径 |
 | `list_plugins` | — | 插件元数据 |
 | `theme` | — | 主题颜色 |
 | `ping` | — | `"pong"` |
@@ -27,6 +28,11 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 无 `id` 的请求是通知（仅副作用，不返回响应）。未知方法返回 `-32601`；畸形请求
 `-32600`；参数错误 `-32602`。
 
+`resolve_icon` 把任意图标规范——绝对路径、主题图标名，或下文所述的 `papirus:`
+scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要动态构造图标的外部
+插件主机（如 `list_plugins` 身份图标），无需硬编码主题路径。`name` 缺失或非
+字符串返回 `-32602`。
+
 ## 结果项
 
 `search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——四个键**始终都在**，
@@ -37,7 +43,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `title` | string | 主标签（应用名、命令、文件名……） |
 | `summary` | string \| null | 副行（命令、路径、描述……） |
 | `on_click` | string \| null | Enter 绑定的动作；见下方 scheme |
-| `icon` | string \| null | 图标图像的绝对路径 |
+| `icon` | string \| null | 图标图像的绝对路径；见 [图标规范](#图标规范) |
 
 `on_click` 的 scheme：
 
@@ -49,3 +55,20 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | 裸 URL / `file:` / `mailto:` URI | 由 UI 经 `Qt.openUrlExternally` 打开 |
 
 无 `on_click` 的结果项不可交互（仅展示）。
+
+### 图标规范
+
+启动器 UI 以 `file://` + 路径渲染图标，因此 core 输出的每个 `icon` 都是绝对路径。
+**外部插件主机**（`plugins.toml` 中带 `command` 的条目）可以改用 `papirus:`
+规范——用在搜索结果 `icon` 字段及 `list_plugins` 身份 `icon` 上——core 会在
+结果到达 UI 前解析：
+
+| 规范 | 解析方式 |
+|------|----------|
+| `papirus:<name>` | 在 Papirus 的类别与尺寸中查找 `<name>` 的首个匹配 |
+| `papirus:<category>/<name>` | 同上，但优先搜索 `<category>` |
+
+示例：`papirus:folder-open` →
+`/usr/share/icons/Papirus/48x48/places/folder-open.svg`；
+`papirus:apps/firefox` → `/usr/share/icons/Papirus/48x48/apps/firefox.svg`。
+安装在 `~/.local/share/icons` 下的主题也会被搜索。

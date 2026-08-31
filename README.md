@@ -161,7 +161,8 @@ An entry may also declare `command`, naming an external JSON-RPC 2.0 host. The
 value is a single executable token — resolved on `PATH`, or an absolute path;
 no arguments or shell syntax (scripts need a shebang and exec bit). The core
 spawns it, relays `search`, and discovers the plugin's identity from the
-host's `list_plugins` response.
+host's `list_plugins` response; both the identity `icon` and result `icon`
+fields accept the `papirus:` scheme (resolved to an absolute Papirus path).
 
 The Youdao translation plugin reads credentials from
 `~/.config/qsflow/translate.toml` (a template is written on first run):
@@ -183,8 +184,8 @@ built-in defaults).
 
 `qsflow-core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over the
 same stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
-`select`, `forget`, `run`, `list_plugins`, `theme`, `ping`. The full protocol spec
-and the result-item (schema) contract are in
+`select`, `forget`, `run`, `resolve_icon`, `list_plugins`, `theme`, `ping`. The
+full protocol spec and the result-item (schema) contract are in
 [docs/en/jsonrpc.md](docs/en/jsonrpc.md).
 
 ## Credit

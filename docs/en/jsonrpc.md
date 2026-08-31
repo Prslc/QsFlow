@@ -18,6 +18,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | item object | `null` (records usage) |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `resolve_icon` | `{"name"}` | absolute path for an icon spec |
 | `list_plugins` | — | plugin metadata |
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |
@@ -31,6 +32,12 @@ A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params
 `-32602`.
 
+`resolve_icon` resolves any icon spec — an absolute path, a theme icon name, or
+the `papirus:` scheme below — to the absolute path the launcher UI renders. It
+is meant for external plugin hosts that build icons dynamically (e.g. a
+`list_plugins` identity) without hard-coding theme paths. An absent or
+non-string `name` returns `-32602`.
+
 ## Result items
 
 `search` and `top` return an array of items. Every item is an object with these
@@ -41,7 +48,7 @@ keys — all four are always present (`null` for an absent optional field):
 | `title` | string | primary label (app name, command, file name, …) |
 | `summary` | string \| null | secondary line (command, path, description, …) |
 | `on_click` | string \| null | action bound to Enter; see the schemes below |
-| `icon` | string \| null | absolute path to an icon image |
+| `icon` | string \| null | absolute path to an icon image; see [Icon specs](#icon-specs) |
 
 `on_click` schemes:
 
@@ -53,3 +60,21 @@ keys — all four are always present (`null` for an absent optional field):
 | bare URL / `file:` / `mailto:` URI | opened by the UI via `Qt.openUrlExternally` |
 
 An item without `on_click` is non-interactive (display only).
+
+### Icon specs
+
+The launcher UI renders icons as `file://` + path, so every `icon` the core
+emits is an absolute path. **External plugin hosts** (a `plugins.toml` entry
+with `command`) may instead return a `papirus:` spec — in search result `icon`
+fields and in the `list_plugins` identity `icon` — and the core resolves it
+before the item reaches the UI:
+
+| Spec | Resolution |
+|------|------------|
+| `papirus:<name>` | first match for `<name>` across Papirus categories and sizes |
+| `papirus:<category>/<name>` | same, but searches `<category>` first |
+
+Examples: `papirus:folder-open` →
+`/usr/share/icons/Papirus/48x48/places/folder-open.svg`;
+`papirus:apps/firefox` → `/usr/share/icons/Papirus/48x48/apps/firefox.svg`.
+Installations rooted under `~/.local/share/icons` are searched as well.

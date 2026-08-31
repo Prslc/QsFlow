@@ -48,6 +48,14 @@ impl External {
                 format!("External plugin via {command}"),
             ),
         };
+        // The host may name its identity with a `papirus:` spec; the UI only
+        // renders absolute paths (`file://` + icon), so resolve before the
+        // string leaks into `Meta`.
+        let icon = if icon.starts_with("papirus:") {
+            find_icon_path(&icon).unwrap_or_default()
+        } else {
+            icon
+        };
         Self {
             meta: Meta {
                 id: leak(id.to_string()),
@@ -182,9 +190,52 @@ async fn query_external(
 
     let icon_path = find_icon_path(icon);
     for item in &mut parsed {
-        if item.icon.as_deref().unwrap_or("").is_empty() {
-            item.icon = icon_path.clone();
-        }
+        let spec = item.icon.as_deref().unwrap_or("");
+        item.icon = resolve_item_icon(spec, icon_path.clone());
     }
     Ok(parsed)
+}
+/// Resolve one result icon to what the UI can render (`file://` + path):
+/// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,
+/// anything else (already an absolute path) passes through.
+fn resolve_item_icon(icon: &str, fallback: Option<String>) -> Option<String> {
+    if icon.is_empty() {
+        return fallback;
+    }
+    if icon.starts_with("papirus:") {
+        return find_icon_path(icon);
+    }
+    Some(icon.to_string())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn empty_icon_falls_back_to_plugin_icon() {
+        assert_eq!(
+            resolve_item_icon("", Some("/x.png".into())),
+            Some("/x.png".into())
+        );
+        assert_eq!(resolve_item_icon("", None), None);
+    }
+
+    #[test]
+    fn absolute_path_passes_through() {
+        assert_eq!(
+            resolve_item_icon("/home/u/icon.svg", None),
+            Some("/home/u/icon.svg".into())
+        );
+    }
+
+    #[test]
+    fn papirus_spec_is_resolved_to_absolute_path() {
+        if !Path::new("/usr/share/icons/Papirus").exists() {
+            return; // theme not installed on this machine
+        }
+        let resolved = resolve_item_icon("papirus:folder-open", None).unwrap();
+        assert!(resolved.contains("/Papirus/"));
+        assert!(resolved.ends_with(".svg"));
+    }
 }
