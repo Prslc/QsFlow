@@ -283,6 +283,21 @@ mod tests {
             assert!(path.contains("/Papirus/"));
         }
     }
+    #[tokio::test]
+    async fn resolve_icon_passes_absolute_path_through() {
+        // regression: do_find dropped its leading-`/` early return, so an
+        // already-resolved path fell through to the default placeholder
+        let (handled, msgs) = run(
+            r#"{"jsonrpc":"2.0","method":"resolve_icon","params":{"name":"/usr/share/icons/Papirus/48x48/apps/github.svg"},"id":8}"#,
+        )
+        .await;
+        assert!(handled);
+        let v: Value = serde_json::from_str(&msgs[0]).unwrap();
+        assert_eq!(
+            v["result"],
+            "/usr/share/icons/Papirus/48x48/apps/github.svg"
+        );
+    }
 
     #[tokio::test]
     async fn resolve_icon_requires_name() {

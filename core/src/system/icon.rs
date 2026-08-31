@@ -87,6 +87,9 @@ fn do_find(name: &str) -> Option<String> {
     if name.is_empty() {
         return get_resource_path(default_icon);
     }
+    if name.starts_with('/') {
+        return Some(name.to_string());
+    }
     // `papirus:<name>` — explicit Papirus theme reference for external hosts;
     // `papirus:<category>/<name>` scopes the lookup to one category first.
     // The UI only renders absolute paths, so resolve here rather than passing
@@ -169,6 +172,14 @@ mod tests {
         let path = find_icon_path("papirus:folder-open").unwrap();
         assert!(path.contains("/Papirus/"));
         assert!(path.ends_with(".svg"));
+    }
+    #[test]
+    fn absolute_path_passes_through_unchanged() {
+        // regression: do_find used to drop the leading-`/` early return,
+        // so resolved paths re-entered the theme search and fell back to
+        // the default placeholder
+        let p = "/usr/share/icons/Papirus/48x48/apps/github.svg";
+        assert_eq!(find_icon_path(p), Some(p.to_string()));
     }
 
     #[test]
