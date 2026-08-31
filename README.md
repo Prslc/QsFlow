@@ -157,6 +157,11 @@ keyword = "tr"
 
 Reorder entries to change priority, edit `keyword` to remap prefixes, or set
 `enable = false` to disable a plugin. Removed or unknown plugin IDs are ignored.
+An entry may also declare `command`, naming an external JSON-RPC 2.0 host. The
+value is a single executable token — resolved on `PATH`, or an absolute path;
+no arguments or shell syntax (scripts need a shebang and exec bit). The core
+spawns it, relays `search`, and discovers the plugin's identity from the
+host's `list_plugins` response.
 
 The Youdao translation plugin reads credentials from
 `~/.config/qsflow/translate.toml` (a template is written on first run):

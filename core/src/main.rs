@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {
         println!("{:<24} {:<24} {:<12} {:<24} STATUS", "ID", "NAME", "KEYWORD", "ICON");
         println!("{:-<24} {:-<24} {:-<12} {:-<24} {:-<8}", "", "", "", "", "");
-        for (id, name, icon, keyword, enabled) in plugin::list_plugins() {
+        for (id, name, icon, keyword, enabled) in plugin::list_plugins().await {
             let kw = if keyword.is_empty() { "(default)" } else { &keyword };
             let status = if enabled { "" } else { "[disabled]" };
             println!("{id:<24} {name:<24} {kw:<12} {icon:<24}{status}");

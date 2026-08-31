@@ -168,7 +168,7 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
             }
         }
         "list_plugins" => {
-            let plugins: Vec<Value> = crate::plugin::list_plugins()
+            let plugins: Vec<Value> = crate::plugin::list_plugins().await
                 .into_iter()
                 .map(|(pid, name, icon, keyword, enabled)| {
                     json!({

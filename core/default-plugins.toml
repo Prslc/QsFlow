@@ -30,10 +30,6 @@ id = "web-search"
 keyword = "s"
 
 [[plugins]]
-id = "github"
-keyword = "g"
-
-[[plugins]]
 id = "file-search"
 keyword = "f"
 
@@ -44,10 +40,6 @@ keyword = "d"
 [[plugins]]
 id = "clipboard"
 keyword = "c"
-
-[[plugins]]
-id = "translate"
-keyword = "tr"
 
 [[plugins]]
 id = "window"
