@@ -30,6 +30,8 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **Files & paths** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home; open in the default app.
 - **Clipboard history** — search and paste from `cliphist` via `c`.
 - **System commands** — `lock`, `reboot`, `shutdown`, `suspend`, `logout`.
+- **Run commands** — fuzzy-search `$PATH` executables via `r` and run them (with args).
+- **Window switcher** — switch to any open niri window via `w`.
 - **Firefox bookmarks & history** — reads `places.sqlite` directly.
 - **Web & GitHub** — Google suggestions (`s`) and GitHub links (`g`).
 - **Inline tools** — calculator; Youdao translation (`tr`, Enter copies).
@@ -73,6 +75,8 @@ outside the card or press `Esc` to close it.
 | `h <query>` | search Firefox history |
 | `f <query>` | search files by name |
 | `d <query>` | search files by path (multi-token fuzzy) |
+| `r <query>` | fuzzy-search `$PATH` executables and run one |
+| `w <query>` | switch focus to a matching open niri window |
 | `c <query>` | search clipboard history (cliphist) |
 | `s <query>` | Google suggestions |
 | `g <query>` | GitHub search |

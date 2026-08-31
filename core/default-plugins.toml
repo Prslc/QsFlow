@@ -13,6 +13,11 @@ id = "app-search"
 keyword = ""
 
 [[plugins]]
+id = "runner"
+keyword = "r"
+enable = true
+
+[[plugins]]
 id = "firefox-bookmarks"
 keyword = "b"
 
@@ -43,3 +48,8 @@ keyword = "c"
 [[plugins]]
 id = "translate"
 keyword = "tr"
+
+[[plugins]]
+id = "window"
+keyword = "w"
+enable = true

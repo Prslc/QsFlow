@@ -4,7 +4,9 @@ pub mod clipboard;
 pub mod file;
 pub mod firefox;
 pub mod github;
+pub mod runner;
 pub mod system;
+pub mod window;
 pub mod translate;
 pub mod web;
 
@@ -24,6 +26,8 @@ pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
     m.insert("path-search", Box::new(file::PathSearch));
     m.insert("clipboard", Box::new(clipboard::Clipboard));
     m.insert("system-commands", Box::new(system::SystemCommands));
+    m.insert("runner", Box::new(runner::Runner));
     m.insert("translate", Box::new(translate::Translate));
+    m.insert("window", Box::new(window::Window));
     m
 }

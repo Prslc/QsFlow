@@ -177,7 +177,7 @@ PanelWindow {
                         font.pixelSize: 11
                         color: Qt.alpha(backend.theme.fg, 0.5)
                         text: resultsModel.count === 0
-                            ? "Type ? for help  ·  prefixes: b h f d c s g tr"
+                            ? "Type ? for help  ·  prefixes: b h f d c s g tr r w"
                             : "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close"
                     }
 

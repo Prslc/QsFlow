@@ -24,6 +24,8 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 与主目录，直接打开结果。
 - **剪贴板历史** — 通过 `c` 前缀搜索并粘贴 `cliphist` 记录。
 - **系统命令** — `lock`、`reboot`、`shutdown`、`suspend`、`logout`。
+- **命令运行** — 通过 `r` 前缀模糊搜索 `$PATH` 可执行文件并运行（可带参数）。
+- **窗口切换** — 通过 `w` 前缀切换到任一打开的 niri 窗口。
 - **Firefox 书签与历史** — 直接读取 `places.sqlite`。
 - **网页与 GitHub** — Google 搜索建议（`s`）与 GitHub 链接（`g`）。
 - **内联工具** — 即时计算；有道翻译（`tr`，回车复制）。
@@ -66,6 +68,8 @@ quickshell -p /path/to/QsFlow/ui/MainShell.qml
 | `h <关键词>` | 搜索 Firefox 历史 |
 | `f <关键词>` | 按文件名搜索 |
 | `d <关键词>` | 按路径搜索（多词模糊） |
+| `r <关键词>` | 模糊搜索 `$PATH` 可执行文件并运行 |
+| `w <关键词>` | 切换到匹配的打开窗口 |
 | `c <关键词>` | 搜索剪贴板历史 |
 | `s <关键词>` | Google 搜索建议 |
 | `g <关键词>` | GitHub 搜索 |
