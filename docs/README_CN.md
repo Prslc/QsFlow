@@ -173,7 +173,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 
 | 方法 | 参数 | 结果 |
 |------|------|------|
-| `search` | `"query"` 或 `{"text"}` / `{"query"}` | 结果项数组 |
+| `search` | `{"text"}` | 结果项数组 |
 | `top` | — | 最常用项 |
 | `select` | 结果项对象 | `null`（记录使用） |
 | `forget` | `on_click` 字符串或 `{"on_click"}` | `null` |
@@ -182,8 +182,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `theme` | — | 主题颜色 |
 | `ping` | — | `"pong"` |
 
-`search` 的 `params` 可以是普通查询字符串或对象；对象的 `text` 键优先于 `query`。
-缺省/空 `params` 会搜索默认（最常用）集合。
+`search` 的 `params` 是带 `text` 键的对象（字符串），或完全缺省；缺省时会搜索默认
+（最常用）集合。其它任何形状——裸字符串、`{"query": …}`、非字符串 `text`——都会
+返回 `-32602`。
 
 无 `id` 的请求是通知（仅副作用，不返回响应）。未知方法返回 `-32601`；畸形请求
 `-32600`；参数错误 `-32602`。

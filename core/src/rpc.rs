@@ -20,15 +20,10 @@ async fn respond(tx: &mpsc::Sender<String>, id: Value, result: Result<Value, (i6
 fn search_text(params: &Option<Value>) -> Result<String, ()> {
     match params {
         None | Some(Value::Null) => Ok(String::new()),
-        Some(Value::String(s)) => Ok(s.clone()),
-        Some(Value::Object(map)) => {
-            let text = map
-                .get("text")
-                .or_else(|| map.get("query"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            Ok(text.to_string())
-        }
+        Some(Value::Object(map)) => match map.get("text") {
+            Some(Value::String(s)) => Ok(s.clone()),
+            _ => Err(()), // text missing or not a string
+        },
         _ => Err(()),
     }
 }
@@ -273,5 +268,28 @@ mod tests {
         let (handled, msgs) = run(r#"{"method":"ping","id":1}"#).await;
         assert!(!handled);
         assert!(msgs.is_empty());
+    }
+    #[test]
+    fn search_text_accepts_text_object() {
+        let p: Value = serde_json::from_str(r#"{"text":"firefox"}"#).unwrap();
+        assert_eq!(search_text(&Some(p)).unwrap(), "firefox");
+    }
+
+    #[test]
+    fn search_text_absent_or_null_means_empty() {
+        assert_eq!(search_text(&None).unwrap(), "");
+        assert_eq!(search_text(&Some(Value::Null)).unwrap(), "");
+    }
+
+    #[test]
+    fn search_text_rejects_non_text_params() {
+        // bare string and the old `query` alias are no longer accepted
+        assert!(search_text(&Some(Value::String("firefox".into()))).is_err());
+        let empty: Value = serde_json::from_str("{}").unwrap();
+        let query: Value = serde_json::from_str(r#"{"query":"x"}"#).unwrap();
+        let num: Value = serde_json::from_str(r#"{"text":42}"#).unwrap();
+        assert!(search_text(&Some(empty)).is_err());
+        assert!(search_text(&Some(query)).is_err());
+        assert!(search_text(&Some(num)).is_err());
     }
 }

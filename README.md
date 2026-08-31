@@ -188,7 +188,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 
 | Method | Params | Result |
 |--------|--------|--------|
-| `search` | `"query"` or `{"text"}` / `{"query"}` | array of result items |
+| `search` | `{"text"}` | array of result items |
 | `top` | — | most-used items |
 | `select` | item object | `null` (records usage) |
 | `forget` | `on_click` string or `{"on_click"}` | `null` |
@@ -197,9 +197,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |
 
-For `search`, `params` may be a plain query string or an object; an object's
-`text` key takes precedence over `query`. An absent/empty `params` searches the
-default (most-used) set.
+`search` takes an object with a `text` key (a string), or no `params`; an absent
+`params` searches the default (most-used) set. Any other shape — a bare string,
+`{"query": …}`, or a non-string `text` — returns `-32602`.
 
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params
