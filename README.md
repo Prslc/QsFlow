@@ -91,6 +91,8 @@ Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Wayland + Qt client needs the session env under a user service
 Environment=WAYLAND_DISPLAY=wayland-1
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+# resident mode: start hidden, toggle via `ipc call launcher toggle`
+Environment=QSFLOW_RESIDENT=1
 
 [Install]
 WantedBy=default.target
@@ -103,11 +105,11 @@ systemctl --user enable --now qsflow-launcher
 ```
 
 `MainShell.qml` exposes an `IpcHandler` (`target: "launcher"`) with
-`open` / `close` / `toggle`. In this model dismiss (Esc / click outside) hides
-the window instead of quitting, and the core stays warm — so subsequent toggles
-are a compositor-side surface re-map (~sub-frame), not a cold start. To revert,
-`systemctl --user disable --now qsflow-launcher` and restore the spawn-per-hotkey
-binding.
+`open` / `close` / `toggle`. `QSFLOW_RESIDENT=1` selects resident mode (start
+hidden, dismiss hides); without it a plain `quickshell -p ui/MainShell.qml` keeps
+the old behaviour — shows on launch and quits on dismiss, so the manual/dev path
+is independent of the systemd service. To revert, `systemctl --user disable
+--now qsflow-launcher` and restore the spawn-per-hotkey binding.
 
 
 ## Usage

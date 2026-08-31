@@ -83,6 +83,8 @@ Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Wayland + Qt 客户端在 user service 下需要会话环境
 Environment=WAYLAND_DISPLAY=wayland-1
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+# 常驻模式：隐藏启动，用 `ipc call launcher toggle` 切换
+Environment=QSFLOW_RESIDENT=1
 
 [Install]
 WantedBy=default.target
@@ -95,9 +97,10 @@ systemctl --user enable --now qsflow-launcher
 ```
 
 `MainShell.qml` 暴露了一个 `IpcHandler`（`target: "launcher"`），带
-`open` / `close` / `toggle`。此模式下关闭（Esc/点击外部）是隐藏窗口而非退出，
-内核保持温热——之后的每次切换只是合成器侧的表面重映射（亚帧级），不是冷启动。
-恢复：`systemctl --user disable --now qsflow-launcher` 并还原绑定的启动方式。
+`open` / `close` / `toggle`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、关闭即隐藏）；
+不带该变量时，直接 `quickshell -p ui/MainShell.qml` 保持旧行为——启动即弹出、关闭即退出，
+因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
+qsflow-launcher` 并还原绑定的启动方式。
 
 
 ## 使用说明

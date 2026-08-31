@@ -5,7 +5,11 @@ import Quickshell.Wayland
 
 PanelWindow {
     id: window
-    visible: false
+    // Resident mode: the systemd unit sets QSFLOW_RESIDENT=1 → start hidden and
+    // toggle via `ipc call launcher toggle`. A manual `quickshell -p ...` (no
+    // env) keeps the old behaviour: show at launch and quit on dismiss.
+    readonly property bool resident: Quickshell.env("QSFLOW_RESIDENT") === "1"
+    visible: !resident
 
     Component.onCompleted: {
         if (this.WlrLayershell !== undefined) {
@@ -278,7 +282,10 @@ PanelWindow {
     }
 
     function close() {
-        visible = false
+        if (resident)
+            visible = false
+        else
+            Qt.quit()
     }
 
     function toggle() {
