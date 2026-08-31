@@ -1,9 +1,8 @@
 use std::process;
 use gio::prelude::*;
 
-/// Run a shell command detached from the backend (system commands, clipboard
-/// paste, translate copy, …). Shell is intended here: `%u`/`%f` leftovers are
-/// stripped before execution.
+/// Run a shell command detached from the backend (system commands, …). Shell
+/// is intended here: `%u`/`%f` leftovers are stripped before execution.
 pub fn execute_command(cmd: &str) {
     let clean_cmd = cmd
         .replace("%u", "")
@@ -29,4 +28,36 @@ pub fn launch_app(desktop_id: &str) {
             return;
         }
     }
+}
+
+/// Copy text to the Wayland clipboard via `wl-copy` (no shell involved).
+/// The `copy:` scheme carries a JSON object (`{"text":"..."}`) — the same
+/// convention as `select`/`forget`; JSON escaping keeps the line protocol
+/// safe from embedded newlines and quotes. Silent no-op on parse failure or
+/// a missing `wl-copy`.
+pub fn copy_json(payload: &str) {
+    let Ok(req) = serde_json::from_str::<CopyRequest>(payload) else {
+        return;
+    };
+
+    let Some(mut child) = process::Command::new("wl-copy")
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .ok()
+    else {
+        return;
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        let _ = stdin.write_all(req.text.as_bytes());
+    }
+    drop(child.stdin.take());
+    let _ = child.wait();
+}
+
+#[derive(serde::Deserialize)]
+struct CopyRequest {
+    text: String,
 }

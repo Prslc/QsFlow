@@ -43,8 +43,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 
 | Scheme | 效果 |
 |--------|------|
-| `run:<shell cmd>` | 执行 shell 命令（系统命令、剪贴板、复制） |
+| `run:<shell cmd>` | 执行 shell 命令（系统命令、剪贴板） |
 | `launch:<desktop-id>` | 按 desktop id 启动应用（app-search） |
+| `copy:{"text":"…"}` | 把文本写入 Wayland 剪贴板（翻译复制） |
 | 裸 URL / `file:` / `mailto:` URI | 由 UI 经 `Qt.openUrlExternally` 打开 |
 
 无 `on_click` 的结果项不可交互（仅展示）。

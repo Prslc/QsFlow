@@ -47,8 +47,9 @@ keys — all four are always present (`null` for an absent optional field):
 
 | Scheme | Effect |
 |--------|--------|
-| `run:<shell cmd>` | execute a shell command (system commands, clipboard, copy) |
+| `run:<shell cmd>` | execute a shell command (system commands, clipboard) |
 | `launch:<desktop-id>` | launch an app by desktop id (app-search) |
+| `copy:{"text":"…"}` | write the text to the Wayland clipboard (translate copy) |
 | bare URL / `file:` / `mailto:` URI | opened by the UI via `Qt.openUrlExternally` |
 
 An item without `on_click` is non-interactive (display only).

@@ -263,6 +263,8 @@ PanelWindow {
             window.searchTriggered("launch " + target.substring(7))
         } else if (target.startsWith("run:")) {
             window.searchTriggered("run " + target.substring(4))
+        } else if (target.startsWith("copy:")) {
+            window.searchTriggered("copy " + target.substring(5))
         } else if (isUrl) {
             Qt.openUrlExternally(target)
         } else {
