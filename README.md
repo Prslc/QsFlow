@@ -197,9 +197,10 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |
 
-`search` takes an object with a `text` key (a string), or no `params`; an absent
-`params` searches the default (most-used) set. Any other shape — a bare string,
-`{"query": …}`, or a non-string `text` — returns `-32602`.
+`search` takes an object with a `text` key (a non-empty string). An absent
+`params`, an empty `text`, a bare string, `{"query": …}`, or a non-string `text`
+returns `-32602`. Use `top` for the most-used items — `search` does not serve a
+default view.
 
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params

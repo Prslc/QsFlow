@@ -102,6 +102,15 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
             // Await inline (request/response), unlike the streaming text-search
             // path: a JSON-RPC client gets its correlated response even for a
             // one-shot `printf ... | qsflow-core` (no need to hold stdin open).
+            if text.is_empty() {
+                // `top` is the dedicated most-used method; an empty `search`
+                // query is not a search. (The text protocol handles its own
+                // empty-line default in main.rs, so this never affects the UI.)
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            }
             if has_id {
                 let results = crate::plugin::dispatch(&text).await;
                 respond(tx, id, Ok(json!(results))).await;
@@ -240,6 +249,14 @@ mod tests {
     #[tokio::test]
     async fn invalid_params_returns_32602() {
         let (handled, msgs) = run(r#"{"jsonrpc":"2.0","method":"search","params":42,"id":9}"#).await;
+        assert!(handled);
+        let v: Value = serde_json::from_str(&msgs[0]).unwrap();
+        assert_eq!(v["error"]["code"], -32602);
+    }
+    #[tokio::test]
+    async fn search_with_empty_text_returns_32602() {
+        // an absent/empty query is not a search; `top` is the most-used method
+        let (handled, msgs) = run(r#"{"jsonrpc":"2.0","method":"search","id":10}"#).await;
         assert!(handled);
         let v: Value = serde_json::from_str(&msgs[0]).unwrap();
         assert_eq!(v["error"]["code"], -32602);
