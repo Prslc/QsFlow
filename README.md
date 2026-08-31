@@ -88,9 +88,10 @@ Restart=on-failure
 RestartSec=2
 # qsflow-core is spawned from PATH; add the dir that holds it
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
-# Wayland + Qt client needs the session env under a user service
-Environment=WAYLAND_DISPLAY=wayland-1
-Environment=XDG_RUNTIME_DIR=/run/user/1000
+# WAYLAND_DISPLAY/DISPLAY come from the graphical session (imported by the
+# compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
+# no hardcoded display number or uid.
+Environment=XDG_RUNTIME_DIR=%t
 # resident mode: start hidden, toggle via `ipc call launcher toggle`
 Environment=QSFLOW_RESIDENT=1
 

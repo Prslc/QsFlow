@@ -80,9 +80,8 @@ Restart=on-failure
 RestartSec=2
 # qsflow-core 从 PATH 拉起；加入其所在目录
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
-# Wayland + Qt 客户端在 user service 下需要会话环境
-Environment=WAYLAND_DISPLAY=wayland-1
-Environment=XDG_RUNTIME_DIR=/run/user/1000
+# WAYLAND_DISPLAY/DISPLAY 由图形会话导入；这里只设 XDG_RUNTIME_DIR（uid 无关的 %t）
+Environment=XDG_RUNTIME_DIR=%t
 # 常驻模式：隐藏启动，用 `ipc call launcher toggle` 切换
 Environment=QSFLOW_RESIDENT=1
 
