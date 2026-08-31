@@ -197,9 +197,35 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |
 
+For `search`, `params` may be a plain query string or an object; an object's
+`text` key takes precedence over `query`. An absent/empty `params` searches the
+default (most-used) set.
+
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params
 `-32602`.
+
+### Result items
+
+`search` and `top` return an array of items. Every item is an object with these
+keys — all four are always present (`null` for an absent optional field):
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `title` | string | primary label (app name, command, file name, …) |
+| `summary` | string \| null | secondary line (command, path, description, …) |
+| `on_click` | string \| null | action bound to Enter; see the schemes below |
+| `icon` | string \| null | absolute path to an icon image |
+
+`on_click` schemes:
+
+| Scheme | Effect |
+|--------|--------|
+| `run:<shell cmd>` | execute a shell command (system commands, clipboard, copy) |
+| `launch:<desktop-id>` | launch an app by desktop id (app-search) |
+| bare URL / `file:` / `mailto:` URI | opened by the UI via `Qt.openUrlExternally` |
+
+An item without `on_click` is non-interactive (display only).
 
 ## Credit
 
