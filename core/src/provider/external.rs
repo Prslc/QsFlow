@@ -75,30 +75,29 @@ async fn query_external(
     let Ok(output) = child.wait_with_output().await else {
         return Ok(Vec::new());
     };
-    let out = String::from_utf8_lossy(&output.stdout).to_string();
 
     // The plugin answers with one JSON-RPC response line; take the result array.
+    let out = std::str::from_utf8(&output.stdout).unwrap_or_default();
     for line in out.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(items) = v.get("result").and_then(|r| r.as_array()) {
-                let mut parsed: Vec<ResultItem> = items
-                    .iter()
-                    .filter_map(|it| serde_json::from_value(it.clone()).ok())
-                    .collect();
-                // The external plugin leaves the icon empty; fill it from this
-                // plugin's meta (the core owns the icon theme lookup).
-                let icon_path = find_icon_path(icon).or_else(|| Some(String::new()));
-                for item in &mut parsed {
-                    if item.icon.as_deref().map_or(true, |s| s.is_empty()) {
-                        item.icon = icon_path.clone();
-                    }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
+            && let Some(items) = v.get("result").and_then(|r| r.as_array())
+        {
+            let mut parsed: Vec<ResultItem> = items
+                .iter()
+                .filter_map(|it| serde_json::from_value(it.clone()).ok())
+                .collect();
+
+            let icon_path = find_icon_path(icon);
+            for item in &mut parsed {
+                if item.icon.as_deref().unwrap_or("").is_empty() {
+                    item.icon = icon_path.clone();
                 }
-                return Ok(parsed);
             }
+            return Ok(parsed);
         }
     }
     Ok(Vec::new())
