@@ -1,7 +1,7 @@
 use std::future::Future;
 use rustc_hash::FxHashMap as HashMap;
 use std::pin::Pin;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Deserialize;
 
@@ -56,30 +56,49 @@ struct Entry {
     keyword: String,
 }
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
-static REGISTRY: tokio::sync::OnceCell<Vec<Entry>> = tokio::sync::OnceCell::const_new();
+static CONFIG: tokio::sync::RwLock<Config> =
+    tokio::sync::RwLock::const_new(Config { plugins: Vec::new() });
+static REGISTRY: tokio::sync::RwLock<Vec<Entry>> = tokio::sync::RwLock::const_new(Vec::new());
+static REGISTRY_READY: AtomicBool = AtomicBool::new(false);
+/// Serializes the one-time build and config reloads (both take INIT first).
+static INIT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-fn config() -> &'static Config {
-    CONFIG.get_or_init(load_or_default)
+/// Lazy first build: load config + registry on first use, once.
+async fn ensure_loaded() {
+    if !REGISTRY_READY.load(Ordering::Acquire) {
+        let _guard = INIT.lock().await;
+        if !REGISTRY_READY.load(Ordering::Acquire) {
+            do_reload().await;
+        }
+    }
 }
 
-async fn registry_async() -> &'static Vec<Entry> {
-    REGISTRY
-        .get_or_try_init(build_registry)
-        .await
-        .expect("registry build is infallible")
+/// Re-read `plugins.toml` and rebuild the registry. Called by the file watcher
+/// so resident mode picks up config edits without a core restart; the change
+/// is visible on the next search / `?` / `list_plugins`.
+pub async fn reload() {
+    let _guard = INIT.lock().await;
+    do_reload().await;
 }
 
-async fn build_registry() -> Result<Vec<Entry>, std::convert::Infallible> {
+async fn do_reload() {
+    let new_config = load_or_default();
+    let entries = build_entries(&new_config).await;
+    *CONFIG.write().await = new_config;
+    *REGISTRY.write().await = entries;
+    REGISTRY_READY.store(true, Ordering::Release);
+}
+
+/// Build registry entries from a config. Pure w.r.t. shared state: external
+/// hosts are asked once per unique command, then reused across entries that
+/// share it.
+async fn build_entries(config: &Config) -> Vec<Entry> {
     let mut map: PluginMap = crate::provider::plugin_map();
     let mut entries = Vec::new();
-
-    // External hosts are asked once per unique command, then reused across
-    // entries that share it.
     let mut discovered: HashMap<String, Vec<crate::provider::external::HostMeta>> =
         HashMap::default();
 
-    for p in &config().plugins {
+    for p in &config.plugins {
         if !p.enable { continue; }
         if let Some(plugin) = map.remove(p.id.as_str()) {
             entries.push(Entry {
@@ -108,7 +127,7 @@ async fn build_registry() -> Result<Vec<Entry>, std::convert::Infallible> {
         });
     }
 
-    Ok(entries)
+    entries
 }
 
 fn load_or_default() -> Config {
@@ -159,8 +178,10 @@ fn merge_config(mut base: Config, user: Config) -> Config {
 
 pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
     let map = crate::provider::plugin_map();
-    let reg = registry_async().await;
-    config()
+    ensure_loaded().await;
+    let config = CONFIG.read().await;
+    let reg = REGISTRY.read().await;
+    config
         .plugins
         .iter()
         .filter(|p| {
@@ -198,7 +219,8 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
-    let reg = registry_async().await;
+    ensure_loaded().await;
+    let reg = REGISTRY.read().await;
 
     if input.trim() == "?" {
         return reg
