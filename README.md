@@ -63,8 +63,52 @@ Bind a hotkey (e.g. Alt+Space) to launch the shell:
 quickshell -p /path/to/QsFlow/ui/MainShell.qml
 ```
 
-The launcher opens full-screen with a dimmed backdrop and a centered card; click
-outside the card or press `Esc` to close it.
+The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
+In the default spawn-per-hotkey flow, `Esc` / clicking outside quits it; in
+resident mode (below) the hotkey toggles the window and dismiss hides it.
+
+## Resident mode (optional — zero cold-start)
+
+By default each hotkey press re-spawns the QML shell and its Rust core, so the
+first keystroke pays a ~300ms cold start (mostly QML/Qt init, not the core). To
+pop the launcher up instantly, keep one resident shell + core alive and toggle
+the window via Quickshell's IPC:
+
+```ini
+# ~/.config/systemd/user/qsflow-launcher.service
+[Unit]
+Description=QsFlow launcher (resident quickshell + core)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/quickshell -p /abs/path/to/QsFlow/ui/MainShell.qml
+Restart=on-failure
+RestartSec=2
+# qsflow-core is spawned from PATH; add the dir that holds it
+Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Wayland + Qt client needs the session env under a user service
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now qsflow-launcher
+# niri hotkey — toggle instead of spawn:
+#   Alt+Space { spawn-sh "quickshell ipc --path $HOME/Project/QsFlow/ui/MainShell.qml call launcher toggle"; }
+```
+
+`MainShell.qml` exposes an `IpcHandler` (`target: "launcher"`) with
+`open` / `close` / `toggle`. In this model dismiss (Esc / click outside) hides
+the window instead of quitting, and the core stays warm — so subsequent toggles
+are a compositor-side surface re-map (~sub-frame), not a cold start. To revert,
+`systemctl --user disable --now qsflow-launcher` and restore the spawn-per-hotkey
+binding.
+
 
 ## Usage
 

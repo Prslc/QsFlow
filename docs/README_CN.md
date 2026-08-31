@@ -57,7 +57,48 @@ ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
 quickshell -p /path/to/QsFlow/ui/MainShell.qml
 ```
 
-启动器以全屏覆盖方式打开，带调暗背景与居中卡片；点击卡片外或按 `Esc` 关闭。
+启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
+`Esc`/点击卡片外会退出；常驻模式（见下）下热键切换窗口，关闭改为隐藏。
+
+## 常驻模式（可选 —— 零冷启动）
+
+默认每次按热键都会重新拉起 QML 壳与 Rust 内核，首次按键需付 ~300ms 冷启动
+（主要是 QML/Qt 初始化，不是核心）。要让启动器即刻弹出，让一个常驻的壳+内核
+保持存活，通过 Quickshell 的 IPC 切换窗口：
+
+```ini
+# ~/.config/systemd/user/qsflow-launcher.service
+[Unit]
+Description=QsFlow launcher (resident quickshell + core)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/quickshell -p /abs/path/to/QsFlow/ui/MainShell.qml
+Restart=on-failure
+RestartSec=2
+# qsflow-core 从 PATH 拉起；加入其所在目录
+Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Wayland + Qt 客户端在 user service 下需要会话环境
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now qsflow-launcher
+# niri 热键 —— 切换而非重新拉起：
+#   Alt+Space { spawn-sh "quickshell ipc --path $HOME/Project/QsFlow/ui/MainShell.qml call launcher toggle"; }
+```
+
+`MainShell.qml` 暴露了一个 `IpcHandler`（`target: "launcher"`），带
+`open` / `close` / `toggle`。此模式下关闭（Esc/点击外部）是隐藏窗口而非退出，
+内核保持温热——之后的每次切换只是合成器侧的表面重映射（亚帧级），不是冷启动。
+恢复：`systemctl --user disable --now qsflow-launcher` 并还原绑定的启动方式。
+
 
 ## 使用说明
 

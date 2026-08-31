@@ -5,6 +5,7 @@ import Quickshell.Wayland
 
 PanelWindow {
     id: window
+    visible: false
 
     Component.onCompleted: {
         if (this.WlrLayershell !== undefined) {
@@ -94,7 +95,7 @@ PanelWindow {
     }
     MouseArea {
         anchors.fill: parent
-        onClicked: Qt.quit()
+        onClicked: window.close()
     }
 
     // centered card
@@ -139,7 +140,7 @@ PanelWindow {
                         if (inputField.inputMethodComposing) return // IME confirm
                         window.launchCurrent()
                     }
-                    onDismissRequested: Qt.quit()
+                    onDismissRequested: window.close()
                     onMoveUp: resultsList.currentIndex = Math.max(resultsList.currentIndex - 1, 0)
                     onMoveDown: resultsList.currentIndex = Math.min(resultsList.currentIndex + 1, resultsModel.count - 1)
                     onPageUp: resultsList.currentIndex = Math.max(resultsList.currentIndex - 5, 0)
@@ -265,10 +266,34 @@ PanelWindow {
         }
         exitTimer.start()
     }
+    function open() {
+        visible = true
+        searchBar.text = ""
+        window.searchTriggered("")
+        dim.opacity = 0
+        content.opacity = 0
+        content.scale = 0.97
+        entrance.restart()
+        focusTimer.restart()
+    }
+
+    function close() {
+        visible = false
+    }
+
+    function toggle() {
+        if (visible) close(); else open()
+    }
+
+    Timer {
+        id: focusTimer
+        interval: 20
+        onTriggered: searchBar.inputField.forceActiveFocus()
+    }
 
     Timer {
         id: exitTimer
         interval: 150
-        onTriggered: Qt.quit()
+        onTriggered: window.close()
     }
 }
