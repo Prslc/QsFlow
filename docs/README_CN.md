@@ -10,7 +10,7 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议、GitHub 以及进行即时数学计算。后端基于 Rust 异步实现，前端使用 [Quickshell](https://github.com/outfoxxed/quickshell) 的 QML 构建。
+QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。后端基于 Rust 异步实现，前端使用 [Quickshell](https://github.com/outfoxxed/quickshell) 的 QML 构建。
 
 ## 截图
 
@@ -27,8 +27,8 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - **命令运行** — 通过 `r` 前缀模糊搜索 `$PATH` 可执行文件并运行（可带参数）。
 - **窗口切换** — 通过 `w` 前缀切换到任一打开的 niri 窗口。
 - **Firefox 书签与历史** — 直接读取 `places.sqlite`。
-- **网页与 GitHub** — Google 搜索建议（`s`）与 GitHub 链接（`g`）。
-- **内联工具** — 即时计算；有道翻译（`tr`，回车复制）。
+- **网页搜索** — Google 搜索建议（`s`）。
+- **内联工具** — 即时计算。
 - **使用历史** — 留空时展示高频项，按 `Delete` 删除。
 - **GTK 主题集成** — 从 GTK4 主题 CSS 读取主题色。
 - **插件系统** — TOML 注册表，可启用、禁用、调整顺序或修改前缀。
@@ -115,8 +115,6 @@ qsflow-launcher` 并还原绑定的启动方式。
 | `w <关键词>` | 切换到匹配的打开窗口 |
 | `c <关键词>` | 搜索剪贴板历史 |
 | `s <关键词>` | Google 搜索建议 |
-| `g <关键词>` | GitHub 搜索 |
-| `tr <关键词>` | 有道翻译（回车复制） |
 | `?` | 显示关键词模式、默认功能与提示 |
 | `lock` / `reboot` / `shutdown` | 系统命令 |
 | `2 + 3` | 即时计算 |
@@ -140,23 +138,12 @@ id = "firefox-bookmarks"
 keyword = "b"
 
 [[plugins]]
-id = "translate"
-keyword = "tr"
+id = "web-search"
+keyword = "s"
 ```
 
 调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
 条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。
-
-有道翻译插件从 `~/.config/qsflow/translate.toml` 读取凭据（首次运行自动生成模板）：
-
-```toml
-app_token = "..."
-app_secret = "..."
-lang_from = "Auto"    # 可选，默认 Auto
-lang_to = "English"   # 可选，默认 English
-```
-
-语言值使用显示名，如 `Auto`、`English`、`Chinese (Simplified)`。复制译文需要系统安装 `wl-copy`。
 
 主题色默认从 `~/.config/gtk-4.0/dank-colors.css` 读取，读取失败则使用内置默认值。
 
@@ -170,7 +157,6 @@ lang_to = "English"   # 可选，默认 English
 ## 致谢
 
 - **[Wox](https://github.com/wox-launcher/wox)** — 本启动器的设计灵感来源。
-- **[Flow.translate-youdao](https://github.com/Prslc/Flow.translate-youdao)** — 有道翻译插件改编自本项目。
 - **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick Shell 框架，负责 Wayland 悬浮面板渲染。
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — 高质量 SVG 图标主题。
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。

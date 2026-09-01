@@ -11,7 +11,7 @@ English | [Chinese](docs/README_CN.md)
 ## Overview
 
 QsFlow is a Wayland-native application launcher and quick-search tool for Linux.
-Type to search installed apps, Firefox bookmarks, web suggestions, GitHub, and
+Type to search installed apps, Firefox bookmarks, web suggestions, and
 inline math — all from a single floating overlay. Built with a Rust backend and a
 QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 
@@ -33,8 +33,8 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 - **Run commands** — fuzzy-search `$PATH` executables via `r` and run them (with args).
 - **Window switcher** — switch to any open niri window via `w`.
 - **Firefox bookmarks & history** — reads `places.sqlite` directly.
-- **Web & GitHub** — Google suggestions (`s`) and GitHub links (`g`).
-- **Inline tools** — calculator; Youdao translation (`tr`, Enter copies).
+- **Web search** — Google suggestions (`s`).
+- **Inline tools** — calculator.
 - **Usage history** — frequent items on empty input; `Delete` removes an entry.
 - **GTK theme integration** — colors from your GTK4 theme CSS.
 - **Plugin system** — TOML registry; enable, disable, reorder, or remap keywords.
@@ -126,8 +126,6 @@ is independent of the systemd service. To revert, `systemctl --user disable
 | `w <query>` | switch focus to a matching open niri window |
 | `c <query>` | search clipboard history (cliphist) |
 | `s <query>` | Google suggestions |
-| `g <query>` | GitHub search |
-| `tr <query>` | Youdao translation (Enter to copy) |
 | `?` | show keyword modes, default functions, and hints |
 | `lock` / `reboot` / `shutdown` | system commands |
 | `2 + 3` | inline calculator |
@@ -151,8 +149,8 @@ id = "firefox-bookmarks"
 keyword = "b"
 
 [[plugins]]
-id = "translate"
-keyword = "tr"
+id = "web-search"
+keyword = "s"
 ```
 
 Reorder entries to change priority, edit `keyword` to remap prefixes, or set
@@ -163,19 +161,6 @@ no arguments or shell syntax (scripts need a shebang and exec bit). The core
 spawns it, relays `search`, and discovers the plugin's identity from the
 host's `list_plugins` response; both the identity `icon` and result `icon`
 fields accept the `papirus:` scheme (resolved to an absolute Papirus path).
-
-The Youdao translation plugin reads credentials from
-`~/.config/qsflow/translate.toml` (a template is written on first run):
-
-```toml
-app_token = "..."
-app_secret = "..."
-lang_from = "Auto"    # optional, defaults Auto
-lang_to = "English"   # optional, defaults English
-```
-
-Language values accept display names such as `Auto`, `English`,
-`Chinese (Simplified)`. It requires `wl-copy` on `PATH` to copy results.
 
 Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
 built-in defaults).
@@ -191,7 +176,6 @@ full protocol spec and the result-item (schema) contract are in
 ## Credit
 
 - **[Wox](https://github.com/wox-launcher/wox)** — the launcher concept is inspired by this project.
-- **[Flow.translate-youdao](https://github.com/Prslc/Flow.translate-youdao)** — the Youdao translation plugin is adapted from this project.
 - **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick shell toolkit that powers the Wayland overlay.
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
