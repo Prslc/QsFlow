@@ -19,7 +19,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
 | `resolve_icon` | `{"name"}` | absolute path for an icon spec |
-| `list_plugins` | — | plugin metadata |
+| `list_plugins` | — | plugin metadata; see [schema](#plugin-metadata-list_plugins) |
 | `theme` | — | theme colors |
 | `ping` | — | `"pong"` |
 
@@ -37,6 +37,41 @@ the `papirus:` scheme below — to the absolute path the launcher UI renders. It
 is meant for external plugin hosts that build icons dynamically (e.g. a
 `list_plugins` identity) without hard-coding theme paths. An absent or
 non-string `name` returns `-32602`.
+
+## Plugin metadata (`list_plugins`)
+
+`list_plugins` returns an array of plugin objects. There are two shapes:
+
+### Core → client
+
+Called on the core's stdin, it answers with the current registry:
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `id` | string | plugin id, matches the `plugins.toml` entry |
+| `name` | string | display name |
+| `icon` | string | icon path or theme name (external hosts' `papirus:` specs are already resolved to absolute paths) |
+| `keyword` | string | trigger prefix (empty = default) |
+| `enabled` | bool | whether the plugin is active |
+
+### External host → core (identity discovery)
+
+When a `plugins.toml` entry declares `command`, the core spawns the host and
+calls `list_plugins` once to discover identity. The response `result` is an
+array of objects:
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `id` | string (required) | plugin id — must match the `plugins.toml` entry id, or the identity is ignored |
+| `name` | string | display name (empty → falls back to the configured id) |
+| `icon` | string | absolute path or `papirus:` spec (see [Icon specs](#icon-specs)) |
+| `description` | string | ready hint shown in the `?` list and the keyword+space hint |
+
+A host that omits `list_plugins` (or returns no matching `id`) is still usable —
+searches relay and results resolve — but its identity degrades to the
+configured id and no icon, so the `?` list and the keyword+space hint show the
+default placeholder. Declaring the identity (with a `papirus:` icon) is what
+makes those two surfaces render the plugin's real icon.
 
 ## Result items
 

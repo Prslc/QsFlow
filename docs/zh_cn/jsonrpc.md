@@ -17,7 +17,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
 | `resolve_icon` | `{"name"}` | 图标规范对应的绝对路径 |
-| `list_plugins` | — | 插件元数据 |
+| `list_plugins` | — | 插件元数据；见 [schema](#插件元数据list_plugins) |
 | `theme` | — | 主题颜色 |
 | `ping` | — | `"pong"` |
 
@@ -32,6 +32,38 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要动态构造图标的外部
 插件主机（如 `list_plugins` 身份图标），无需硬编码主题路径。`name` 缺失或非
 字符串返回 `-32602`。
+
+## 插件元数据（`list_plugins`）
+
+`list_plugins` 返回插件对象数组，存在两种形态：
+
+### core → 客户端
+
+在 core 的 stdin 上调用，返回当前注册表：
+
+| 键 | 类型 | 含义 |
+|-----|------|------|
+| `id` | string | 插件 id，与 `plugins.toml` 条目对应 |
+| `name` | string | 显示名 |
+| `icon` | string | 图标路径或主题名（外部主机的 `papirus:` 规范已解析为绝对路径） |
+| `keyword` | string | 触发前缀（空 = 默认） |
+| `enabled` | bool | 插件是否启用 |
+
+### 外部主机 → core（身份发现）
+
+当 `plugins.toml` 条目声明 `command` 时，core 拉起主机并调用一次 `list_plugins`
+以发现身份。响应 `result` 为对象数组：
+
+| 键 | 类型 | 含义 |
+|-----|------|------|
+| `id` | string（必填） | 插件 id——必须与 `plugins.toml` 条目的 id 一致，否则身份被忽略 |
+| `name` | string | 显示名（空 → 回落为配置的 id） |
+| `icon` | string | 绝对路径或 `papirus:` 规范（见 [图标规范](#图标规范)） |
+| `description` | string | ready 提示，显示在 `?` 列表与关键词+空格提示中 |
+
+未实现 `list_plugins`（或返回中没有匹配的 `id`）的主机仍可用——搜索照常转发、
+结果照常解析——但身份退化为配置的 id 且无图标，因此 `?` 列表与关键词+空格提示
+显示默认占位符。声明身份（带 `papirus:` 图标）正是让这两处渲染真实图标的关键。
 
 ## 结果项
 
