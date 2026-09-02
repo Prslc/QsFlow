@@ -25,6 +25,12 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 `{"query": …}`、非字符串 `text` 都会返回 `-32602`。最常用项请用 `top`——`search`
 不承担默认视图。
 
+`forget` 把一行从使用历史中移除。当 `on_click` 是 `run:` shell 命令、且其首个
+token 是某个已注册外部主机的 `command`（绝对路径；配置用裸名时按 PATH 解析），
+core 还会向该主机转发一条 `forget` 请求，让主机删除自己的数据——例如 todo 插件
+据此删除对应待办。未实现 `forget` 方法的主机保持「仅 usage」语义；转发失败静默
+忽略，响应仍为 `null`。
+
 无 `id` 的请求是通知（仅副作用，不返回响应）。未知方法返回 `-32601`；畸形请求
 `-32600`；参数错误 `-32602`。
 

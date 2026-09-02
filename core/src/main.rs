@@ -84,7 +84,9 @@ async fn main() -> Result<()> {
             continue;
         }
         if input.starts_with("forget ") {
-            let _ = system::usage::forget(input.trim_start_matches("forget "));
+            let key = input.trim_start_matches("forget ");
+            let _ = system::usage::forget(key);
+            plugin::forget_row(key).await;
             continue;
         }
         if input.starts_with("run ") {

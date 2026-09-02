@@ -148,6 +148,7 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
                 }
             };
             let _ = crate::system::usage::forget(&key);
+            crate::plugin::forget_row(&key).await;
             if has_id {
                 respond(tx, id, Ok(Value::Null)).await;
             }

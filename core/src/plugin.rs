@@ -57,6 +57,17 @@ pub trait Plugin: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<Vec<ResultItem>>>> + Send + '_>> {
         Box::pin(async { Ok(None) })
     }
+
+    /// Drop a result row's data (best effort, invoked by `forget`). Usage
+    /// history is handled by the caller; external hosts that own the row —
+    /// its `on_click` is a `run:` command invoking their `command` — relay a
+    /// core → host `forget` so they can delete their own data. Default: no-op.
+    fn forget(
+        &self,
+        _on_click: &str,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 type PluginMap = HashMap<&'static str, Box<dyn Plugin>>;
@@ -226,6 +237,17 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
             }
         })
         .collect()
+}
+
+/// Drop a result row's data across the registry (best effort). Called by the
+/// `forget` paths after usage history is removed; only external hosts that
+/// own the `on_click` act on it (see `Plugin::forget`).
+pub async fn forget_row(on_click: &str) {
+    ensure_loaded().await;
+    let reg = REGISTRY.read().await;
+    for entry in reg.iter() {
+        let _ = entry.plugin.forget(on_click).await;
+    }
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {

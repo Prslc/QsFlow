@@ -94,6 +94,12 @@ impl Plugin for External {
         let icon = self.meta.icon.to_string();
         Box::pin(async move { query_default(&command, &plugin, &icon).await })
     }
+
+    fn forget(&self, on_click: &str) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        let command = self.command.clone();
+        let on_click = on_click.to_string();
+        Box::pin(async move { forget_external(&command, &on_click).await })
+    }
 }
 
 /// One JSON-RPC request/response round trip against `command`: spawn, write the
@@ -225,6 +231,58 @@ async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option
         return Ok(None);
     }
     Ok(parse_result_items(&response, icon))
+}
+
+/// First shell token of a `run:` payload (argv0), or `None` for any other
+/// scheme. Hosts emit single-token commands (plugins.toml contract), so a
+/// plain whitespace split is sufficient.
+fn run_argv0(on_click: &str) -> Option<&str> {
+    let rest = on_click.strip_prefix("run:")?;
+    if rest.is_empty() {
+        return None;
+    }
+    rest.split_whitespace().next()
+}
+
+/// Resolve a plugins.toml `command` to an absolute path when it is a bare
+/// name (PATH lookup); absolute paths pass through unchanged.
+fn resolve_command(command: &str) -> String {
+    if command.contains('/') {
+        return command.to_string();
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(command);
+            if candidate.is_file() {
+                return candidate.display().to_string();
+            }
+        }
+    }
+    command.to_string()
+}
+
+/// Relay a row's removal to the host that owns it: when `on_click` is a
+/// `run:` shell command whose first token is this host's `command` (as
+/// configured or resolved on PATH), ask the host to `forget` the row — it
+/// may delete plugin data (e.g. a todo item). Host failures are silent:
+/// usage history was already removed, and a host without a `forget` method
+/// simply has no data to drop.
+async fn forget_external(command: &str, on_click: &str) -> Result<()> {
+    let Some(argv0) = run_argv0(on_click) else {
+        return Ok(());
+    };
+    let resolved = resolve_command(command);
+    if argv0 != command && argv0 != resolved {
+        return Ok(());
+    }
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "forget",
+        "params": { "on_click": on_click },
+        "id": 1,
+    });
+    let _ = rpc_call(command, &request).await;
+    Ok(())
 }
 /// Resolve one result icon to what the UI can render (`file://` + path):
 /// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,

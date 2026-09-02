@@ -28,6 +28,13 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 returns `-32602`. Use `top` for the most-used items — `search` does not serve a
 default view.
 
+`forget` drops a row from usage history. When the `on_click` is a `run:` shell
+command whose first token is a registered external host's `command` (absolute
+path, or PATH-resolved when the config uses a bare name), the core also relays
+a `forget` request to that host so it can delete its own data — e.g. the todo
+plugin removes the todo. Hosts without a `forget` method keep usage-only
+semantics; relay failures are silent and the response is still `null`.
+
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params
 `-32602`.
