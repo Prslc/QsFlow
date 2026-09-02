@@ -85,6 +85,15 @@ impl Plugin for External {
         let icon = self.meta.icon.to_string();
         Box::pin(async move { query_external(&command, &plugin, &query, &icon).await })
     }
+
+    fn default_view(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<ResultItem>>>> + Send + '_>> {
+        let command = self.command.clone();
+        let plugin = self.meta.id.to_string();
+        let icon = self.meta.icon.to_string();
+        Box::pin(async move { query_default(&command, &plugin, &icon).await })
+    }
 }
 
 /// One JSON-RPC request/response round trip against `command`: spawn, write the
@@ -164,6 +173,23 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
         .collect()
 }
 
+/// Normalize a host response's `result` array into rows, resolving each
+/// icon to what the UI can render. `None` when the response has no usable
+/// `result` array.
+fn parse_result_items(response: &serde_json::Value, icon: &str) -> Option<Vec<ResultItem>> {
+    let items = response.get("result")?.as_array()?;
+    let mut parsed: Vec<ResultItem> = items
+        .iter()
+        .filter_map(|it| serde_json::from_value(it.clone()).ok())
+        .collect();
+    let icon_path = find_icon_path(icon);
+    for item in &mut parsed {
+        let spec = item.icon.as_deref().unwrap_or("");
+        item.icon = resolve_item_icon(spec, icon_path.clone());
+    }
+    Some(parsed)
+}
+
 async fn query_external(
     command: &str,
     plugin: &str,
@@ -179,21 +205,26 @@ async fn query_external(
     let Some(response) = rpc_call(command, &request).await else {
         return Ok(Vec::new());
     };
-    let Some(items) = response.get("result").and_then(|r| r.as_array()) else {
-        return Ok(Vec::new());
+    Ok(parse_result_items(&response, icon).unwrap_or_default())
+}
+
+/// Ask the host for its default view (its `top` method). `Ok(None)` when the
+/// host has no such method (`-32601`), it errored, or produced no usable
+/// result — the caller falls back to the identity card.
+async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option<Vec<ResultItem>>> {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "top",
+        "params": { "plugin": plugin },
+        "id": 1,
+    });
+    let Some(response) = rpc_call(command, &request).await else {
+        return Ok(None);
     };
-
-    let mut parsed: Vec<ResultItem> = items
-        .iter()
-        .filter_map(|it| serde_json::from_value(it.clone()).ok())
-        .collect();
-
-    let icon_path = find_icon_path(icon);
-    for item in &mut parsed {
-        let spec = item.icon.as_deref().unwrap_or("");
-        item.icon = resolve_item_icon(spec, icon_path.clone());
+    if response.get("error").is_some() {
+        return Ok(None);
     }
-    Ok(parsed)
+    Ok(parse_result_items(&response, icon))
 }
 /// Resolve one result icon to what the UI can render (`file://` + path):
 /// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,

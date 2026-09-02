@@ -65,6 +65,27 @@ scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要�
 结果照常解析——但身份退化为配置的 id 且无图标，因此 `?` 列表与关键词+空格提示
 显示默认占位符。声明身份（带 `papirus:` 图标）正是让这两处渲染真实图标的关键。
 
+## 关键词插件的默认视图
+
+`plugins.toml` 中带非空 `keyword` 的条目，由「关键词 + 空格」（如 `todo `）的查询
+打开——文本协议与 `search` RPC 皆然。打开时 core 会向外部主机请求**默认视图**：
+
+```sh
+printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1}' | /path/to/todo/main.py
+# -> {"jsonrpc":"2.0","result":[{"title":…,"summary":…,"on_click":…,"icon":…}],"id":1}
+```
+
+注意这是 core → 主机的请求，与 core 自身的 `top` RPC（最常用使用历史，服务启动器
+空查询视图）不同。主机通过响应 `top` 声明默认视图（用插件框架的
+`@plugin.method("top")` 注册）；响应 `result` 为结果项数组，与 `search`
+同 [schema](#结果项)，含图标解析。
+
+主机返回非空默认视图时，它取代关键词+空格的身份提示；否则维持原行为：
+
+- 主机未实现 `top`（未知方法 `-32601`）或处理失败（`-32603`）→ 显示
+  `list_plugins` 的身份卡片（`name` + `description`）
+- 返回空结果列表 → 同一身份卡片，作为插件的空状态
+
 ## 结果项
 
 `search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——四个键**始终都在**，
@@ -92,8 +113,8 @@ scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要�
 
 启动器 UI 以 `file://` + 路径渲染图标，因此 core 输出的每个 `icon` 都是绝对路径。
 **外部插件主机**（`plugins.toml` 中带 `command` 的条目）可以改用 `papirus:`
-规范——用在搜索结果 `icon` 字段及 `list_plugins` 身份 `icon` 上——core 会在
-结果到达 UI 前解析：
+规范——用在任何结果项 `icon` 字段（`search` 结果与 `top` 默认视图皆然）及
+`list_plugins` 身份 `icon` 上——core 会在结果到达 UI 前解析：
 
 | 规范 | 解析方式 |
 |------|----------|

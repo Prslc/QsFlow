@@ -67,11 +67,31 @@ array of objects:
 | `icon` | string | absolute path or `papirus:` spec (see [Icon specs](#icon-specs)) |
 | `description` | string | ready hint shown in the `?` list and the keyword+space hint |
 
-A host that omits `list_plugins` (or returns no matching `id`) is still usable —
-searches relay and results resolve — but its identity degrades to the
-configured id and no icon, so the `?` list and the keyword+space hint show the
-default placeholder. Declaring the identity (with a `papirus:` icon) is what
-makes those two surfaces render the plugin's real icon.
+## Default views for keyword plugins
+
+A `plugins.toml` entry with a non-empty `keyword` is opened by a query that is
+just the keyword followed by a space (e.g. `todo `) — through the text protocol
+and the `search` RPC alike. Opening asks the external host for its **default
+view**:
+
+```sh
+printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1}' | /path/to/todo/main.py
+# -> {"jsonrpc":"2.0","result":[{"title":…,"summary":…,"on_click":…,"icon":…}],"id":1}
+```
+
+This `top` call is a core → host request — distinct from the core's own `top`
+RPC (most-used usage history), which serves the empty-launcher view. A host
+declares a default view by serving `top` (registering it via the plugin
+framework's `@plugin.method("top")`); the response `result` is an array of
+result items with the same [schema](#result-items) as `search`, icons
+included.
+
+When the host returns a non-empty default view it is shown instead of the
+keyword+space identity hint. The hint stays otherwise:
+
+- host without `top` (unknown method `-32601`) or a failing handler
+  (`-32603`) → identity card from `list_plugins` (`name` + `description`)
+- empty result list → same identity card, as the plugin's empty state
 
 ## Result items
 
@@ -100,9 +120,10 @@ An item without `on_click` is non-interactive (display only).
 
 The launcher UI renders icons as `file://` + path, so every `icon` the core
 emits is an absolute path. **External plugin hosts** (a `plugins.toml` entry
-with `command`) may instead return a `papirus:` spec — in search result `icon`
-fields and in the `list_plugins` identity `icon` — and the core resolves it
-before the item reaches the UI:
+with `command`) may instead return a `papirus:` spec — in any result-item
+`icon` field (`search` results and `top` default views alike) and in the
+`list_plugins` identity `icon` — and the core resolves it before the item
+reaches the UI:
 
 | Spec | Resolution |
 |------|------------|

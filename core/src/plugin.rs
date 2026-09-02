@@ -47,6 +47,16 @@ pub trait Plugin: Send + Sync {
         query: &str,
         full: &str,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<ResultItem>>> + Send + '_>>;
+    /// Default view shown when the plugin is opened with its keyword and an
+    /// empty query. `Ok(None)` (or an empty list) keeps the identity card;
+    /// built-ins keep the default, external hosts override it with the
+    /// host's `top` method.
+    #[allow(clippy::type_complexity)] // same hand-rolled future type as `search`
+    fn default_view(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<Vec<ResultItem>>>> + Send + '_>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 type PluginMap = HashMap<&'static str, Box<dyn Plugin>>;
@@ -251,6 +261,14 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         && query.is_empty()
         && let Some(entry) = reg.iter().find(|entry| entry.keyword == keyword)
     {
+        // Keyword-only input opens the plugin: an external host may serve a
+        // default view (`top`); fall back to the identity card when it has
+        // none or returns nothing.
+        if let Ok(Some(items)) = entry.plugin.default_view().await
+            && !items.is_empty()
+        {
+            return items;
+        }
         let meta = entry.plugin.meta();
         return vec![ResultItem {
             title: meta.name.to_string(),
