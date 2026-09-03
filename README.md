@@ -55,12 +55,15 @@ git clone https://github.com/Prslc/QsFlow.git
 cd QsFlow/core
 cargo build --release
 ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
+# qsflow is a symlink to quickshell: the process shows its own name in ps/top
+# (cosmetic — IPC is keyed by the -p config path, not the binary name)
+ln -s "$(command -v quickshell)" ~/.local/bin/qsflow
 ```
 
 Bind a hotkey (e.g. Alt+Space) to launch the shell:
 
 ```bash
-quickshell -p /path/to/QsFlow/ui/MainShell.qml
+qsflow -p /path/to/QsFlow/ui/MainShell.qml
 ```
 
 The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
@@ -83,10 +86,11 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/quickshell -p /abs/path/to/QsFlow/ui/MainShell.qml
+ExecStart=qsflow -p /abs/path/to/QsFlow/ui/MainShell.qml
 Restart=on-failure
 RestartSec=2
-# qsflow-core is spawned from PATH; add the dir that holds it
+# qsflow-core and the qsflow symlink both live in ~/.local/bin; the PATH below
+# (that dir MUST stay first) resolves them
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY come from the graphical session (imported by the
 # compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
@@ -107,7 +111,7 @@ systemctl --user enable --now qsflow-launcher
 
 `MainShell.qml` exposes an `IpcHandler` (`target: "launcher"`) with
 `open` / `close` / `toggle`. `QSFLOW_RESIDENT=1` selects resident mode (start
-hidden, dismiss hides); without it a plain `quickshell -p ui/MainShell.qml` keeps
+hidden, dismiss hides); without it a plain `qsflow -p ui/MainShell.qml` keeps
 the old behaviour — shows on launch and quits on dismiss, so the manual/dev path
 is independent of the systemd service. To revert, `systemctl --user disable
 --now qsflow-launcher` and restore the spawn-per-hotkey binding.

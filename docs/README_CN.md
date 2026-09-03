@@ -49,12 +49,15 @@ git clone https://github.com/Prslc/QsFlow.git
 cd QsFlow/core
 cargo build --release
 ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
+# qsflow 是 quickshell 的软链：进程在 ps/top 里显示自己的名字
+# （纯表面 —— IPC 按 -p 配置路径路由，与二进制名无关）
+ln -s "$(command -v quickshell)" ~/.local/bin/qsflow
 ```
 
 然后在混成器配置中绑定快捷键（如 `Alt+Space`）来启动：
 
 ```bash
-quickshell -p /path/to/QsFlow/ui/MainShell.qml
+qsflow -p /path/to/QsFlow/ui/MainShell.qml
 ```
 
 启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
@@ -75,10 +78,10 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/quickshell -p /abs/path/to/QsFlow/ui/MainShell.qml
+ExecStart=qsflow -p /abs/path/to/QsFlow/ui/MainShell.qml
 Restart=on-failure
 RestartSec=2
-# qsflow-core 从 PATH 拉起；加入其所在目录
+# qsflow-core 与 qsflow 软链都在 ~/.local/bin；由下面的 PATH（该目录须保持第一）解析
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY 由图形会话导入；这里只设 XDG_RUNTIME_DIR（uid 无关的 %t）
 Environment=XDG_RUNTIME_DIR=%t
@@ -97,7 +100,7 @@ systemctl --user enable --now qsflow-launcher
 
 `MainShell.qml` 暴露了一个 `IpcHandler`（`target: "launcher"`），带
 `open` / `close` / `toggle`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、关闭即隐藏）；
-不带该变量时，直接 `quickshell -p ui/MainShell.qml` 保持旧行为——启动即弹出、关闭即退出，
+不带该变量时，直接 `qsflow -p ui/MainShell.qml` 保持旧行为——启动即弹出、关闭即退出，
 因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
 qsflow-launcher` 并还原绑定的启动方式。
 
