@@ -141,7 +141,7 @@ PanelWindow {
                     dim: Qt.alpha(backend.theme.fg, 0.55)
                     onTextChanged: window.searchTriggered(text)
                     onLaunchRequested: {
-                        if (inputField.inputMethodComposing) return // IME confirm
+                        if (inputField.inputMethodComposing && searchBar.text === "") return
                         window.launchCurrent()
                     }
                     onDismissRequested: window.close()
