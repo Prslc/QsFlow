@@ -46,21 +46,27 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         .await
         .context("Failed to parse suggestions")?;
 
+    // one resolved engine icon shared by every row (header + suggestions)
+    let icon = find_icon_path("google").unwrap_or_default();
+
     let mut results = vec![ResultItem {
         title: format!("Search: {}", query),
         summary: Some("Search on Google".to_string()),
         on_click: Some(format!("https://www.google.com/search?q={}", query)),
-        icon: find_icon_path("google").or_else(|| Some("".to_string())),
+        icon: Some(icon.clone()),
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
         for item in suggestions {
             if let Some(phrase) = item.as_str() {
+                // same engine icon and summary as the header row — icon-less
+                // or summary-less rows would otherwise render as the UI's bare
+                // 48px text-only "simple" rows and look incoherent
                 results.push(ResultItem {
                     title: phrase.to_string(),
-                    summary: Some("".to_string()),
+                    summary: Some("Search on Google".to_string()),
                     on_click: Some(format!("https://www.google.com/search?q={}", phrase)),
-                    icon: Some("".to_string()),
+                    icon: Some(icon.clone()),
                 });
             }
         }
