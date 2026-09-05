@@ -16,6 +16,10 @@ Process {
     // last emitted result payload — used to skip identical result sets
     property string lastResults: ""
 
+    // emitted whenever a genuinely new result payload replaces the list —
+    // the window snaps its selection back to the first row on this
+    signal resultsUpdated()
+
     command: ["qsflow-core"]
     running: true
     stdinEnabled: true
@@ -67,6 +71,7 @@ Process {
         else
             for (let i = oldLen; i < newLen; i++)
                 model.append(items[i])
+        resultsUpdated()
     }
 
     function sendSearch(text) {

@@ -51,6 +51,19 @@ PanelWindow {
         }
     }
 
+    // A genuinely new result payload replaced the list → snap back to the
+    // first row (typing a new query starts from the top result). Deliberately
+    // NOT on every count change: local removals (forget) shift the selection
+    // in place, and identical re-sends never reach this signal, so those two
+    // flows keep their cursor position.
+    Connections {
+        target: backend
+        function onResultsUpdated() {
+            if (resultsModel.count > 0)
+                resultsList.currentIndex = 0
+        }
+    }
+
     signal searchTriggered(string text)
 
     // full-screen overlay
