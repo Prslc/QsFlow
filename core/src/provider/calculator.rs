@@ -34,15 +34,56 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    // fasteval has no sqrt/exp/ln/log2/pow built-ins; provide them via the
-    // namespace so the calculator keeps meval's function surface.
+    // fasteval has no constants or sqrt/exp/ln/log2/pow built-ins; provide
+    // them via the namespace so the calculator keeps meval's surface —
+    // including pi/e/tau and the trig family meval used to ship. Identifiers
+    // are folded to lowercase, so PI == pi == Pi.
     let mut ns = |name: &str, args: Vec<f64>| -> Option<f64> {
-        match name {
-            "sqrt" => args.first().map(|v| v.sqrt()),
-            "exp" => args.first().map(|v| v.exp()),
-            "ln" => args.first().map(|v| v.ln()),
-            "log2" => args.first().map(|v| v.log2()),
-            "pow" => (args.len() == 2).then(|| args[0].powf(args[1])),
+        let name = name.to_ascii_lowercase();
+        let one = |f: fn(f64) -> f64| args.first().map(|&v| f(v));
+        match name.as_str() {
+            // one-argument functions
+            "sqrt" => one(f64::sqrt),
+            "cbrt" => one(f64::cbrt),
+            "exp" => one(f64::exp),
+            "ln" => one(f64::ln),
+            "log" => one(f64::log10),
+            "log2" => one(f64::log2),
+            "sin" => one(f64::sin),
+            "cos" => one(f64::cos),
+            "tan" => one(f64::tan),
+            "asin" => one(f64::asin),
+            "acos" => one(f64::acos),
+            "atan" => one(f64::atan),
+            "sinh" => one(f64::sinh),
+            "cosh" => one(f64::cosh),
+            "tanh" => one(f64::tanh),
+            "abs" => one(f64::abs),
+            "floor" => one(f64::floor),
+            "ceil" => one(f64::ceil),
+            "round" => one(f64::round),
+            // two-argument functions
+            "pow" | "atan2" | "hypot" | "min" | "max" => {
+                if args.len() == 2 {
+                    let (a, b) = (args[0], args[1]);
+                    Some(match name.as_str() {
+                        "pow" => a.powf(b),
+                        "atan2" => a.atan2(b),
+                        "hypot" => a.hypot(b),
+                        "min" => a.min(b),
+                        _ => a.max(b),
+                    })
+                } else {
+                    None
+                }
+            }
+            // constants
+            _ if args.is_empty() => match name.as_str() {
+                "pi" => Some(std::f64::consts::PI),
+                "tau" => Some(std::f64::consts::TAU),
+                "e" => Some(std::f64::consts::E),
+                _ => None,
+            },
             _ => None,
         }
     };
@@ -123,5 +164,32 @@ mod tests {
     #[test]
     fn power() {
         assert_eq!(first("2 ^ 10"), "1024");
+    }
+
+    #[test]
+    fn constants() {
+        let pi = first("pi");
+        assert!(pi.starts_with("3.14159"));
+        assert!(first("PI").starts_with("3.14159"));
+        let e = first("e ^ 2");
+        assert!(e.starts_with("7.3890"));
+    }
+
+    #[test]
+    fn functions() {
+        let half = first("sin(pi / 2)");
+        assert!(half.starts_with("1"));
+        assert_eq!(first("abs(-5)"), "5");
+        assert_eq!(first("cos(0)"), "1");
+        assert!(first("log(1000)").starts_with("3"));
+        assert_eq!(first("floor(2.9)"), "2");
+        assert_eq!(first("ceil(2.1)"), "3");
+        assert_eq!(first("min(3, 8)"), "3");
+        assert_eq!(first("max(3, 8)"), "8");
+    }
+
+    #[test]
+    fn unknown_identifier_is_not_math() {
+        assert!(do_search("bottles").unwrap().is_empty());
     }
 }
