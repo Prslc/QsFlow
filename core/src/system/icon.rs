@@ -24,6 +24,14 @@ const PAPIRUS_SIZES: &[&str] = &[
     "16x16", "8x8",
 ];
 
+/// Generic theme search space, shared by the /usr/share/icons scan and the
+/// flatpak-export hicolor scan below.
+const THEME_CATEGORIES: &[&str] = &["places", "apps", "mimetypes", "devices", "panel", "actions"];
+const ICON_SIZES: &[&str] = &[
+    "scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16",
+];
+const ICON_EXTS: &[&str] = &["svg", "png"];
+
 /// `papirus:name` -> `(None, "name")`; `papirus:category/name` ->
 /// `(Some("category"), "name")`.
 fn parse_papirus_spec(spec: &str) -> (Option<&str>, &str) {
@@ -90,10 +98,10 @@ pub fn find_icon_path(name: &str) -> Option<String> {
 }
 
 fn do_find(name: &str) -> Option<String> {
-    let default_icon = "images/application_default.png";
+    let fallback = || get_resource_path("images/application_default.png");
 
     if name.is_empty() {
-        return get_resource_path(default_icon);
+        return fallback();
     }
     if name.starts_with('/') {
         return Some(name.to_string());
@@ -103,69 +111,58 @@ fn do_find(name: &str) -> Option<String> {
     // The UI only renders absolute paths, so resolve here rather than passing
     // the scheme through to the wire.
     if let Some(spec) = name.strip_prefix("papirus:") {
-        return find_papirus(spec).or_else(|| get_resource_path(default_icon));
+        return find_papirus(spec).or_else(fallback);
     }
 
     let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
-    let categories = ["places", "apps", "mimetypes", "devices", "panel", "actions"];
-    let sizes = [
-        "scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16",
-    ];
-    let exts = ["svg", "png"];
 
-    for theme in themes {
-        for category in categories {
-            for size in sizes {
-                for ext in exts {
-                    let path = format!(
-                        "/usr/share/icons/{}/{}/{}/{}.{}",
-                        theme, size, category, name, ext
-                    );
-                    if Path::new(&path).exists() {
-                        return Some(path);
+    let search = |dir: &str| {
+        for theme in themes {
+            for category in THEME_CATEGORIES {
+                for size in ICON_SIZES {
+                    for ext in ICON_EXTS {
+                        let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
+                        if Path::new(&path).exists() {
+                            return Some(path);
+                        }
                     }
                 }
             }
         }
+        None
+    };
+
+    if let Some(p) = search("/usr/share/icons") {
+        return Some(p);
     }
 
     // pixmaps — legacy path, many apps drop icons here
-    for ext in exts {
-        let path = format!("/usr/share/pixmaps/{}.{}", name, ext);
+    for ext in ICON_EXTS {
+        let path = format!("/usr/share/pixmaps/{name}.{ext}");
         if Path::new(&path).exists() {
             return Some(path);
         }
     }
 
-    // flatpak exports
+    // flatpak exports (hicolor inside each export root)
     let mut flatpak_bases = vec!["/var/lib/flatpak/exports/share".to_string()];
     if let Ok(home) = std::env::var("HOME") {
-        flatpak_bases.push(format!("{}/.local/share/flatpak/exports/share", home));
+        flatpak_bases.push(format!("{home}/.local/share/flatpak/exports/share"));
     }
     for base in &flatpak_bases {
-        for category in categories {
-            for size in sizes {
-                for ext in exts {
-                    let path = format!(
-                        "{}/icons/hicolor/{}/{}/{}.{}",
-                        base, size, category, name, ext
-                    );
-                    if Path::new(&path).exists() {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-    }
-
-    // project images
-    for ext in exts {
-        if let Some(p) = get_resource_path(&format!("images/{}.{}", name, ext)) {
+        if let Some(p) = search(&format!("{base}/icons")) {
             return Some(p);
         }
     }
 
-    get_resource_path(default_icon)
+    // project images (plugin identity icons, e.g. application_default)
+    for ext in ICON_EXTS {
+        if let Some(p) = get_resource_path(&format!("images/{name}.{ext}")) {
+            return Some(p);
+        }
+    }
+
+    fallback()
 }
 #[cfg(test)]
 mod tests {
