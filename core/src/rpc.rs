@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 const INVALID_REQUEST: (i64, &str) = (-32600, "Invalid Request");
@@ -189,11 +189,17 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
                 }
             };
             if has_id {
-                respond(tx, id, Ok(json!(crate::system::icon::find_icon_path(&name)))).await;
+                respond(
+                    tx,
+                    id,
+                    Ok(json!(crate::system::icon::find_icon_path(&name))),
+                )
+                .await;
             }
         }
         "list_plugins" => {
-            let plugins: Vec<Value> = crate::plugin::list_plugins().await
+            let plugins: Vec<Value> = crate::plugin::list_plugins()
+                .await
                 .into_iter()
                 .map(|(pid, name, icon, keyword, enabled)| {
                     json!({
@@ -316,7 +322,8 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_params_returns_32602() {
-        let (handled, msgs) = run(r#"{"jsonrpc":"2.0","method":"search","params":42,"id":9}"#).await;
+        let (handled, msgs) =
+            run(r#"{"jsonrpc":"2.0","method":"search","params":42,"id":9}"#).await;
         assert!(handled);
         let v: Value = serde_json::from_str(&msgs[0]).unwrap();
         assert_eq!(v["error"]["code"], -32602);

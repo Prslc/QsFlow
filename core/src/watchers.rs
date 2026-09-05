@@ -39,33 +39,31 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
     }))
     .ok();
 
-    let mut watcher = notify::recommended_watcher(
-        move |res: notify::Result<notify::Event>| {
-            let Ok(ev) = res else { return };
-            // Only react to content changes (write/create/rename). Access
-            // events — including the reads `load_theme` itself performs — would
-            // otherwise re-trigger the watcher forever.
-            if matches!(ev.kind, notify::EventKind::Access(_)) {
-                return;
-            }
-            if ev.paths.iter().any(|p| p == &watch_path) {
-                let theme = crate::system::theme::load_theme();
-                if let Ok(json) = serde_json::to_string(&serde_json::json!({
-                    "type": "theme",
-                    "data": theme,
-                })) {
-                    // Dedup: skip unchanged themes (a single write can produce
-                    // several events; only the last value change should emit).
-                    if last_sent.as_deref() != Some(json.as_str()) {
-                        last_sent = Some(json.clone());
-                        // try_send: a theme message is replaceable; drop it if
-                        // the queue is momentarily full rather than block.
-                        let _ = tx_theme.try_send(json);
-                    }
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(ev) = res else { return };
+        // Only react to content changes (write/create/rename). Access
+        // events — including the reads `load_theme` itself performs — would
+        // otherwise re-trigger the watcher forever.
+        if matches!(ev.kind, notify::EventKind::Access(_)) {
+            return;
+        }
+        if ev.paths.iter().any(|p| p == &watch_path) {
+            let theme = crate::system::theme::load_theme();
+            if let Ok(json) = serde_json::to_string(&serde_json::json!({
+                "type": "theme",
+                "data": theme,
+            })) {
+                // Dedup: skip unchanged themes (a single write can produce
+                // several events; only the last value change should emit).
+                if last_sent.as_deref() != Some(json.as_str()) {
+                    last_sent = Some(json.clone());
+                    // try_send: a theme message is replaceable; drop it if
+                    // the queue is momentarily full rather than block.
+                    let _ = tx_theme.try_send(json);
                 }
             }
-        },
-    )
+        }
+    })
     .ok()?;
 
     watch_targets(&mut watcher, &path);
@@ -76,28 +74,28 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
 /// change (resident mode would otherwise keep the config read at startup
 /// forever). Debounced: editors typically fire several events per save.
 pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
-    let path = crate::system::fs::get_home().ok()?.join(".config/qsflow/plugins.toml");
+    let path = crate::system::fs::get_home()
+        .ok()?
+        .join(".config/qsflow/plugins.toml");
     let handle = tokio::runtime::Handle::current();
     let watch_path = path.clone();
     let mut last_reload = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
-    let mut watcher = notify::recommended_watcher(
-        move |res: notify::Result<notify::Event>| {
-            let Ok(ev) = res else { return };
-            if !ev.paths.iter().any(|p| p == &watch_path) {
-                return;
-            }
-            if last_reload.elapsed() < std::time::Duration::from_millis(400) {
-                return;
-            }
-            last_reload = std::time::Instant::now();
-            // notify's callback runs off the runtime; hop back in to await.
-            let handle = handle.clone();
-            handle.spawn(async move {
-                crate::plugin::reload().await;
-            });
-        },
-    )
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(ev) = res else { return };
+        if !ev.paths.iter().any(|p| p == &watch_path) {
+            return;
+        }
+        if last_reload.elapsed() < std::time::Duration::from_millis(400) {
+            return;
+        }
+        last_reload = std::time::Instant::now();
+        // notify's callback runs off the runtime; hop back in to await.
+        let handle = handle.clone();
+        handle.spawn(async move {
+            crate::plugin::reload().await;
+        });
+    })
     .ok()?;
 
     watch_targets(&mut watcher, &path);

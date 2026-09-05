@@ -1,5 +1,5 @@
-use std::process;
 use gio::prelude::*;
+use std::process;
 
 /// Run a shell command detached from the backend (system commands, …). Shell
 /// is intended here: `%u`/`%f` leftovers are stripped before execution.

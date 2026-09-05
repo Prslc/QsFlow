@@ -39,7 +39,10 @@ impl Plugin for Runner {
 fn split_command(input: &str) -> (String, String) {
     let trimmed = input.trim();
     match trimmed.find(char::is_whitespace) {
-        Some(idx) => (trimmed[..idx].to_string(), trimmed[idx..].trim().to_string()),
+        Some(idx) => (
+            trimmed[..idx].to_string(),
+            trimmed[idx..].trim().to_string(),
+        ),
         None => (trimmed.to_string(), String::new()),
     }
 }
@@ -66,7 +69,10 @@ fn scan_path() -> Vec<(String, String)> {
         }
         // expand a leading `~` — shells usually expand PATH at export, be lenient
         let dir_str = match raw_dir.strip_prefix("~/") {
-            Some(rest) => home.as_ref().map(|h| format!("{}/{}", h, rest)).unwrap_or_default(),
+            Some(rest) => home
+                .as_ref()
+                .map(|h| format!("{}/{}", h, rest))
+                .unwrap_or_default(),
             None => raw_dir.to_string(),
         };
         let Ok(entries) = std::fs::read_dir(Path::new(&dir_str)) else {

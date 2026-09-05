@@ -45,14 +45,10 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
 
     let rows: Vec<(String, i64, String, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT key, count, last_used_at, item_json FROM usage",
-        )?;
-        stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })?
-        .filter_map(|r| r.ok())
-        .collect()
+        let mut stmt = conn.prepare("SELECT key, count, last_used_at, item_json FROM usage")?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .filter_map(|r| r.ok())
+            .collect()
     };
 
     // title -> (sum count, item_json of the most recent use, its last_used_at)
@@ -89,7 +85,13 @@ fn migrate(conn: &Connection) -> Result<()> {
         let on_click = serde_json::from_str::<serde_json::Value>(&item_json)
             .ok()
             .and_then(|v| v["on_click"].as_str().map(String::from));
-        stmt.execute(rusqlite::params![title, on_click, count, last_used_at, item_json])?;
+        stmt.execute(rusqlite::params![
+            title,
+            on_click,
+            count,
+            last_used_at,
+            item_json
+        ])?;
     }
     Ok(())
 }
@@ -132,9 +134,7 @@ fn is_ephemeral(on_click: &str) -> bool {
 
 fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     let item: serde_json::Value = serde_json::from_str(item_json)?;
-    let on_click = item["on_click"]
-        .as_str()
-        .context("item missing on_click")?;
+    let on_click = item["on_click"].as_str().context("item missing on_click")?;
     if is_ephemeral(on_click) {
         return Ok(());
     }
@@ -274,7 +274,11 @@ mod tests {
     fn same_title_actions_merge_into_one_entry() {
         let conn = test_conn();
         // legacy run: form then the current launch: form — same app
-        record_with(&conn, r#"{"title":"Telegram","on_click":"run:Telegram --"}"#).unwrap();
+        record_with(
+            &conn,
+            r#"{"title":"Telegram","on_click":"run:Telegram --"}"#,
+        )
+        .unwrap();
         record_with(
             &conn,
             r#"{"title":"Telegram","on_click":"launch:org.telegram.desktop.desktop"}"#,
@@ -287,7 +291,9 @@ mod tests {
         .unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT count FROM usage WHERE key = 'Telegram'", [], |r| r.get(0))
+            .query_row("SELECT count FROM usage WHERE key = 'Telegram'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(count, 3);
 
@@ -295,16 +301,22 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["title"], "Telegram");
         // the merged entry keeps the most recently used action
-        assert!(items[0]["on_click"]
-            .as_str()
-            .unwrap()
-            .starts_with("launch:"));
+        assert!(
+            items[0]["on_click"]
+                .as_str()
+                .unwrap()
+                .starts_with("launch:")
+        );
     }
 
     #[test]
     fn forget_removes_merged_siblings() {
         let conn = test_conn();
-        record_with(&conn, r#"{"title":"Telegram","on_click":"run:Telegram --"}"#).unwrap();
+        record_with(
+            &conn,
+            r#"{"title":"Telegram","on_click":"run:Telegram --"}"#,
+        )
+        .unwrap();
         record_with(
             &conn,
             r#"{"title":"Telegram","on_click":"launch:org.telegram.desktop.desktop"}"#,
@@ -332,8 +344,11 @@ mod tests {
             r#"{"title":"你好","on_click":"copy:{\"text\": \"你好\"}"}"#,
         )
         .unwrap();
-        record_with(&conn, r#"{"title":"Firefox","on_click":"launch:firefox.desktop"}"#)
-            .unwrap();
+        record_with(
+            &conn,
+            r#"{"title":"Firefox","on_click":"launch:firefox.desktop"}"#,
+        )
+        .unwrap();
 
         let items = get_top_with(&conn, 10).unwrap();
         assert_eq!(items.len(), 1);
@@ -384,7 +399,14 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 11);
-        assert_eq!(on_click.as_deref(), Some("launch:org.telegram.desktop.desktop"));
-        assert_eq!(conn.query_row("SELECT count(*) FROM usage", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            on_click.as_deref(),
+            Some("launch:org.telegram.desktop.desktop")
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM usage", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 }

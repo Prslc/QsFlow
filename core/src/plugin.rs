@@ -1,5 +1,5 @@
-use std::future::Future;
 use rustc_hash::FxHashMap as HashMap;
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -29,7 +29,9 @@ struct PluginEntry {
     command: Option<String>,
 }
 
-fn default_enable() -> bool { true }
+fn default_enable() -> bool {
+    true
+}
 
 pub struct Meta {
     pub id: &'static str,
@@ -77,8 +79,9 @@ struct Entry {
     keyword: String,
 }
 
-static CONFIG: tokio::sync::RwLock<Config> =
-    tokio::sync::RwLock::const_new(Config { plugins: Vec::new() });
+static CONFIG: tokio::sync::RwLock<Config> = tokio::sync::RwLock::const_new(Config {
+    plugins: Vec::new(),
+});
 static REGISTRY: tokio::sync::RwLock<Vec<Entry>> = tokio::sync::RwLock::const_new(Vec::new());
 static REGISTRY_READY: AtomicBool = AtomicBool::new(false);
 /// Serializes the one-time build and config reloads (both take INIT first).
@@ -120,7 +123,9 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
         HashMap::default();
 
     for p in &config.plugins {
-        if !p.enable { continue; }
+        if !p.enable {
+            continue;
+        }
         if let Some(plugin) = map.remove(p.id.as_str()) {
             entries.push(Entry {
                 plugin,
@@ -132,7 +137,10 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
             continue; // unknown id without an external host -> skipped
         };
         if !discovered.contains_key(command) {
-            discovered.insert(command.clone(), crate::provider::external::discover(command).await);
+            discovered.insert(
+                command.clone(),
+                crate::provider::external::discover(command).await,
+            );
         }
         let meta = discovered
             .get(command)
@@ -208,8 +216,9 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
         .filter(|p| {
             // Unknown ids without a host are ignored (per the config contract):
             // they are neither built-ins nor declared external plugins.
-            p.command.is_some() || map.contains_key(p.id.as_str()) ||
-                reg.iter().any(|e| e.plugin.meta().id == p.id.as_str())
+            p.command.is_some()
+                || map.contains_key(p.id.as_str())
+                || reg.iter().any(|e| e.plugin.meta().id == p.id.as_str())
         })
         .map(|p| {
             let keyword = p.keyword.clone();

@@ -1,19 +1,27 @@
-use std::sync::{Mutex, OnceLock};
 use rustc_hash::FxHashMap as HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use crate::system::fs::get_resource_path;
 use std::path::Path;
 /// Papirus category dirs. Not every size ships every category: `panel` and
 /// friends only exist in the small sizes, so lookup must scan sizes × categories.
 const PAPIRUS_CATEGORIES: &[&str] = &[
-    "actions", "apps", "categories", "devices", "emblems", "emotes",
-    "mimetypes", "panel", "places", "status",
+    "actions",
+    "apps",
+    "categories",
+    "devices",
+    "emblems",
+    "emotes",
+    "mimetypes",
+    "panel",
+    "places",
+    "status",
 ];
 /// Preferred size order — the UI renders rows at 22–30px, so 48x48 gives crisp
 /// downscale headroom without wasting load time on the 128px+ variants.
 const PAPIRUS_SIZES: &[&str] = &[
-    "48x48", "32x32", "64x64", "128x128", "96x96", "84x84", "42x42",
-    "24x24", "22x22", "18x18", "16x16", "8x8",
+    "48x48", "32x32", "64x64", "128x128", "96x96", "84x84", "42x42", "24x24", "22x22", "18x18",
+    "16x16", "8x8",
 ];
 
 /// `papirus:name` -> `(None, "name")`; `papirus:category/name` ->
@@ -100,14 +108,19 @@ fn do_find(name: &str) -> Option<String> {
 
     let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
     let categories = ["places", "apps", "mimetypes", "devices", "panel", "actions"];
-    let sizes = ["scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16"];
+    let sizes = [
+        "scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16",
+    ];
     let exts = ["svg", "png"];
 
     for theme in themes {
         for category in categories {
             for size in sizes {
                 for ext in exts {
-                    let path = format!("/usr/share/icons/{}/{}/{}/{}.{}", theme, size, category, name, ext);
+                    let path = format!(
+                        "/usr/share/icons/{}/{}/{}/{}.{}",
+                        theme, size, category, name, ext
+                    );
                     if Path::new(&path).exists() {
                         return Some(path);
                     }
@@ -133,7 +146,10 @@ fn do_find(name: &str) -> Option<String> {
         for category in categories {
             for size in sizes {
                 for ext in exts {
-                    let path = format!("{}/icons/hicolor/{}/{}/{}.{}", base, size, category, name, ext);
+                    let path = format!(
+                        "{}/icons/hicolor/{}/{}/{}.{}",
+                        base, size, category, name, ext
+                    );
                     if Path::new(&path).exists() {
                         return Some(path);
                     }

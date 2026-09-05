@@ -6,8 +6,8 @@ pub mod file;
 pub mod firefox;
 pub mod runner;
 pub mod system;
-pub mod window;
 pub mod web;
+pub mod window;
 
 use rustc_hash::FxHashMap as HashMap;
 
