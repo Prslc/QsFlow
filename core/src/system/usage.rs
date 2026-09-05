@@ -26,11 +26,9 @@ fn conn() -> Result<Connection> {
     Ok(conn)
 }
 
-/// History entries are keyed by display title (see `key_for`), but databases
-/// written by older cores keyed by the raw `on_click` and lack the column.
-/// Consolidate: same-title rows merge — count sums, `last_used_at` and the
-/// kept item follow the most recent use — so one app reached via a legacy
-/// `run:<exec>` and a current `launch:<id>` records as a single entry.
+/// Older cores keyed history by raw `on_click` and lacked this column;
+/// migrate merges same-title rows (counts sum, the most recent item wins) so
+/// one app reached via `run:<exec>` and `launch:<id>` is a single entry.
 fn migrate(conn: &Connection) -> Result<()> {
     let has_on_click: bool = {
         let mut stmt = conn.prepare("PRAGMA table_info(usage)")?;
@@ -122,12 +120,10 @@ fn init_schema(conn: &Connection) {
     .ok();
 }
 
-/// Clipboard-write actions (`copy:`) are one-shot by nature — the row's value
-/// is the copied text, not a target you re-launch — so they never belong in
-/// the usage-ranked top list (a translated word would otherwise climb the
-/// history by sheer repetition). The scheme itself declares the semantics, so
-/// this holds for every source — built-in providers and external JSON-RPC
-/// hosts alike — with no per-plugin knowledge or host cooperation needed.
+/// Clipboard-write rows (`copy:`) are one-shot — the value is the copied
+/// text, not a re-launchable target — so they never enter usage history.
+/// The scheme declares the semantics, so this holds for every source with no
+/// per-plugin knowledge or host cooperation.
 fn is_ephemeral(on_click: &str) -> bool {
     on_click.starts_with("copy:")
 }
@@ -139,10 +135,8 @@ fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Entries are keyed by display title: the same app reached through
-    // different actions (legacy run:<exec> vs launch:<id>, app-search vs
-    // runner) must count as one history entry, not split rows. An empty
-    // title falls back to the action so display-only noise can't merge.
+    // Key by display title so alternate launch actions for one app merge
+    // into a single entry; empty titles fall back to the action.
     let title = item["title"].as_str().context("item missing title")?;
     let key = if title.is_empty() {
         on_click.to_string()

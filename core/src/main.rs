@@ -56,17 +56,15 @@ async fn main() -> Result<()> {
     )
     .await;
 
-    // Keep the inotify watcher alive for the core's lifetime; it re-emits the
-    // theme whenever dank-colors.css changes (resident mode never sees a change
-    // otherwise, since it only read the file at startup).
+    // Keep the watchers alive for the core's lifetime: resident mode re-emits
+    // the theme / reloads the registry on file change instead of holding the
+    // startup read forever.
     let _theme_watcher = watchers::watch_theme(&tx);
 
-    // Same for plugins.toml: reload config + registry on edit so resident mode
-    // reflects keyword/enable/command changes without a core restart.
     let _plugins_watcher = watchers::watch_plugins();
 
-    // Delete copy:-keyed usage rows recorded before the exclusion rule existed
-    // (idempotent; the guard in usage::record keeps new ones out).
+    // Purge copy:-keyed rows recorded before the exclusion rule (idempotent;
+    // the guard in usage::record keeps new ones out).
     let _ = system::usage::purge_ephemeral();
 
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
@@ -76,10 +74,8 @@ async fn main() -> Result<()> {
 
         // non-search commands — handle inline, no debounce
         if input.trim().is_empty() {
-            // the whole history, not a 20-row window: with a fixed cap,
-            // ⌫-curating the list kept refilling from rows hidden beyond the
-            // cap, so deletions never visibly converged. The full ranked set
-            // shrinks monotonically as rows are forgotten.
+            // the full ranked history — a 20-row cap made ⌫ curation never
+            // visibly converge, since deleted rows kept refilling from beyond it
             let items = system::usage::get_top(i32::MAX).unwrap_or_default();
             emit(
                 &tx,

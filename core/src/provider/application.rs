@@ -9,11 +9,9 @@ use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 
-// Tiered relevance weights, ported from DMS's launcher scorer
-// (quickshell/Modals/DankLauncherV2/Scorer.js): strong textual tiers win
-// outright, fuzzy matching is a weak last resort only for queries of three
-// or more characters — 1–2 char queries must hit exact/prefix/boundary/
-// substring, or they score zero.
+// Tiered weights, ported from DMS's launcher scorer: a strong textual tier
+// wins outright; fuzzy matching is a weak last resort for 3+ char queries
+// only, so short queries must hit a strong tier or miss entirely.
 const W_EXACT: u32 = 10_000;
 const W_PREFIX: u32 = 5_000;
 const W_WORD_BOUNDARY: u32 = 3_000;

@@ -30,11 +30,10 @@ pub fn launch_app(desktop_id: &str) {
     }
 }
 
-/// Copy text to the Wayland clipboard via `wl-copy` (no shell involved).
-/// The `copy:` scheme carries a JSON object (`{"text":"..."}`) — the same
-/// convention as `select`/`forget`; JSON escaping keeps the line protocol
-/// safe from embedded newlines and quotes. Silent no-op on parse failure or
-/// a missing `wl-copy`.
+/// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
+/// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
+/// survives embedded newlines/quotes; parse failure or a missing `wl-copy`
+/// is a silent no-op.
 pub fn copy_json(payload: &str) {
     let Ok(req) = serde_json::from_str::<CopyRequest>(payload) else {
         return;

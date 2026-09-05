@@ -34,10 +34,8 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    // fasteval has no constants or sqrt/exp/ln/log2/pow built-ins; provide
-    // them via the namespace so the calculator keeps meval's surface —
-    // including pi/e/tau and the trig family meval used to ship. Identifiers
-    // are folded to lowercase, so PI == pi == Pi.
+    // fasteval ships no constants or math built-ins; provide meval's surface
+    // (pi/e/tau + trig family). Identifiers fold to lowercase, PI == pi.
     let mut ns = |name: &str, args: Vec<f64>| -> Option<f64> {
         let name = name.to_ascii_lowercase();
         let one = |f: fn(f64) -> f64| args.first().map(|&v| f(v));
