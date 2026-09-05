@@ -58,6 +58,10 @@ async fn main() -> Result<()> {
     // reflects keyword/enable/command changes without a core restart.
     let _plugins_watcher = watchers::watch_plugins();
 
+    // Delete copy:-keyed usage rows recorded before the exclusion rule existed
+    // (idempotent; the guard in usage::record keeps new ones out).
+    let _ = system::usage::purge_ephemeral();
+
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
     while let Some(line) = reader.next_line().await? {

@@ -48,9 +48,22 @@ fn init_schema(conn: &Connection) {
     .ok();
 }
 
+/// Clipboard-write actions (`copy:`) are one-shot by nature — the row's value
+/// is the copied text, not a target you re-launch — so they never belong in
+/// the usage-ranked top list (a translated word would otherwise climb the
+/// history by sheer repetition). The scheme itself declares the semantics, so
+/// this holds for every source — built-in providers and external JSON-RPC
+/// hosts alike — with no per-plugin knowledge or host cooperation needed.
+fn is_ephemeral(on_click: &str) -> bool {
+    on_click.starts_with("copy:")
+}
+
 fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     let item: serde_json::Value = serde_json::from_str(item_json)?;
     let key = item["on_click"].as_str().context("item missing on_click")?;
+    if is_ephemeral(key) {
+        return Ok(());
+    }
 
     conn.execute(
         "INSERT INTO usage (key, count, last_used_at, item_json)
@@ -66,6 +79,17 @@ fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
 
 fn forget_with(conn: &Connection, key: &str) -> Result<()> {
     conn.execute("DELETE FROM usage WHERE key = ?1", rusqlite::params![key])?;
+    Ok(())
+}
+
+/// Drop `copy:` rows recorded before the `is_ephemeral` guard existed. Runs at
+/// core startup so older usage databases heal on upgrade; idempotent.
+pub fn purge_ephemeral() -> Result<()> {
+    purge_with(&conn()?)
+}
+
+fn purge_with(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM usage WHERE key LIKE 'copy:%'", [])?;
     Ok(())
 }
 
@@ -129,5 +153,41 @@ mod tests {
     fn record_missing_on_click() {
         let conn = test_conn();
         assert!(record_with(&conn, r#"{"title":"no key"}"#).is_err());
+    }
+
+    #[test]
+    fn copy_rows_are_never_recorded() {
+        let conn = test_conn();
+        record_with(
+            &conn,
+            r#"{"title":"你好","on_click":"copy:{\"text\": \"你好\"}"}"#,
+        )
+        .unwrap();
+        record_with(&conn, r#"{"title":"Firefox","on_click":"launch:firefox.desktop"}"#)
+            .unwrap();
+
+        let items = get_top_with(&conn, 10).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["title"], "Firefox");
+    }
+
+    #[test]
+    fn purge_removes_legacy_copy_rows() {
+        let conn = test_conn();
+        // inserted directly — record_with already refuses copy: rows
+        conn.execute(
+            "INSERT INTO usage (key, count, last_used_at, item_json)
+             VALUES ('copy:{\"text\": \"old\"}', 4, datetime('now'),
+                     '{\"title\":\"old\"}')",
+            [],
+        )
+        .unwrap();
+        record_with(&conn, r#"{"title":"A","on_click":"run:a"}"#).unwrap();
+
+        purge_with(&conn).unwrap();
+
+        let items = get_top_with(&conn, 10).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["title"], "A");
     }
 }

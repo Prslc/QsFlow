@@ -15,7 +15,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 |--------|--------|--------|
 | `search` | `{"text"}` | array of result items |
 | `top` | — | most-used items |
-| `select` | item object | `null` (records usage) |
+| `select` | item object | `null` (records usage; `copy:` actions never recorded) |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
 | `resolve_icon` | `{"name"}` | absolute path for an icon spec |
@@ -122,6 +122,11 @@ keys — all four are always present (`null` for an absent optional field):
 | bare URL / `file:` / `mailto:` URI | opened by the UI via `Qt.openUrlExternally` |
 
 An item without `on_click` is non-interactive (display only).
+
+Selecting an item records it in usage history — the list behind an empty query
+(`top`). Items whose `on_click` is a `copy:` action are exempt regardless of
+source (built-in provider or external host): clipboard writes are one-shot, so
+they never enter the usage-ranked history.
 
 ### Icon specs
 
