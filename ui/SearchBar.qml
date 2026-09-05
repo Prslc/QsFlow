@@ -162,6 +162,12 @@ Item {
             color: clearHover.containsMouse ? Qt.alpha(root.fg, 0.12) : "transparent"
             visible: input.text !== ""
 
+            // mouse-hover state feedback fades in (ui-animation: colour state
+            // feedback may transition; hover is mouse-driven)
+            Behavior on color {
+                ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
+            }
+
             Text {
                 text: "✕"
                 anchors.centerIn: parent

@@ -10,6 +10,15 @@ PanelWindow {
     // env) keeps the old behaviour: show at launch and quit on dismiss.
     readonly property bool resident: Quickshell.env("QSFLOW_RESIDENT") === "1"
     visible: !resident
+    // Qt 6.11 exposes no prefers-reduced-motion (QStyleHints has no such hint,
+    // nor does Quickshell 0.3.1), so reduced motion is an opt-in env gate in
+    // the same style as QSFLOW_RESIDENT above.
+    readonly property bool reduceMotion: Quickshell.env("QSFLOW_REDUCED_MOTION") === "1"
+    // Dialog entrance per ui-animation skill: scale 0.85-0.9 -> 1, entry
+    // curve cubic-bezier(0.22,1,0.36,1) = Easing.OutQuint, 200-300ms.
+    readonly property real entranceScale: 0.9
+    readonly property int entranceMs: 240
+    readonly property int dimMs: 200
 
     Component.onCompleted: {
         if (this.WlrLayershell !== undefined) {
@@ -17,16 +26,29 @@ PanelWindow {
             this.WlrLayershell.namespace = "QsFlow"
         }
         window.BackgroundEffect.blurRegion = blurRegion
-        entrance.restart()
+        window.showEntrance()
         initTimer.start()
     }
 
     // Frosted glass: compositor-side blur (ext-background-effect) exactly over
-    // the rounded card, so only the card area is blurred.
+    // the rounded card. Track the card's VISUAL (scaled) bounds: the region
+    // follows the unscaled layout box by default, so during the entrance
+    // scale (<1) a bright undimmed blurred band would show around the card.
+    Rectangle {
+        id: blurRect
+        opacity: 0
+        readonly property real cx: content.x + content.width / 2
+        readonly property real cy: content.y + content.height / 2
+        x: cx - content.width * content.scale / 2
+        y: cy - content.height * content.scale / 2
+        width: content.width * content.scale
+        height: content.height * content.scale
+        radius: content.radius * content.scale
+    }
     Region {
         id: blurRegion
-        item: content
-        radius: content.radius
+        item: blurRect
+        radius: blurRect.radius
     }
 
     // initial empty search -> usage-ranked history
@@ -87,6 +109,13 @@ PanelWindow {
     readonly property int searchH: 52
     readonly property int footerH: 28
     readonly property int gap: 10
+    // Fixed card top in the UPPER half of the screen (bar ~0.28H): results
+    // only extend the card DOWNWARD, so the search bar never moves when the
+    // row count changes; the tallest list still ends by ~0.7H.
+    readonly property real cardTopRatio: 0.28
+    function cardTop() {
+        return Math.round(height * cardTopRatio)
+    }
     function contentHeight() {
         const hasResults = resultsModel.count > 0
         let h = cardPad + searchH + gap + footerH + cardPad
@@ -107,25 +136,41 @@ PanelWindow {
         onClicked: window.close()
     }
 
-    // centered card
+    // top-fixed card wrapper (horizontal center, vertical anchored at cardTop)
     Item {
         anchors.fill: parent
 
         Rectangle {
             id: content
-            anchors.centerIn: parent
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+                top: parent.top
+                topMargin: window.cardTop()
+            }
             width: Math.min(Math.max(560, parent.width * 0.38), 760)
             height: contentHeight()
 
+            // Card height follows the result list smoothly as rows stream in
+            // and out (150ms, retargets cleanly when a new payload lands).
+            // Layout-animation is normally a no-no (ui-animation), but the
+            // reflow cost is bounded here (<= 5 x 64px rows, once per payload)
+            // and an instant resize reads as a single-frame "jump" while
+            // typing — user preference: animate. Disabled under reduced motion.
             Behavior on height {
+                enabled: !window.reduceMotion
                 NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
             }
-
             radius: 16
-            color: Qt.alpha(backend.theme.container, 0.75)
+            // iOS-material: translucent fill so the compositor blur shows
+            // through (frost), plus a 1px hairline border that masks the
+            // rounded-rect AA rim (which otherwise reads as a translucent
+            // outer ring) and crisply defines the sheet edge.
+            color: Qt.alpha(backend.theme.container, 0.72)
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.35)
             clip: true
             opacity: 0
-            scale: 0.97
+            scale: entranceScale
 
             // swallow clicks on card padding — only outside clicks dismiss
             MouseArea {
@@ -203,28 +248,47 @@ PanelWindow {
         }
     }
 
+    // Summon entrance: backdrop + card fade/scale together, entry curve
+    // OutQuint == cubic-bezier(0.22, 1, 0.36, 1) (ui-animation easing default).
+    // Transform-origin stays the card center: the trigger (Alt+Space) summons
+    // a centered card, so the origin sits at the gesture target.
     ParallelAnimation {
         id: entrance
         NumberAnimation {
             target: dim
             property: "opacity"
             to: 0.30
-            duration: 160
-            easing.type: Easing.OutCubic
+            duration: window.dimMs
+            easing.type: Easing.OutQuint
         }
         NumberAnimation {
             target: content
             property: "opacity"
             to: 1
-            duration: 200
-            easing.type: Easing.OutCubic
+            duration: window.entranceMs
+            easing.type: Easing.OutQuint
         }
         NumberAnimation {
             target: content
             property: "scale"
             to: 1
-            duration: 200
-            easing.type: Easing.OutCubic
+            duration: window.entranceMs
+            easing.type: Easing.OutQuint
+        }
+    }
+
+    // Reduced motion: jump straight to the end state — no transforms at all
+    // (ui-animation: disable transform under prefers-reduced-motion).
+    function showEntrance() {
+        if (reduceMotion) {
+            dim.opacity = 0.30
+            content.opacity = 1
+            content.scale = 1
+        } else {
+            dim.opacity = 0
+            content.opacity = 0
+            content.scale = entranceScale
+            entrance.restart()
         }
     }
 
@@ -286,14 +350,14 @@ PanelWindow {
         if (resultsModel.count > 0)
             resultsList.currentIndex = 0
         window.searchTriggered("")
-        dim.opacity = 0
-        content.opacity = 0
-        content.scale = 0.97
-        entrance.restart()
+        window.showEntrance()
         focusTimer.restart()
     }
 
     function close() {
+        // Instant, unanimated dismiss: Esc/Alt+Space are keyboard responses
+        // (ui-animation: never animate keyboard interactions) and the toggle
+        // must stay snappy. Launch dismissals already wait exitTimer.
         if (resident)
             visible = false
         else

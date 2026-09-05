@@ -24,11 +24,15 @@ ItemDelegate {
              : root.hovered   ? Qt.alpha(backend.theme.primary, 0.08)
              : "transparent"
 
+        // Selection/hover tint crossfades ~120ms. Pure colour feedback — it
+        // never delays the action (Enter still launches immediately) and keeps
+        // keyboard scanning readable instead of hard-snapping (user preference:
+        // an instant swap reads as a flash, not as "no delay").
         Behavior on color {
             ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
         }
 
-        // accent bar marking the selected row
+        // accent bar marking the selected row — fades in with the tint
         Rectangle {
             anchors.left: parent.left
             anchors.leftMargin: 3
@@ -37,7 +41,11 @@ ItemDelegate {
             height: parent.height * 0.45
             radius: 1.5
             color: backend.theme.primary
-            visible: root.highlighted
+            opacity: root.highlighted ? 1 : 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+            }
         }
     }
 
@@ -77,10 +85,6 @@ ItemDelegate {
                 font.pixelSize: 14
                 elide: Text.ElideRight
                 width: parent.width
-
-                Behavior on color {
-                    ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
-                }
             }
 
             // summary
@@ -92,10 +96,6 @@ ItemDelegate {
                 width: parent.width
                 visible: text !== ""
                 opacity: 0.7
-
-                Behavior on color {
-                    ColorAnimation { duration: 120; easing.type: Easing.OutCubic }
-                }
             }
         }
 
