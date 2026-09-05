@@ -69,7 +69,11 @@ async fn main() -> Result<()> {
 
         // non-search commands — handle inline, no debounce
         if input.trim().is_empty() {
-            let items = system::usage::get_top(20).unwrap_or_default();
+            // the whole history, not a 20-row window: with a fixed cap,
+            // ⌫-curating the list kept refilling from rows hidden beyond the
+            // cap, so deletions never visibly converged. The full ranked set
+            // shrinks monotonically as rows are forgotten.
+            let items = system::usage::get_top(i32::MAX).unwrap_or_default();
             emit(
                 &tx,
                 &serde_json::json!({ "type": "results", "data": items }),
