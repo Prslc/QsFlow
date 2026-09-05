@@ -76,18 +76,10 @@ PanelWindow {
     readonly property int rowH: 64
     readonly property int maxRows: 5
 
-    // Exact list height: simple rows (no summary/icon) render at 48px,
-    // regular rows at 64px. Kept in sync with ResultDelegate.isSimpleMode.
-    function rowHeight(item) {
-        let simple = (item.summary === undefined || item.summary === "") &&
-                     (item.icon === undefined || item.icon === "")
-        return simple ? 48 : rowH
-    }
+    // Exact list height: every row is rowH tall (delegates use window.rowH),
+    // capped at maxRows rows.
     function listHeight() {
-        let total = 0
-        for (let i = 0; i < resultsModel.count; i++)
-            total += rowHeight(resultsModel.get(i))
-        return Math.min(total, maxRows * rowH)
+        return Math.min(resultsModel.count * rowH, maxRows * rowH)
     }
 
     // card geometry

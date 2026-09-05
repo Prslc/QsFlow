@@ -7,12 +7,10 @@ ItemDelegate {
     width: ListView.view.width
     hoverEnabled: true
 
-    // simple mode — no icon, no summary
-    readonly property bool isSimpleMode: (model.summary === undefined || model.summary === "")
-                                      && (model.icon === undefined || model.icon === "")
-
-    // row height — SearchWindow.rowHeight() mirrors this; keep in sync
-    implicitHeight: isSimpleMode ? 48 : 64
+    // one uniform row type — every row renders at the regular height whether
+    // or not it carries an icon/summary; compact text-only rows were a
+    // separate 48px path that made mixed result lists look incoherent
+    implicitHeight: window.rowH
     highlighted: ListView.isCurrentItem
     leftPadding: 0
     rightPadding: 0
@@ -53,7 +51,7 @@ ItemDelegate {
         IconImage {
             id: iconSource
             source: (model.icon && model.icon !== "") ? "file://" + model.icon : ""
-            implicitSize: root.isSimpleMode ? 22 : 30
+            implicitSize: 30
             asynchronous: true
             anchors.verticalCenter: parent.verticalCenter
             visible: model.icon !== undefined && model.icon !== "" && status !== Image.Error
@@ -76,7 +74,7 @@ ItemDelegate {
                 text: model.title
                 color: backend.theme.fg
                 font.bold: true
-                font.pixelSize: root.isSimpleMode ? 15 : 14
+                font.pixelSize: 14
                 elide: Text.ElideRight
                 width: parent.width
 
