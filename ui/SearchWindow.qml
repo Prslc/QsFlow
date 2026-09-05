@@ -280,6 +280,11 @@ PanelWindow {
     function open() {
         visible = true
         searchBar.text = ""
+        // fresh open starts at the top result: the identical-payload dedupe
+        // in BackendProcess keeps the previous session's position alive, and
+        // only real result changes reset it via resultsUpdated
+        if (resultsModel.count > 0)
+            resultsList.currentIndex = 0
         window.searchTriggered("")
         dim.opacity = 0
         content.opacity = 0
