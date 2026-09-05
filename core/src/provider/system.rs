@@ -55,7 +55,14 @@ fn do_search(input: &str) -> Vec<ResultItem> {
 
     let mut results = Vec::new();
     for (name, keyword, icon, cmd) in commands {
-        if !input.is_empty() && !name.to_lowercase().contains(input) && !keyword.contains(input) {
+        // prefix match only: the default fallback chain short-circuits on the
+        // first non-empty plugin (calculator -> system-commands -> apps), so
+        // loose mid-word substring hits ("bo" inside "reBOot") shadowed
+        // app-search's stronger whole-name matches and hid apps like Bottles
+        if !input.is_empty()
+            && !name.to_lowercase().starts_with(input)
+            && !keyword.starts_with(input)
+        {
             continue;
         }
         results.push(ResultItem {
