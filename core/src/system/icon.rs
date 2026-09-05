@@ -1,3 +1,4 @@
+use itertools::iproduct;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -62,17 +63,12 @@ fn find_papirus(spec: &str) -> Option<String> {
         bases.push(format!("{}/.local/share/icons", home));
     }
 
-    for base in &bases {
-        for size in PAPIRUS_SIZES {
-            for category in &categories {
-                let path = format!("{base}/Papirus/{size}/{category}/{name}.svg");
-                if Path::new(&path).exists() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-    None
+    // Cartesian scan in base × size × category order; first existing file
+    // wins, same as the loop it replaces
+    iproduct!(&bases, PAPIRUS_SIZES, &categories).find_map(|(base, size, category)| {
+        let path = format!("{base}/Papirus/{size}/{category}/{name}.svg");
+        Path::new(&path).exists().then_some(path)
+    })
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -117,19 +113,14 @@ fn do_find(name: &str) -> Option<String> {
     let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
 
     let search = |dir: &str| {
-        for theme in themes {
-            for category in THEME_CATEGORIES {
-                for size in ICON_SIZES {
-                    for ext in ICON_EXTS {
-                        let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
-                        if Path::new(&path).exists() {
-                            return Some(path);
-                        }
-                    }
-                }
-            }
-        }
-        None
+        // lazy Cartesian scan, theme × category × size × ext; first existing
+        // file wins (same order & early exit as the nested loops it replaces)
+        iproduct!(themes, THEME_CATEGORIES, ICON_SIZES, ICON_EXTS).find_map(
+            |(theme, category, size, ext)| {
+                let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
+                Path::new(&path).exists().then_some(path)
+            },
+        )
     };
 
     if let Some(p) = search("/usr/share/icons") {
