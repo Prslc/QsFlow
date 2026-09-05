@@ -53,25 +53,20 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         ),
     ];
 
-    let mut results = Vec::new();
-    for (name, keyword, icon, cmd) in commands {
-        // prefix match only: the default fallback chain short-circuits on the
-        // first non-empty plugin (calculator -> system-commands -> apps), so
-        // loose mid-word substring hits ("bo" inside "reBOot") shadowed
-        // app-search's stronger whole-name matches and hid apps like Bottles
-        if !input.is_empty()
-            && !name.to_lowercase().starts_with(input)
-            && !keyword.starts_with(input)
-        {
-            continue;
-        }
-        results.push(ResultItem {
+    // prefix match only: the default fallback chain short-circuits on the
+    // first non-empty plugin (calculator -> system-commands -> apps), so
+    // loose mid-word substring hits ("bo" inside "reBOot") shadowed
+    // app-search's stronger whole-name matches and hid apps like Bottles
+    commands
+        .iter()
+        .filter(|(name, keyword, _, _)| {
+            input.is_empty() || name.to_lowercase().starts_with(input) || keyword.starts_with(input)
+        })
+        .map(|(name, _, icon, cmd)| ResultItem {
             title: name.to_string(),
             summary: Some(cmd.to_string()),
             on_click: Some(format!("run:{}", cmd)),
             icon: find_icon_path(icon).or_else(|| Some("".to_string())),
-        });
-    }
-
-    results
+        })
+        .collect()
 }

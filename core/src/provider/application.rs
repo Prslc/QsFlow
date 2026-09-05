@@ -239,27 +239,26 @@ fn score_app(
         score = field_score(&c.to_lowercase(), &query_lower, &query_words) * 5 / 10;
     }
     if score == 0
-        && let Some(m) = meta
+        && let Some(v) = meta.and_then(|m| {
+            m.keywords.iter().find_map(|keyword| {
+                let ks = field_score(&keyword.to_lowercase(), &query_lower, &query_words);
+                (ks > 0).then_some(ks * 3 / 10)
+            })
+        })
     {
-        for keyword in &m.keywords {
-            let ks = field_score(&keyword.to_lowercase(), &query_lower, &query_words);
-            if ks > 0 {
-                score = ks * 3 / 10;
-                break;
-            }
-        }
-        if score == 0
-            && let Some(g) = &m.generic
-        {
-            let generic_lower = g.to_lowercase();
-            score = if generic_lower.starts_with(&query_lower) {
-                W_GENERIC_PREFIX
-            } else if generic_lower.contains(&query_lower) {
-                W_GENERIC
-            } else {
-                0
-            };
-        }
+        score = v;
+    }
+    if score == 0
+        && let Some(g) = meta.and_then(|m| m.generic.as_deref())
+    {
+        let generic_lower = g.to_lowercase();
+        score = if generic_lower.starts_with(&query_lower) {
+            W_GENERIC_PREFIX
+        } else if generic_lower.contains(&query_lower) {
+            W_GENERIC
+        } else {
+            0
+        };
     }
     if score == 0 {
         let id_lower = id.to_lowercase().trim_end_matches(".desktop").to_string();

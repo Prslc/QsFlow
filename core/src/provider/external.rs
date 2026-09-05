@@ -129,16 +129,10 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
     let output = child.wait_with_output().await.ok()?;
 
     let out = std::str::from_utf8(&output.stdout).unwrap_or_default();
-    for line in out.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            return Some(v);
-        }
-    }
-    None
+    out.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
 }
 
 /// Ask the host who it serves. Returns every plugin it describes via

@@ -57,19 +57,20 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
-        for item in suggestions {
-            if let Some(phrase) = item.as_str() {
-                // same engine icon and summary as the header row — icon-less
-                // or summary-less rows would otherwise render as the UI's bare
-                // 48px text-only "simple" rows and look incoherent
-                results.push(ResultItem {
+        // same engine icon and summary as the header row — icon-less
+        // or summary-less rows would otherwise render as the UI's bare
+        // 48px text-only "simple" rows and look incoherent
+        results.extend(
+            suggestions
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(|phrase| ResultItem {
                     title: phrase.to_string(),
                     summary: Some("Search on Google".to_string()),
                     on_click: Some(format!("https://www.google.com/search?q={}", phrase)),
                     icon: Some(icon.clone()),
-                });
-            }
-        }
+                }),
+        );
     }
 
     Ok(results)

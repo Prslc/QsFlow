@@ -87,11 +87,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
             })
         })?;
 
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
+        Ok(rows.collect::<rusqlite::Result<Vec<ResultItem>>>()?)
     })
     .await?
 }
