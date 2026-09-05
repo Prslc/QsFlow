@@ -119,7 +119,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
 }
 
 fn tokenize(s: &str) -> Vec<String> {
-    s.split(|c: char| c == ' ' || c == '-' || c == '_')
+    s.split([' ', '-', '_'])
         .filter(|w| !w.is_empty())
         .map(|w| w.to_string())
         .collect()
@@ -138,9 +138,8 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
 
     let words = tokenize(field_lower);
     if query_words.len() <= words.len() {
-        let bounded = (0..=words.len() - query_words.len()).any(|i| {
-            (0..query_words.len()).all(|j| words[i + j].starts_with(&query_words[j]))
-        });
+        let bounded = (0..=words.len() - query_words.len())
+            .any(|i| (0..query_words.len()).all(|j| words[i + j].starts_with(&query_words[j])));
         if bounded {
             return W_WORD_BOUNDARY;
         }
@@ -234,32 +233,32 @@ fn score_app(
     let query_words = tokenize(&query_lower);
 
     let mut score = field_score(&name.to_lowercase(), &query_lower, &query_words);
-    if score == 0 {
-        if let Some(c) = comment {
-            score = field_score(&c.to_lowercase(), &query_lower, &query_words) * 5 / 10;
-        }
+    if score == 0
+        && let Some(c) = comment
+    {
+        score = field_score(&c.to_lowercase(), &query_lower, &query_words) * 5 / 10;
     }
-    if score == 0 {
-        if let Some(m) = meta {
-            for keyword in &m.keywords {
-                let ks = field_score(&keyword.to_lowercase(), &query_lower, &query_words);
-                if ks > 0 {
-                    score = ks * 3 / 10;
-                    break;
-                }
+    if score == 0
+        && let Some(m) = meta
+    {
+        for keyword in &m.keywords {
+            let ks = field_score(&keyword.to_lowercase(), &query_lower, &query_words);
+            if ks > 0 {
+                score = ks * 3 / 10;
+                break;
             }
-            if score == 0 {
-                if let Some(g) = &m.generic {
-                    let generic_lower = g.to_lowercase();
-                    score = if generic_lower.starts_with(&query_lower) {
-                        W_GENERIC_PREFIX
-                    } else if generic_lower.contains(&query_lower) {
-                        W_GENERIC
-                    } else {
-                        0
-                    };
-                }
-            }
+        }
+        if score == 0
+            && let Some(g) = &m.generic
+        {
+            let generic_lower = g.to_lowercase();
+            score = if generic_lower.starts_with(&query_lower) {
+                W_GENERIC_PREFIX
+            } else if generic_lower.contains(&query_lower) {
+                W_GENERIC
+            } else {
+                0
+            };
         }
     }
     if score == 0 {
@@ -337,18 +336,45 @@ mod tests {
     #[test]
     fn exact_beats_prefix_beats_substring() {
         let m = meta(None, &[]);
-        assert_eq!(s("Telegram", None, Some(&m), "telegram.desktop", "telegram"), W_EXACT);
-        assert_eq!(s("Telegram", None, Some(&m), "telegram.desktop", "tele"), W_PREFIX);
+        assert_eq!(
+            s("Telegram", None, Some(&m), "telegram.desktop", "telegram"),
+            W_EXACT
+        );
+        assert_eq!(
+            s("Telegram", None, Some(&m), "telegram.desktop", "tele"),
+            W_PREFIX
+        );
         assert!(s("Bottles", None, Some(&m), "bottles.desktop", "bo") == W_PREFIX);
-        assert_eq!(s("LibreOffice", None, Some(&m), "libreoffice.desktop", "office"), W_SUBSTRING);
+        assert_eq!(
+            s(
+                "LibreOffice",
+                None,
+                Some(&m),
+                "libreoffice.desktop",
+                "office"
+            ),
+            W_SUBSTRING
+        );
     }
 
     #[test]
     fn short_query_never_fuzzes() {
         // two chars: only strong tiers count — no weak mid-word hits
         let m = meta(None, &[]);
-        assert_eq!(s("Yazi File Manager", None, Some(&m), "yazi.desktop", "bo"), 0);
-        assert_eq!(s("GNU Image Manipulation Program", None, Some(&m), "gimp.desktop", "bo"), 0);
+        assert_eq!(
+            s("Yazi File Manager", None, Some(&m), "yazi.desktop", "bo"),
+            0
+        );
+        assert_eq!(
+            s(
+                "GNU Image Manipulation Program",
+                None,
+                Some(&m),
+                "gimp.desktop",
+                "bo"
+            ),
+            0
+        );
     }
 
     #[test]
@@ -369,25 +395,51 @@ mod tests {
     fn word_boundary_handles_multiword() {
         let m = meta(None, &[]);
         assert_eq!(
-            s("Dank Material Shell Settings", None, Some(&m), "dms.desktop", "material shell"),
+            s(
+                "Dank Material Shell Settings",
+                None,
+                Some(&m),
+                "dms.desktop",
+                "material shell"
+            ),
             W_WORD_BOUNDARY
         );
         // non-consecutive order is not a word-boundary hit
-        assert!(s("Dank Material Shell Settings", None, Some(&m), "dms.desktop", "shell material") < W_WORD_BOUNDARY);
+        assert!(
+            s(
+                "Dank Material Shell Settings",
+                None,
+                Some(&m),
+                "dms.desktop",
+                "shell material"
+            ) < W_WORD_BOUNDARY
+        );
     }
 
     #[test]
     fn generic_name_fallback() {
         let m = meta(Some("Text Editor"), &[]);
-        assert_eq!(s("DMS Notes", None, Some(&m), "dms-notes.desktop", "editor"), W_GENERIC);
-        assert_eq!(s("DMS Notes", None, Some(&m), "dms-notes.desktop", "text"), W_GENERIC_PREFIX);
+        assert_eq!(
+            s("DMS Notes", None, Some(&m), "dms-notes.desktop", "editor"),
+            W_GENERIC
+        );
+        assert_eq!(
+            s("DMS Notes", None, Some(&m), "dms-notes.desktop", "text"),
+            W_GENERIC_PREFIX
+        );
     }
 
     #[test]
     fn desktop_id_is_last_resort() {
         let m = meta(None, &[]);
-        assert_eq!(s("Strange Name", None, Some(&m), "firefox.desktop", "firefox"), W_ID);
-        assert_eq!(s("Strange Name", None, Some(&m), "firefox.desktop", "zzz"), 0);
+        assert_eq!(
+            s("Strange Name", None, Some(&m), "firefox.desktop", "firefox"),
+            W_ID
+        );
+        assert_eq!(
+            s("Strange Name", None, Some(&m), "firefox.desktop", "zzz"),
+            0
+        );
     }
 
     #[test]
