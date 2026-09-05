@@ -11,7 +11,23 @@ pub mod window;
 
 use rustc_hash::FxHashMap as HashMap;
 
+use crate::models::ResultItem;
 use crate::plugin::Plugin;
+
+/// The common tail every scored provider shares: strongest score first,
+/// optionally one row per title, capped at `max` results.
+pub fn rank_results<T: Ord>(
+    mut scored: Vec<(T, ResultItem)>,
+    dedup_titles: bool,
+    max: usize,
+) -> Vec<ResultItem> {
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    if dedup_titles {
+        scored.dedup_by(|a, b| a.1.title == b.1.title);
+    }
+    scored.truncate(max);
+    scored.into_iter().map(|(_, item)| item).collect()
+}
 
 pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
     let mut m: HashMap<&'static str, Box<dyn Plugin>> = HashMap::default();

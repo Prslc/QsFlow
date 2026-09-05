@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 
 use crate::system::fs::get_home;
 
@@ -11,7 +12,7 @@ fn db_path() -> Result<PathBuf> {
     Ok(dir.join("usage.db"))
 }
 
-fn conn() -> Result<Connection> {
+fn open_conn() -> Result<Connection> {
     let conn = Connection::open(db_path()?)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS usage (
@@ -24,6 +25,18 @@ fn conn() -> Result<Connection> {
     )?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+/// One connection for the process lifetime — every keystroke of an empty
+/// query calls `get_top`, and re-opening the database file each time was
+/// pure overhead.
+static DB: LazyLock<Mutex<Connection>> =
+    LazyLock::new(|| Mutex::new(open_conn().expect("failed to open qsflow usage database")));
+
+/// Run `f` on the shared connection, surviving lock poisoning.
+fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    let guard = DB.lock().unwrap_or_else(|poison| poison.into_inner());
+    f(&guard)
 }
 
 /// Older cores keyed history by raw `on_click` and lacked this column;
@@ -95,15 +108,15 @@ fn migrate(conn: &Connection) -> Result<()> {
 }
 
 pub fn record(item_json: &str) -> Result<()> {
-    record_with(&conn()?, item_json)
+    with_db(|conn| record_with(conn, item_json))
 }
 
 pub fn forget(on_click: &str) -> Result<()> {
-    forget_with(&conn()?, on_click)
+    with_db(|conn| forget_with(conn, on_click))
 }
 
 pub fn get_top(limit: i32) -> Result<Vec<serde_json::Value>> {
-    get_top_with(&conn()?, limit)
+    with_db(|conn| get_top_with(conn, limit))
 }
 
 #[cfg(test)]
@@ -179,7 +192,7 @@ fn forget_with(conn: &Connection, on_click: &str) -> Result<()> {
 /// Drop `copy:` rows recorded before the `is_ephemeral` guard existed. Runs at
 /// core startup so older usage databases heal on upgrade; idempotent.
 pub fn purge_ephemeral() -> Result<()> {
-    purge_with(&conn()?)
+    with_db(purge_with)
 }
 
 fn purge_with(conn: &Connection) -> Result<()> {

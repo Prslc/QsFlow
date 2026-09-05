@@ -136,10 +136,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         }
     }
 
-    results.sort_by(|a, b| b.0.cmp(&a.0));
-    results.truncate(20);
-
-    results.into_iter().map(|(_, item)| item).collect()
+    crate::provider::rank_results(results, false, 20)
 }
 
 #[cfg(test)]

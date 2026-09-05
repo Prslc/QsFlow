@@ -115,10 +115,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    results.sort_by(|a, b| b.0.cmp(&a.0));
-    results.truncate(50);
-
-    Ok(results.into_iter().map(|(_, item)| item).collect())
+    Ok(crate::provider::rank_results(results, false, 50))
 }
 
 #[cfg(test)]
