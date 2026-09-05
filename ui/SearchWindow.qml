@@ -90,7 +90,13 @@ PanelWindow {
 
     // full-screen overlay
     anchors { top: true; left: true; right: true; bottom: true }
-    exclusiveZone: 0
+    // Modal overlay: IGNORE other layer-shell surfaces' exclusive zones.
+    // In Normal/Auto mode the DMS top bar (Top layer) reserves its strip and
+    // niri pushes this full-anchor surface below it (window spans 44..1080),
+    // so the dim never covers the bar and it stays highlighted. With Ignore
+    // (already Overlay, the highest layer) the launcher covers the whole
+    // output including the top bar. No own zone needed (nothing to reserve).
+    exclusionMode: ExclusionMode.Ignore
     aboveWindows: true
     focusable: true
     color: "transparent"
