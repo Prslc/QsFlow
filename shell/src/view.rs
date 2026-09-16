@@ -171,13 +171,10 @@ fn search_row(state: &State) -> Element<'_, Message> {
 
 fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
     let hovered = state.hovered == Some(Hover::Clear);
-    let background = if hovered {
-        solid(state.theme.fg, 0.12)
-    } else {
-        Color::TRANSPARENT
-    };
-    // a 1px ring so the button reads as a button even when it is not hovered
-    let ring = solid(state.theme.fg, if hovered { 0.45 } else { 0.25 });
+    // A soft disc rather than a 1px outline: a thin ring around a 26px circle
+    // reads as a scratchy hairline, while the tinted disc gives the ✕ the same
+    // "this is a button" affordance quietly (and deepens on hover).
+    let background = solid(state.theme.fg, if hovered { 0.18 } else { 0.10 });
 
     mouse_area(
         container(text("✕").size(12).color(dim))
@@ -188,9 +185,8 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
             .style(move |_theme| container::Style {
                 background: Some(Background::Color(background)),
                 border: Border {
-                    color: ring,
-                    width: 1.0,
                     radius: 13.0.into(),
+                    ..Border::default()
                 },
                 ..container::Style::default()
             }),
