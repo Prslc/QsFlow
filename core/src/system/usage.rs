@@ -348,7 +348,7 @@ mod tests {
         let conn = test_conn();
         record_with(
             &conn,
-            r#"{"title":"你好","on_click":"copy:{\"text\": \"你好\"}"}"#,
+            r#"{"title":"Clipboard","on_click":"copy:{\"text\": \"clip\"}"}"#,
         )
         .unwrap();
         record_with(
