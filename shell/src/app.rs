@@ -589,7 +589,9 @@ impl State {
 
         if self.card_h.value() != target {
             self.card_h.go_mut(target, now);
-            self.animating = true;
+            // Only ask for frames while a surface exists: a payload landing on a
+            // hidden resident launcher must not wake the process at 60fps.
+            self.animating |= self.shown.is_some();
         }
     }
 
