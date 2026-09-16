@@ -30,6 +30,12 @@ pub fn launch_app(desktop_id: &str) {
     }
 }
 
+/// Open a URI with the default handler. Not `Qt.openUrlExternally`: outside a
+/// Flatpak/Snap sandbox it falls back to `xdg-open`, which drops `Terminal=true`.
+pub fn open_uri(uri: &str) {
+    let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
+}
+
 /// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
 /// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
 /// survives embedded newlines/quotes; parse failure or a missing `wl-copy`

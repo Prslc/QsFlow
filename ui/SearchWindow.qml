@@ -341,7 +341,9 @@ PanelWindow {
         } else if (target.startsWith("copy:")) {
             window.searchTriggered("copy " + target.substring(5))
         } else if (isUrl) {
-            Qt.openUrlExternally(target)
+            // the core opens URIs via GLib; Qt.openUrlExternally falls back to
+            // xdg-open, which drops Terminal=true
+            window.searchTriggered("open " + target)
         } else {
             window.searchTriggered("run " + target)
         }

@@ -111,7 +111,10 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 | `run:<shell cmd>` | 执行 shell 命令（系统命令、剪贴板） |
 | `launch:<desktop-id>` | 按 desktop id 启动应用（app-search） |
 | `copy:{"text":"…"}` | 把文本写入 Wayland 剪贴板（翻译复制） |
-| 裸 URL / `file:` / `mailto:` URI | 由 UI 经 `Qt.openUrlExternally` 打开 |
+| 裸 URL / `file:` / `mailto:` URI | 由 core 经 GLib `g_app_info_launch_default_for_uri` 打开 |
+
+`file:` URI 会做百分号编码，路径中的空格与非 ASCII 字符都能保留；`Terminal=true`
+的处理器会在终端中启动。
 
 无 `on_click` 的结果项不可交互（仅展示）。
 

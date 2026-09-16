@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
+use gio::prelude::FileExt;
 use walkdir::WalkDir;
 
 use crate::models::ResultItem;
@@ -130,7 +131,8 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<R
                 continue;
             }
 
-            let file_url = format!("file://{}", path);
+            // GLib builds the URI: raw paths are invalid for spaces/non-ASCII
+            let file_url = gio::File::for_path(&path).uri().to_string();
 
             let (title, icon) = if is_dir {
                 (format!("{}/", name), "folder")

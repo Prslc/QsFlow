@@ -108,6 +108,10 @@ async fn main() -> Result<()> {
             system::executor::copy_json(input.trim_start_matches("copy "));
             continue;
         }
+        if input.starts_with("open ") {
+            system::executor::open_uri(input.trim_start_matches("open "));
+            continue;
+        }
         if input.starts_with("launch ") {
             system::executor::launch_app(input.trim_start_matches("launch "));
             continue;
