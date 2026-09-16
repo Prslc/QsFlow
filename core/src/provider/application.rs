@@ -1,13 +1,13 @@
-use std::future::Future;
+use std::fs;
 use std::pin::Pin;
 use std::sync::LazyLock;
-use std::{env, fs, path::Path};
 
 use anyhow::Result;
 use gio::prelude::*;
 
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
+use crate::system::fs as system_fs;
 use crate::system::icon::find_icon_path;
 
 // Tiered weights, ported from DMS's launcher scorer: a strong textual tier
@@ -398,25 +398,10 @@ fn parse_meta(content: &str) -> DesktopMeta {
 /// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
 /// so this is the only way to reach them.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
-    let mut bases: Vec<String> = env::var("XDG_DATA_DIRS")
-        .map(|s| s.split(':').map(String::from).collect())
-        .unwrap_or_else(|_| vec!["/usr/local/share/".into(), "/usr/share/".into()]);
-    if let Ok(home) = env::var("HOME") {
-        bases.push(format!("{home}/.local/share"));
-    }
-
-    for base in bases {
-        let file = Path::new(&base).join("applications").join(id);
-        let Ok(content) = fs::read_to_string(&file) else {
-            continue;
-        };
-
-        let meta = parse_meta(&content);
-        if meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
-            return Some(meta);
-        }
-    }
-    None
+    let content = fs::read_to_string(system_fs::find_desktop_file(id)?).ok()?;
+    let meta = parse_meta(&content);
+    (meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty())
+        .then_some(meta)
 }
 
 #[cfg(test)]

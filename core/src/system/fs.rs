@@ -28,6 +28,28 @@ pub fn ensure_flatpak_data_dirs() {
     }
 }
 
+/// The first `<dir>/applications/<id>` that exists on `XDG_DATA_DIRS`
+/// (already padded with the flatpak export dirs by
+/// [`ensure_flatpak_data_dirs`]) plus the user's `~/.local/share`. One lookup
+/// path for both the icon/meta reader and the desktop-action launcher.
+pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
+    let dirs =
+        env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+    let mut bases: Vec<PathBuf> = dirs
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    if let Ok(home) = env::var("HOME") {
+        bases.push(PathBuf::from(home).join(".local/share"));
+    }
+
+    bases
+        .into_iter()
+        .map(|base| base.join("applications").join(id))
+        .find(|candidate| candidate.is_file())
+}
+
 fn find_up_from_bin(sub_path: &str) -> Option<String> {
     let mut dir = env::current_exe().ok()?.parent()?.to_path_buf();
     loop {

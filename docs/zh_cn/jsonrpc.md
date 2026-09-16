@@ -111,7 +111,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 | `run:<shell cmd>` | 执行 shell 命令（系统命令、剪贴板） |
 | `launch:<desktop-id>` | 按 desktop id 启动应用（app-search） |
 | `copy:{"text":"…"}` | 把文本写入 Wayland 剪贴板（翻译复制） |
-| `action:<desktop-id>:<action-id>` | 运行 desktop action；由 UI 经 Quickshell 的 desktop-entry 模型解析执行（app-search 按 DMS 的方式为每个 action 输出一行） |
+| `action:<desktop-id>:<action-id>` | 运行 desktop action；前端以 `action <desktop-id>:<action-id>` 转发，由 core 自行解析 `[Desktop Action …]` 组（app-search 按 DMS 的方式为每个 action 输出一行） |
 | 裸 URL / `file:` / `mailto:` URI | 由 core 经 GLib `g_app_info_launch_default_for_uri` 打开 |
 
 `file:` URI 会做百分号编码，路径中的空格与非 ASCII 字符都能保留；`Terminal=true`

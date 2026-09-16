@@ -15,6 +15,8 @@ enum Request<'a> {
     Copy(&'a str),
     Open(&'a str),
     Launch(&'a str),
+    /// `<desktop-id>:<action-id>` — one `[Desktop Action …]` group.
+    Action(&'a str),
     /// Anything else is a query.
     Search(&'a str),
 }
@@ -35,6 +37,7 @@ impl<'a> Request<'a> {
             "copy" => Self::Copy(argument),
             "open" => Self::Open(argument),
             "launch" => Self::Launch(argument),
+            "action" => Self::Action(argument),
             _ => Self::Search(input),
         }
     }
@@ -109,6 +112,7 @@ pub async fn serve() -> Result<()> {
             Request::Copy(payload) => system::executor::copy_json(payload),
             Request::Open(uri) => system::executor::open_uri(uri),
             Request::Launch(id) => system::executor::launch_app(id),
+            Request::Action(spec) => system::executor::launch_desktop_action(spec),
             Request::Search(query) => start_search(&tx, &mut search, query),
         }
     }
@@ -168,6 +172,24 @@ mod tests {
         assert!(matches!(
             Request::parse("selects x"),
             Request::Search("selects x")
+        ));
+    }
+
+    #[test]
+    fn action_verb_carries_desktop_and_action_ids() {
+        assert!(matches!(
+            Request::parse("action org.gnome.Terminal.desktop:NewWindow"),
+            Request::Action("org.gnome.Terminal.desktop:NewWindow")
+        ));
+        // singular "actions" is still a query, not a verb
+        assert!(matches!(
+            Request::parse("actions x"),
+            Request::Search("actions x")
+        ));
+        // no separator: a bare "action" is a query
+        assert!(matches!(
+            Request::parse("action"),
+            Request::Search("action")
         ));
     }
 }

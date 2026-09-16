@@ -1,5 +1,8 @@
 use gio::prelude::*;
+use std::path::Path;
 use std::process;
+
+use crate::system::fs;
 
 /// Run a shell command detached from the backend (system commands, …). Shell
 /// is intended here: `%u`/`%f` leftovers are stripped before execution.
@@ -36,6 +39,101 @@ pub fn open_uri(uri: &str) {
     let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
 }
 
+/// Launch a `[Desktop Action …]` group of a desktop file: `<desktop-id>:<action-id>`.
+/// The shell forwards `action:` rows here because gio-rs binds no
+/// desktop-action launcher; the `Exec=` line is expanded and run through the
+/// same detached shell path as every other command. A malformed spec, a
+/// missing file/group/`Exec=`, or unreadable content is a silent no-op.
+pub fn launch_desktop_action(spec: &str) {
+    let Some((id, action_id)) = spec.split_once(':') else {
+        return;
+    };
+    if id.is_empty() || action_id.is_empty() {
+        return;
+    }
+
+    let Some(path) = fs::find_desktop_file(id) else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Some(exec) = action_exec(&text, action_id) else {
+        return;
+    };
+
+    execute_command(&expand_exec(&exec, entry_name(&text).as_deref(), &path));
+}
+
+/// `Exec=` of the group whose header is exactly `[Desktop Action <id>]`.
+fn action_exec(text: &str, action_id: &str) -> Option<String> {
+    let header = format!("[Desktop Action {action_id}]");
+    let mut in_group = false;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_group = line == header;
+        } else if in_group
+            && let Some(exec) = line.strip_prefix("Exec=")
+        {
+            let exec = exec.trim();
+            if !exec.is_empty() {
+                return Some(exec.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Unlocalised `Name=` of the `[Desktop Entry]` group.
+fn entry_name(text: &str) -> Option<String> {
+    let mut in_entry = false;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_entry = line == "[Desktop Entry]";
+        } else if in_entry
+            && let Some(name) = line.strip_prefix("Name=")
+        {
+            let name = name.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Expand the `Exec=` field codes a launcher substitutes: `%%` `%c` `%k`;
+/// `%i` and the file/URL codes are dropped (`execute_command` already strips
+/// the latter, and `%i` carries an icon name no shell command can use).
+fn expand_exec(exec: &str, name: Option<&str>, desktop: &Path) -> String {
+    let mut expanded = String::with_capacity(exec.len());
+    let mut chars = exec.chars();
+
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            expanded.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('%') => expanded.push('%'),
+            Some('c') => expanded.push_str(name.unwrap_or("")),
+            Some('k') => expanded.push_str(&desktop.to_string_lossy()),
+            Some('i' | 'f' | 'F' | 'u' | 'U') => {}
+            // a lone trailing `%` is not a field code: keep it verbatim
+            None => expanded.push('%'),
+            Some(other) => {
+                expanded.push('%');
+                expanded.push(other);
+            }
+        }
+    }
+    expanded
+}
+
 /// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
 /// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
 /// survives embedded newlines/quotes; parse failure or a missing `wl-copy`
@@ -65,4 +163,68 @@ pub fn copy_json(payload: &str) {
 #[derive(serde::Deserialize)]
 struct CopyRequest {
     text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DESKTOP: &str = "[Desktop Entry]\n\
+         Name=VirtualBox\n\
+         Actions=Manager;Home;\n\
+         Name[de]=VirtualBox oeffnen\n\
+         \n\
+         [Desktop Action Manager]\n\
+         Name=Open VM Manager\n\
+         Exec=VirtualBoxVM --startvm %c %k\n\
+         \n\
+         [Desktop Action Home]\n\
+         Name=Open Home\n\
+         Exec=/usr/bin/virtualbox %U %f %i\n";
+
+    #[test]
+    fn action_exec_picks_the_named_group() {
+        assert_eq!(
+            action_exec(DESKTOP, "Manager").as_deref(),
+            Some("VirtualBoxVM --startvm %c %k")
+        );
+        assert_eq!(
+            action_exec(DESKTOP, "Home").as_deref(),
+            Some("/usr/bin/virtualbox %U %f %i")
+        );
+        assert_eq!(action_exec(DESKTOP, "Missing"), None);
+        // the group prefix must match in full: "Man" is not "Manager"
+        assert_eq!(action_exec(DESKTOP, "Man"), None);
+    }
+
+    #[test]
+    fn entry_name_ignores_action_groups() {
+        assert_eq!(entry_name(DESKTOP).as_deref(), Some("VirtualBox"));
+
+        // an action group before [Desktop Entry] must not shadow it
+        let reordered = "[Desktop Action Manager]\nName=Open VM Manager\n\n\
+                         [Desktop Entry]\nName=Translator\n";
+        assert_eq!(entry_name(reordered).as_deref(), Some("Translator"));
+    }
+
+    #[test]
+    fn expand_exec_substitutes_and_drops_codes() {
+        let path = Path::new("/usr/share/applications/virtualbox.desktop");
+        assert_eq!(
+            expand_exec("run %c -- %k %f %U %i", Some("VirtualBox"), path),
+            "run VirtualBox -- /usr/share/applications/virtualbox.desktop   "
+        );
+        // %% is a literal percent; an absent Name expands to nothing
+        assert_eq!(expand_exec("100%% %c", None, path), "100% ");
+        // unknown codes stay verbatim
+        assert_eq!(expand_exec("%x %", None, path), "%x %");
+    }
+
+    #[test]
+    fn malformed_specs_are_silent_noops() {
+        launch_desktop_action("no-colon");
+        launch_desktop_action(":action");
+        launch_desktop_action("id:");
+        launch_desktop_action("");
+    }
 }

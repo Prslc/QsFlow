@@ -10,7 +10,7 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。后端基于 Rust 异步实现，前端使用 [Quickshell](https://github.com/outfoxxed/quickshell) 的 QML 构建。
+QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。它由两个 Rust 二进制组成：搜索后端 `qsflow-core` 与前端 `qsflow-shell`——后者是运行在 `wlr-layer-shell` 上的原生 [iced](https://iced.rs) 覆盖层（向混成器申请的模糊区域就是卡片“毛玻璃”效果的来源）。
 
 ## 截图
 
@@ -37,9 +37,8 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ## 环境要求
 
-- 支持 `wlr-layer-shell` 协议的 **Wayland** 混成器
-- **[Quickshell](https://github.com/outfoxxed/quickshell)**
-- Rust 工具链（用于编译后端）
+- 支持 `wlr-layer-shell` 协议的 **Wayland** 混成器（niri、sway、Hyprland 等）
+- Rust 工具链（用于编译后端与前端）
 - Firefox（可选，用于书签和历史搜索）
 - [cliphist](https://github.com/sentriz/cliphist)（可选，用于剪贴板历史）
 
@@ -47,46 +46,47 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ```bash
 git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow/core
-cargo build --release
-ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
-# qsflow 是 quickshell 的软链：进程在 ps/top 里显示自己的名字
-# （纯表面 —— IPC 按 -p 配置路径路由，与二进制名无关）
-ln -s "$(command -v quickshell)" ~/.local/bin/qsflow
+cd QsFlow/core  && cargo build --release
+cd ../shell     && cargo build --release
+# 两个二进制都要在 PATH 上（前端按名字拉起后端）
+ln -s "$PWD/../core/target/release/qsflow-core"  ~/.local/bin/qsflow-core
+ln -s "$PWD/target/release/qsflow-shell"         ~/.local/bin/qsflow-shell
 ```
 
-然后在混成器配置中绑定快捷键（如 `Alt+Space`）来启动：
+直接运行，或把热键（如 `Alt+Space`）绑到 `qsflow-shell toggle`（常驻模式见下）：
 
 ```bash
-qsflow -p /path/to/QsFlow/ui/MainShell.qml
+qsflow-shell            # 开发运行：启动即显示卡片，关闭即退出
+qsflow-shell toggle     # 显示/隐藏常驻实例（不会新起进程）
+qsflow-shell status     # 输出 `visible` 或 `hidden`
 ```
 
-启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
-`Esc`/点击卡片外会退出；常驻模式（见下）下热键切换窗口，关闭改为隐藏。
+启动器以全屏覆盖方式打开，带调暗背景，卡片固定在屏幕上半部。默认的按热键拉起
+流程下，`Esc`/点击卡片外会退出；常驻模式（见下）下热键切换卡片，关闭只隐藏。
 
 ## 常驻模式（可选 —— 零冷启动）
 
-默认每次按热键都会重新拉起 QML 壳与 Rust 内核，首次按键需付 ~300ms 冷启动
-（主要是 QML/Qt 初始化，不是核心）。要让启动器即刻弹出，让一个常驻的壳+内核
-保持存活，通过 Quickshell 的 IPC 切换窗口：
+默认每次按热键都会重新拉起前端与 Rust 内核，首次按键需付一次冷启动（主要是
+混成器 + GPU 初始化，不是核心）。要让启动器即刻弹出，让一个常驻的壳+内核
+保持存活，通过前端自带的 IPC socket 切换窗口：
 
 ```ini
 # ~/.config/systemd/user/qsflow-launcher.service
 [Unit]
-Description=QsFlow launcher (resident quickshell + core)
+Description=QsFlow launcher (resident iced shell + core)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=qsflow -p /abs/path/to/QsFlow/ui/MainShell.qml
+ExecStart=/home/you/.local/bin/qsflow-shell
 Restart=on-failure
 RestartSec=2
-# qsflow-core 与 qsflow 软链都在 ~/.local/bin；由下面的 PATH（该目录须保持第一）解析
+# qsflow-shell 与 qsflow-core 都在 ~/.local/bin；由下面的 PATH（该目录须保持第一）解析
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY 由图形会话导入；这里只设 XDG_RUNTIME_DIR（uid 无关的 %t）
 Environment=XDG_RUNTIME_DIR=%t
-# 常驻模式：隐藏启动，用 `ipc call launcher toggle` 切换
+# 常驻模式：隐藏启动，用 `qsflow-shell toggle` 切换
 Environment=QSFLOW_RESIDENT=1
 
 [Install]
@@ -96,14 +96,16 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now qsflow-launcher
 # niri 热键 —— 切换而非重新拉起：
-#   Alt+Space { spawn-sh "quickshell ipc --path $HOME/Project/QsFlow/ui/MainShell.qml call launcher toggle"; }
+#   Alt+Space { spawn-sh "qsflow-shell toggle"; }
 ```
 
-`MainShell.qml` 暴露了一个 `IpcHandler`（`target: "launcher"`），带
-`open` / `close` / `toggle`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、关闭即隐藏）；
-不带该变量时，直接 `qsflow -p ui/MainShell.qml` 保持旧行为——启动即弹出、关闭即退出，
-因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
-qsflow-launcher` 并还原绑定的启动方式。
+`qsflow-shell {open,close,toggle,status}` 通过
+`$XDG_RUNTIME_DIR/qsflow-shell.sock` 与常驻实例通信；第二个守护进程会因 socket
+已被占用而拒绝启动，因此这个客户端同时也是“是否已在运行”的检查。
+`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、关闭时销毁 surface 但保留进程）；
+不带该变量时，直接 `qsflow-shell` 保持旧行为——启动即弹出、关闭即退出，因此手动/
+开发路径与 systemd 服务相互独立。`QSFLOW_REDUCED_MOTION=1` 会跳过入场动画。
+恢复：`systemctl --user disable --now qsflow-launcher` 并还原绑定的启动方式。
 
 
 ## 使用说明
@@ -161,7 +163,8 @@ keyword = "s"
 ## 致谢
 
 - **[Wox](https://github.com/wox-launcher/wox)** — 本启动器的设计灵感来源。
-- **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick Shell 框架，负责 Wayland 悬浮面板渲染。
+- **[iced](https://iced.rs)** — 构建 `qsflow-shell` 覆盖层的 Rust GUI 工具包。
+- **[exwlshelleventloop / iced_exwlshell](https://github.com/waycrate/exwlshelleventloop)** — iced 的 `wlr-layer-shell` 与混成器模糊集成。
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — 高质量 SVG 图标主题。
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — SQLite 绑定，用于读取 Firefox 数据库和使用历史。
