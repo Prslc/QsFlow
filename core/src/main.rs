@@ -15,8 +15,7 @@ pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value)
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn run() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {
         println!(
             "{:<24} {:<24} {:<12} {:<24} STATUS",
@@ -134,4 +133,14 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    // before the runtime exists: the env write must be single-threaded
+    system::fs::ensure_flatpak_data_dirs();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run())
 }
