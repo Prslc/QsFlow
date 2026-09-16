@@ -208,8 +208,6 @@ PanelWindow {
                     onMoveDown: resultsList.currentIndex = Math.min(resultsList.currentIndex + 1, resultsModel.count - 1)
                     onPageUp: resultsList.currentIndex = Math.max(resultsList.currentIndex - 5, 0)
                     onPageDown: resultsList.currentIndex = Math.min(resultsList.currentIndex + 5, resultsModel.count - 1)
-                    onGoHome: resultsList.currentIndex = 0
-                    onGoEnd: resultsList.currentIndex = Math.max(resultsModel.count - 1, 0)
                     onForgetRequested: window.forgetCurrent()
                 }
 

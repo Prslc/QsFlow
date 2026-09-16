@@ -29,8 +29,6 @@ Item {
     signal moveDown()
     signal pageUp()
     signal pageDown()
-    signal goHome()
-    signal goEnd()
     signal forgetRequested()
 
     // Active keyword prefix (b, h, f, ...) derived from input text.
@@ -98,18 +96,15 @@ Item {
         Keys.onDownPressed: (event) => root.moveDown()
         Keys.onDeletePressed: (event) => root.forgetRequested()
         Keys.onPressed: (event) => {
-            // Home/End/PageUp/PageDown have no dedicated Keys signals in Qt 6.11
+            // PageUp/PageDown have no dedicated Keys signals in Qt 6.11. Only
+            // these two may be intercepted: Home/End stay with the TextField
+            // (caret to line start/end, Ctrl+Home/End, Shift+Home/End select)
+            // — hijacking them made the result list jump instead of the caret.
             if (event.key === Qt.Key_PageUp) {
                 root.pageUp()
                 event.accepted = true
             } else if (event.key === Qt.Key_PageDown) {
                 root.pageDown()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Home) {
-                root.goHome()
-                event.accepted = true
-            } else if (event.key === Qt.Key_End) {
-                root.goEnd()
                 event.accepted = true
             }
         }
