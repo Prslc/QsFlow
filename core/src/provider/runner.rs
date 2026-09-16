@@ -47,12 +47,19 @@ fn split_command(input: &str) -> (String, String) {
     }
 }
 
-/// `(name, full path)` for every executable on `$PATH`, first match wins (shell
-/// resolution order). Scanned once per process, then cached. Names containing
-/// a `.` are skipped (dodges `.so`/`.sh`/versioned-library noise); most daily
-/// commands are dot-free.
-fn path_binaries() -> &'static Vec<(String, String)> {
-    static LIST: LazyLock<Vec<(String, String)>> = LazyLock::new(scan_path);
+/// `(lowercased UTF-32 name, name, full path)` for every executable on `$PATH`,
+/// first match wins (shell resolution order). Scanned once per process, the
+/// UTF-32 form included: rebuilding it per keystroke meant ~3900 allocations.
+fn path_binaries() -> &'static [(nucleo::Utf32String, String, String)] {
+    static LIST: LazyLock<Vec<(nucleo::Utf32String, String, String)>> = LazyLock::new(|| {
+        scan_path()
+            .into_iter()
+            .map(|(name, path)| {
+                let utf32 = nucleo::Utf32String::from(name.to_lowercase());
+                (utf32, name, path)
+            })
+            .collect()
+    });
     &LIST
 }
 
@@ -113,8 +120,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
 
     let mut results: Vec<(u16, ResultItem)> = Vec::new();
 
-    for (name, full_path) in path_binaries() {
-        let name_utf32 = nucleo::Utf32String::from(name.to_lowercase());
+    for (name_utf32, name, full_path) in path_binaries() {
         let score = matcher
             .fuzzy_match(name_utf32.slice(..), pattern.slice(..))
             .unwrap_or(0);

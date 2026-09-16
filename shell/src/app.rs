@@ -103,9 +103,6 @@ pub struct State {
     cursor: Option<Point>,
     /// Wheel deltas smaller than a row (trackpads, the pixel half of a notch).
     wheel_accum: f32,
-    /// Last applied result payload: an identical re-send is dropped so the
-    /// selection survives it (the QML's `lastResults` dedupe).
-    last_payload: String,
     shown: Option<WindowId>,
     /// fcitx can deliver Enter while a preedit is live; Enter over composition
     /// must not launch a row.
@@ -134,8 +131,19 @@ fn resting_card(rows: usize) -> Animation<f32> {
 
 use crate::geometry::MAX_ROWS;
 
-/// Top visible row for `selected`, given the current `first`.
-///
+/// Whether `items` is the payload the current rows were built from. The fields
+/// compared are exactly the ones the payload carries; `icon_path` is derived.
+fn rows_match(rows: &[Row], items: &[ResultItem]) -> bool {
+    rows.len() == items.len()
+        && rows.iter().zip(items).all(|(row, item)| {
+            row.title == item.title
+                && row.summary == item.summary
+                && row.on_click == item.on_click
+                && row.icon_spec.as_deref()
+                    == item.icon.as_deref().filter(|spec| !spec.is_empty())
+        })
+}
+
 /// The row index under a point, `None` outside the card or the list band. The
 /// inverse of the layout `view` builds, so it has to agree with `geometry`.
 fn row_at(surface: Size, first: usize, rows: usize, point: Point) -> Option<usize> {
@@ -238,7 +246,6 @@ pub fn boot(shell_events: ShellReceiver) -> (State, Task<Message>) {
         pointer_on_card: false,
         cursor: None,
         wheel_accum: 0.0,
-        last_payload: String::new(),
         shown: None,
         preedit_active: false,
         resident,
@@ -613,13 +620,22 @@ impl State {
     /// the tint would stay on the old row index — at best on the wrong row, at
     /// worst on a row that is no longer drawn at all. Re-derive it from the
     /// tracked pointer instead.
+    /// A pointer that is not over the list at all drops a stale row hover;
+    /// `Hover::Clear` is left alone (the clear button sits outside the list).
     fn resync_hover(&mut self) {
         let row = self
             .cursor
             .and_then(|point| row_at(self.surface, self.first, self.rows.len(), point));
-        if let Some(row) = row {
-            self.hovered = Some(Hover::Row(row));
+        match row {
+            Some(row) => self.hovered = Some(Hover::Row(row)),
+            None if matches!(self.hovered, Some(Hover::Row(_))) => self.hovered = None,
+            None => {}
         }
+    }
+
+    /// Whether `items` is the payload the current rows were built from.
+    fn rows_match(&self, items: &[ResultItem]) -> bool {
+        rows_match(&self.rows, items)
     }
 
     /// Move the selection by `rows` (the wheel). The selection — not just the
@@ -698,11 +714,12 @@ impl State {
     }
 
     fn apply_results(&mut self, items: Vec<ResultItem>) -> Task<Message> {
-        let payload = serde_json::to_string(&items).unwrap_or_default();
-        if payload == self.last_payload && !self.rows.is_empty() {
+        // The QML's `lastResults` dedupe: an identical re-send is dropped so it
+        // cannot reset the selection — compared against the rows already held,
+        // not a serialized copy of the payload.
+        if self.rows_match(&items) && !self.rows.is_empty() {
             return Task::none();
         }
-        self.last_payload = payload;
 
         let cache = &self.icon_cache;
         self.rows = items
@@ -801,7 +818,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{contain, row_at, take_whole_rows};
+    use super::{Row, contain, row_at, rows_match, take_whole_rows};
     use crate::geometry::{self, MAX_ROWS, ROW_H};
     use iced::{Point, Size};
 
@@ -863,6 +880,68 @@ mod tests {
         assert_eq!(take_whole_rows(&mut trackpad, 0.5), 0);
         assert_eq!(take_whole_rows(&mut trackpad, -0.5), 0);
         assert_eq!(take_whole_rows(&mut trackpad, -0.5), -1);
+    }
+
+    fn row(title: &str, summary: Option<&str>, on_click: Option<&str>, icon: Option<&str>) -> Row {
+        Row {
+            title: title.to_string(),
+            summary: summary.map(str::to_string),
+            on_click: on_click.map(str::to_string),
+            icon_spec: icon.map(str::to_string),
+            icon_path: None,
+        }
+    }
+
+    fn item(title: &str, summary: Option<&str>, on_click: Option<&str>, icon: Option<&str>) -> crate::model::ResultItem {
+        crate::model::ResultItem {
+            title: title.to_string(),
+            summary: summary.map(str::to_string),
+            on_click: on_click.map(str::to_string),
+            icon: icon.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn the_result_dedupe_matches_the_payload_it_was_built_from() {
+        let rows = vec![
+            row("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+            row("Files", None, None, None),
+        ];
+        let same = vec![
+            item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+            item("Files", None, None, None),
+        ];
+        assert!(rows_match(&rows, &same));
+
+        // an empty icon spec and an absent one are the same
+        assert!(rows_match(
+            &[row("Files", None, None, None)],
+            &[item("Files", None, None, Some(""))]
+        ));
+
+        // a changed title, order, count or action is a new payload
+        assert!(!rows_match(
+            &rows,
+            &[
+                item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+                item("Files!", None, None, None),
+            ]
+        ));
+        assert!(!rows_match(
+            &rows,
+            &[
+                item("Files", None, None, None),
+                item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+            ]
+        ));
+        assert!(!rows_match(&rows, &same[..1]));
+        assert!(!rows_match(
+            &rows,
+            &[
+                item("Firefox", Some("Browser"), Some("run:firefox"), Some("/i.svg")),
+                item("Files", None, None, None),
+            ]
+        ));
     }
 
     #[test]

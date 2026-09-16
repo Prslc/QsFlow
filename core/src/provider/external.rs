@@ -1,9 +1,15 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex, MutexGuard, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::sync::Mutex;
 
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
@@ -30,9 +36,20 @@ pub struct External {
 }
 
 /// The registry is built once per process, so these small strings live exactly
-/// the process lifetime that `Meta`'s `&'static str` requires.
+/// the process lifetime that `Meta`'s `&'static str` requires. Interning keeps
+/// that true across `plugins.toml` reloads: re-registering the same identity
+/// reuses the string instead of leaking a second copy.
 fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
+    static POOL: LazyLock<StdMutex<HashSet<&'static str>>> =
+        LazyLock::new(|| StdMutex::new(HashSet::new()));
+
+    let mut pool = POOL.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(existing) = pool.get(s.as_str()) {
+        return existing;
+    }
+    let leaked: &'static str = Box::leak(s.into_boxed_str());
+    pool.insert(leaked);
+    leaked
 }
 
 impl External {
@@ -102,10 +119,236 @@ impl Plugin for External {
     }
 }
 
-/// One JSON-RPC request/response round trip against `command`: spawn, write the
-/// request, close stdin, reap, return the first response line (any line that
-/// parses). `None` when the host is missing or produced no parseable output.
+/// Bound on one host round trip: a wedged host must not hold the session (and
+/// every later search against it) forever.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+/// Keep a host this long after its last request: one interpreter serves a
+/// query's keystrokes, but nothing stays resident once the launcher goes quiet.
+const SESSION_IDLE: Duration = Duration::from_secs(60);
+/// Bound on one-shot discovery: a host that never exits must not hang the
+/// registry build.
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(10);
+/// How often the idle reaper runs while at least one host is alive.
+const REAP_INTERVAL: Duration = Duration::from_secs(20);
+
+/// One long-lived host process: the plugin framework loops on stdin until EOF
+/// (docs/en/jsonrpc.md), so one interpreter answers every request instead of
+/// being spawned per keystroke.
+struct Session {
+    /// Dropped (and killed, via `kill_on_drop`) with the session.
+    _child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+enum ExchangeError {
+    /// Child gone / pipe broken (also a one-shot host on its second request):
+    /// respawning may recover.
+    Dead,
+    /// No matching response in time: the host is wedged, do not retry.
+    Timeout,
+}
+
+struct Host {
+    session: Mutex<Session>,
+    last_used: StdMutex<Instant>,
+}
+
+static HOSTS: LazyLock<StdMutex<HashMap<String, Arc<Host>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+/// Responses are matched by id: an aborted search can leave a stale one in the
+/// pipe.
+static NEXT_HOST_REQUEST: AtomicU64 = AtomicU64::new(1);
+
+fn host_request_id() -> u64 {
+    NEXT_HOST_REQUEST.fetch_add(1, Ordering::Relaxed)
+}
+
+fn lock_hosts() -> MutexGuard<'static, HashMap<String, Arc<Host>>> {
+    HOSTS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl Session {
+    fn spawn(command: &str) -> Option<Session> {
+        let mut child = Command::new(command)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            // an aborted search must not leave the interpreter behind
+            .kill_on_drop(true)
+            .spawn()
+            .ok()?; // command not found -> no host
+
+        let stdin = child.stdin.take()?;
+        let stdout = child.stdout.take()?;
+        Some(Session {
+            _child: child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
+    }
+
+    /// Write one request, read its response. Non-JSON lines (a host may log to
+    /// stdout) and responses to a superseded request are skipped.
+    async fn exchange(
+        &mut self,
+        request: &str,
+        id: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, ExchangeError> {
+        if self.stdin.write_all(request.as_bytes()).await.is_err()
+            || self.stdin.flush().await.is_err()
+        {
+            return Err(ExchangeError::Dead);
+        }
+
+        let read = async {
+            loop {
+                let mut line = Vec::new();
+                let read = self
+                    .stdout
+                    .read_until(b'\n', &mut line)
+                    .await
+                    .map_err(|_| ExchangeError::Dead)?;
+                if read == 0 {
+                    return Err(ExchangeError::Dead); // EOF: host exited
+                }
+
+                let text = String::from_utf8_lossy(&line);
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+                    continue;
+                };
+                if value.get("result").is_none() && value.get("error").is_none() {
+                    continue;
+                }
+                if let Some(want) = id
+                    && let Some(got) = value.get("id")
+                    && got != want
+                {
+                    continue; // response to the request this one superseded
+                }
+                return Ok(value);
+            }
+        };
+
+        match tokio::time::timeout(REQUEST_TIMEOUT, read).await {
+            Ok(result) => result,
+            Err(_) => Err(ExchangeError::Timeout),
+        }
+    }
+}
+
+/// The live session for `command`, spawned on first use: a plugin nobody
+/// searches never costs a process.
+fn session_for(command: &str) -> Option<Arc<Host>> {
+    let mut hosts = lock_hosts();
+    if let Some(host) = hosts.get(command) {
+        return Some(host.clone());
+    }
+
+    let session = Session::spawn(command)?;
+    let host = Arc::new(Host {
+        session: Mutex::new(session),
+        last_used: StdMutex::new(Instant::now()),
+    });
+    hosts.insert(command.to_string(), host.clone());
+    drop(hosts);
+
+    ensure_reaper();
+    Some(host)
+}
+
+/// Drop this exact session (never a newer one for the same command).
+fn drop_session(command: &str, host: &Arc<Host>) {
+    let mut hosts = lock_hosts();
+    let is_current = hosts
+        .get(command)
+        .is_some_and(|current| Arc::ptr_eq(current, host));
+    if is_current {
+        hosts.remove(command); // dropping the Arc drops (and kills) the child
+    }
+}
+
+/// Kill hosts idle for [`SESSION_IDLE`]. Only sessions nobody else holds are
+/// reaped, so an in-flight request is never killed under it.
+fn reap_idle(now: Instant) {
+    let expired: Vec<Arc<Host>> = {
+        let hosts = lock_hosts();
+        hosts
+            .values()
+            .filter(|host| {
+                Arc::strong_count(host) == 1
+                    && host
+                        .last_used
+                        .lock()
+                        .map(|t| now.duration_since(*t) >= SESSION_IDLE)
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect()
+    };
+
+    if expired.is_empty() {
+        return;
+    }
+    let mut hosts = lock_hosts();
+    hosts.retain(|_, current| !expired.iter().any(|dead| Arc::ptr_eq(dead, current)));
+}
+
+/// Start the idle reaper once, on the first host spawn.
+fn ensure_reaper() {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    STARTED.get_or_init(|| {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(REAP_INTERVAL).await;
+                reap_idle(Instant::now());
+            }
+        });
+    });
+}
+
+/// One round trip against `command` over its session. A session that turns out
+/// to be dead is replaced once — which is also what keeps a one-shot host (the
+/// minimal documented contract) working.
 async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
+    let mut req_str = serde_json::to_string(request).ok()?;
+    req_str.push('\n');
+    let id = request.get("id").cloned();
+
+    for attempt in 0..2 {
+        let host = session_for(command)?;
+        let mut session = host.session.lock().await;
+        match session.exchange(&req_str, id.as_ref()).await {
+            Ok(value) => {
+                drop(session);
+                if let Ok(mut last) = host.last_used.lock() {
+                    *last = Instant::now();
+                }
+                return Some(value);
+            }
+            Err(ExchangeError::Timeout) => {
+                drop(session);
+                // a timed-out exchange leaves an unread response behind
+                drop_session(command, &host);
+                return None;
+            }
+            Err(ExchangeError::Dead) => {
+                drop(session);
+                drop_session(command, &host);
+                if attempt == 1 {
+                    return None;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// One request against a throwaway process: spawn, write, close stdin, reap.
+/// Used for identity discovery, which must not leave a host resident. The wait
+/// is bounded — a host that answers and then lingers would otherwise block the
+/// first search forever.
+async fn one_shot_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
     let mut req_str = serde_json::to_string(request).ok()?;
     req_str.push('\n');
 
@@ -113,6 +356,7 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
         .spawn()
         .ok()?; // command not found -> no host
 
@@ -124,11 +368,25 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
         drop(stdin); // close stdin so the host sees EOF (one-shot)
     }
 
-    // `wait_with_output` drains stdout/stderr and reaps the child in one step;
-    // reading stdout then `wait()` separately can double-poll the join handle.
-    let output = child.wait_with_output().await.ok()?;
+    // read to EOF under a deadline: `wait_with_output` would take the child and
+    // leave the timeout path unable to kill it
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill().await;
+        return None;
+    };
+    let read = async {
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf).await.map(|_| buf)
+    };
+    let Ok(Ok(buf)) = tokio::time::timeout(DISCOVERY_TIMEOUT, read).await else {
+        let _ = child.kill().await;
+        return None;
+    };
 
-    let out = std::str::from_utf8(&output.stdout).unwrap_or_default();
+    // stdout closed: the answer is complete. Reap, but not forever.
+    let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+
+    let out = String::from_utf8_lossy(&buf);
     out.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
@@ -141,9 +399,9 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "list_plugins",
-        "id": 1,
+        "id": host_request_id(),
     });
-    let Some(response) = rpc_call(command, &request).await else {
+    let Some(response) = one_shot_call(command, &request).await else {
         return Vec::new();
     };
     let Some(list) = response.get("result").and_then(|r| r.as_array()) else {
@@ -200,7 +458,7 @@ async fn query_external(
         "jsonrpc": "2.0",
         "method": "search",
         "params": { "plugin": plugin, "text": text },
-        "id": 1,
+        "id": host_request_id(),
     });
     let Some(response) = rpc_call(command, &request).await else {
         return Ok(Vec::new());
@@ -216,7 +474,7 @@ async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option
         "jsonrpc": "2.0",
         "method": "top",
         "params": { "plugin": plugin },
-        "id": 1,
+        "id": host_request_id(),
     });
     let Some(response) = rpc_call(command, &request).await else {
         return Ok(None);
@@ -265,15 +523,15 @@ async fn forget_external(command: &str, on_click: &str) -> Result<()> {
     let Some(argv0) = run_argv0(on_click) else {
         return Ok(());
     };
-    let resolved = resolve_command(command);
-    if argv0 != command && argv0 != resolved {
+    // Compare the cheap form first: resolving a bare command walks $PATH.
+    if argv0 != command && argv0 != resolve_command(command) {
         return Ok(());
     }
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "forget",
         "params": { "on_click": on_click },
-        "id": 1,
+        "id": host_request_id(),
     });
     let _ = rpc_call(command, &request).await;
     Ok(())
@@ -320,5 +578,132 @@ mod tests {
         let resolved = resolve_item_icon("papirus:folder-open", None).unwrap();
         assert!(resolved.contains("/Papirus/"));
         assert!(resolved.ends_with(".svg"));
+    }
+
+    /// A line-oriented host must serve every request from one process.
+    fn mock_host(dir: &Path, spawns: &Path, id: u64) -> String {
+        use std::os::unix::fs::PermissionsExt;
+
+        let script = dir.join("host.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf 'x\\n' >> '{spawns}'\n\
+                 while IFS= read -r line; do\n\
+                 printf '{{\"jsonrpc\":\"2.0\",\"result\":[{{\"title\":\"ok\"}}],\"id\":{id}}}\\n'\n\
+                 done\n",
+                spawns = spawns.display(),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script.display().to_string()
+    }
+
+    fn request(id: u64) -> serde_json::Value {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "search",
+            "params": { "plugin": "mock", "text": "a" },
+            "id": id,
+        })
+    }
+
+    #[tokio::test]
+    async fn one_host_process_serves_many_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let spawns = dir.path().join("spawns");
+        let command = mock_host(dir.path(), &spawns, 4242);
+        let request = request(4242);
+
+        for _ in 0..3 {
+            let response = rpc_call(&command, &request).await.expect("host answered");
+            assert_eq!(response["result"][0]["title"], "ok");
+        }
+
+        let spawns = std::fs::read_to_string(&spawns).unwrap();
+        assert_eq!(spawns.lines().count(), 1, "host was respawned: {spawns}");
+    }
+
+    /// A one-shot host must keep working: the dead session is replaced once.
+    #[tokio::test]
+    async fn one_shot_host_is_respawned_per_request() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let spawns = dir.path().join("spawns");
+        let script = dir.path().join("once.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf 'x\\n' >> '{spawns}'\n\
+                 IFS= read -r line\n\
+                 printf '{{\"jsonrpc\":\"2.0\",\"result\":[{{\"title\":\"once\"}}],\"id\":9}}\\n'\n",
+                spawns = spawns.display(),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let command = script.display().to_string();
+        let request = request(9);
+
+        for _ in 0..2 {
+            let response = rpc_call(&command, &request).await.expect("host answered");
+            assert_eq!(response["result"][0]["title"], "once");
+        }
+
+        let spawns = std::fs::read_to_string(&spawns).unwrap();
+        assert_eq!(spawns.lines().count(), 2, "one-shot host was not respawned");
+    }
+
+    #[tokio::test]
+    async fn stale_responses_are_skipped_by_id() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("stale.sh");
+        // answers with the previous id first: the stale one must be skipped
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nwhile IFS= read -r line; do\n\
+             printf '{\"jsonrpc\":\"2.0\",\"result\":[{\"title\":\"stale\"}],\"id\":1}\\n'\n\
+             printf '{\"jsonrpc\":\"2.0\",\"result\":[{\"title\":\"fresh\"}],\"id\":77}\\n'\ndone\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let response = rpc_call(&script.display().to_string(), &request(77))
+            .await
+            .expect("host answered");
+        assert_eq!(response["result"][0]["title"], "fresh");
+    }
+
+    #[tokio::test]
+    async fn a_missing_host_is_not_an_error() {
+        assert!(rpc_call("/nonexistent/qsflow-host", &request(1)).await.is_none());
+        assert!(one_shot_call("/nonexistent/qsflow-host", &request(1))
+            .await
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn idle_sessions_are_reaped() {
+        let dir = tempfile::tempdir().unwrap();
+        let spawns = dir.path().join("spawns");
+        let command = mock_host(dir.path(), &spawns, 5);
+
+        let host = session_for(&command).unwrap();
+        assert!(lock_hosts().contains_key(&command));
+
+        // still fresh: not reaped
+        reap_idle(Instant::now());
+        assert!(lock_hosts().contains_key(&command));
+
+        // pretend the last request was long ago (other tests' fresh sessions
+        // stay untouched)
+        *host.last_used.lock().unwrap() = Instant::now() - SESSION_IDLE - Duration::from_secs(1);
+        drop(host);
+        reap_idle(Instant::now());
+        assert!(!lock_hosts().contains_key(&command));
     }
 }

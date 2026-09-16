@@ -114,14 +114,39 @@ async fn do_reload() {
 }
 
 /// Build registry entries from a config. Pure w.r.t. shared state: external
-/// hosts are asked once per unique command, then reused across entries that
-/// share it.
+/// hosts are asked once per unique command, and concurrently — discovery is a
+/// process spawn per host, so the wall clock is the slowest one, not their sum.
 async fn build_entries(config: &Config) -> Vec<Entry> {
     let mut map: PluginMap = crate::provider::plugin_map();
-    let mut entries = Vec::new();
+
+    let mut commands: Vec<String> = Vec::new();
+    for p in &config.plugins {
+        if !p.enable || map.contains_key(p.id.as_str()) {
+            continue;
+        }
+        if let Some(command) = &p.command
+            && !commands.iter().any(|known| known == command)
+        {
+            commands.push(command.clone());
+        }
+    }
+
     let mut discovered: HashMap<String, Vec<crate::provider::external::HostMeta>> =
         HashMap::default();
+    let mut pending = tokio::task::JoinSet::new();
+    for command in commands {
+        pending.spawn(async move {
+            let hosts = crate::provider::external::discover(&command).await;
+            (command, hosts)
+        });
+    }
+    while let Some(joined) = pending.join_next().await {
+        if let Ok((command, hosts)) = joined {
+            discovered.insert(command, hosts);
+        }
+    }
 
+    let mut entries = Vec::new();
     for p in &config.plugins {
         if !p.enable {
             continue;
@@ -136,12 +161,6 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
         let Some(command) = &p.command else {
             continue; // unknown id without an external host -> skipped
         };
-        if !discovered.contains_key(command) {
-            discovered.insert(
-                command.clone(),
-                crate::provider::external::discover(command).await,
-            );
-        }
         let meta = discovered
             .get(command)
             .and_then(|hosts| hosts.iter().find(|m| m.id == p.id))
@@ -224,7 +243,6 @@ pub async fn print_list() {
 }
 
 pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
-    let map = crate::provider::plugin_map();
     ensure_loaded().await;
     let config = CONFIG.read().await;
     let reg = REGISTRY.read().await;
@@ -235,7 +253,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
             // Unknown ids without a host are ignored (per the config contract):
             // they are neither built-ins nor declared external plugins.
             p.command.is_some()
-                || map.contains_key(p.id.as_str())
+                || builtin_ids().contains(&p.id.as_str())
                 || reg.iter().any(|e| e.plugin.meta().id == p.id.as_str())
         })
         .map(|p| {
@@ -249,7 +267,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
                     keyword,
                     p.enable,
                 )
-            } else if let Some(meta) = map.get(p.id.as_str()).map(|plugin| plugin.meta()) {
+            } else if let Some(meta) = builtin_meta(&p.id) {
                 // disabled built-in: still listed from the compiled map
                 (
                     p.id.clone(),
@@ -264,6 +282,36 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
             }
         })
         .collect()
+}
+
+/// The compiled-in plugin identities, built once: `list_plugins` used to
+/// rebuild (and box) the whole plugin map on every call.
+fn builtins() -> &'static [(&'static str, &'static Meta)] {
+    static BUILTINS: std::sync::OnceLock<Vec<(&'static str, &'static Meta)>> =
+        std::sync::OnceLock::new();
+
+    BUILTINS.get_or_init(|| {
+        crate::provider::plugin_map()
+            .into_iter()
+            // stateless unit structs: leak them once so `meta()` lives as long
+            // as the process, without re-boxing per call
+            .map(|(id, plugin)| {
+                let plugin: &'static dyn Plugin = Box::leak(plugin);
+                (id, plugin.meta())
+            })
+            .collect()
+    })
+}
+
+fn builtin_ids() -> Vec<&'static str> {
+    builtins().iter().map(|(id, _)| *id).collect()
+}
+
+fn builtin_meta(id: &str) -> Option<&'static Meta> {
+    builtins()
+        .iter()
+        .find(|(plugin_id, _)| *plugin_id == id)
+        .map(|(_, meta)| *meta)
 }
 
 /// Drop a result row's data across the registry (best effort). Called by the

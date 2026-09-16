@@ -25,16 +25,25 @@ const W_ACTION_EXACT: u32 = 8_000;
 const W_ACTION_PREFIX: u32 = 4_000;
 const W_ACTION_SUBSTRING: u32 = 400;
 
-/// `GenericName` + `Keywords` from the app's `.desktop` file (plain,
-/// unlocalised keys only). Parsed lazily — the gio `AppInfo` interface does
-/// not expose them, and they are only consulted once name/comment miss.
+/// `GenericName` + `Keywords` from the app's `.desktop` file (plain, unlocalised
+/// keys only — gio does not expose them). Lowercased and tokenized once at
+/// cache-build time: a search visits every app.
+#[derive(Clone)]
 struct DesktopMeta {
-    generic: Option<String>,
-    keywords: Vec<String>,
+    generic_lower: Option<String>,
+    keywords: Vec<Keyword>,
     actions: Vec<DesktopAction>,
 }
 
+/// One `Keywords=` entry: lowercased plus its tokenization.
+#[derive(Clone)]
+struct Keyword {
+    lower: String,
+    words: Vec<String>,
+}
+
 /// One `[Desktop Action <id>]` group, surfaced as its own row (DMS-style).
+#[derive(Clone)]
 struct DesktopAction {
     id: String,
     name: String,
@@ -42,29 +51,41 @@ struct DesktopAction {
 }
 
 /// One installed application, precomputed at first search and reused for the
-/// process lifetime (the same freshness tradeoff as runner's `path_binaries`
-/// cache). Lowercased fields avoid per-query re-lowering of every app.
+/// process lifetime (same freshness tradeoff as runner's `path_binaries`). Every
+/// lowercase form, tokenization and the `.desktop`-stripped id is precomputed.
 struct CachedApp {
     id: String,
+    icon_spec: Option<String>,
     title: String,
     title_lower: String,
+    title_words: Vec<String>,
     comment: Option<String>,
     comment_lower: Option<String>,
-    icon_spec: Option<String>,
+    comment_words: Vec<String>,
+    id_lower: String,
     meta: Option<DesktopMeta>,
 }
 
-impl CachedApp {
-    /// Resolve the gio icon spec (`!!/path` for file icons, otherwise a theme
-    /// name) to the absolute path the UI renders.
-    fn icon_path(&self) -> Option<String> {
-        let spec = self.icon_spec.as_deref()?;
-        if let Some(path) = spec.strip_prefix("!!") {
-            (!path.is_empty()).then(|| path.to_string())
-        } else {
-            find_icon_path(spec)
-        }
+/// The gio icon spec (`!!/path` for file icons, otherwise a theme name) as the
+/// absolute path the UI renders.
+fn resolve_icon_spec(spec: &str) -> Option<String> {
+    if let Some(path) = spec.strip_prefix("!!") {
+        (!path.is_empty()).then(|| path.to_string())
+    } else {
+        find_icon_path(spec)
     }
+}
+
+/// Resolve the icons of the rows that survived ranking: a first-time spec costs
+/// a filesystem scan, which a truncated row should not pay for.
+fn resolve_icons(items: Vec<ResultItem>) -> Vec<ResultItem> {
+    items
+        .into_iter()
+        .map(|mut item| {
+            item.icon = item.icon.as_deref().and_then(resolve_icon_spec);
+            item
+        })
+        .collect()
 }
 
 static APPS: LazyLock<Vec<CachedApp>> = LazyLock::new(|| {
@@ -81,10 +102,18 @@ static APPS: LazyLock<Vec<CachedApp>> = LazyLock::new(|| {
                 .icon()
                 .and_then(|i| i.to_string())
                 .map(|s| s.to_string());
+            let title_lower = title.to_lowercase();
+            let comment_lower = comment.as_ref().map(|c| c.to_lowercase());
             Some(CachedApp {
-                title_lower: title.to_lowercase(),
-                comment_lower: comment.as_ref().map(|c| c.to_lowercase()),
+                title_words: tokenize(&title_lower),
+                comment_words: comment_lower
+                    .as_deref()
+                    .map(tokenize)
+                    .unwrap_or_default(),
+                id_lower: id.to_lowercase().trim_end_matches(".desktop").to_string(),
                 meta: desktop_meta(&id),
+                title_lower,
+                comment_lower,
                 title,
                 comment,
                 id,
@@ -121,22 +150,15 @@ impl Plugin for AppSearch {
     }
 }
 
-/// Score every cached app against the query; the query text is lowercased
-/// and tokenized once, not per app.
+/// Score every cached app; the query is lowercased/tokenized/chars-split once.
 fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let query_lower = query.trim().to_lowercase();
     let query_words = tokenize(&query_lower);
+    let query_chars: Vec<char> = query_lower.chars().collect();
 
     let mut results: Vec<(u32, ResultItem)> = Vec::new();
     for app in APPS.iter() {
-        let score = score_app(
-            &app.title_lower,
-            app.comment_lower.as_deref(),
-            app.meta.as_ref(),
-            &app.id,
-            &query_lower,
-            &query_words,
-        );
+        let score = score_app(app, &query_lower, &query_chars, &query_words);
         if score > 0 {
             results.push((
                 score,
@@ -144,7 +166,8 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                     title: app.title.clone(),
                     summary: app.comment.clone(),
                     on_click: Some(format!("launch:{}", app.id)),
-                    icon: app.icon_path(),
+                    // raw spec: `resolve_icons` runs after the cap
+                    icon: app.icon_spec.clone(),
                 },
             ));
         }
@@ -161,7 +184,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                             title: action.name.clone(),
                             summary: Some(app.title.clone()),
                             on_click: Some(format!("action:{}:{}", app.id, action.id)),
-                            icon: app.icon_path(),
+                            icon: app.icon_spec.clone(),
                         },
                     ));
                 }
@@ -169,7 +192,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    Ok(crate::provider::rank_results(results, true, 50))
+    Ok(resolve_icons(crate::provider::rank_results(results, true, 50)))
 }
 
 fn tokenize(s: &str) -> Vec<String> {
@@ -195,8 +218,15 @@ fn action_score(name_lower: &str, query_lower: &str) -> u32 {
 /// Score one match surface. Fields are tried in order with decaying
 /// weights: exact name, prefix, word-boundary (each query word prefixes a
 /// consecutive name word), plain substring, then edit-distance fuzziness.
-/// All string inputs must already be lowercased.
-fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> u32 {
+/// `field_lower`/`field_words` and the query must already be lowercased, and
+/// `field_words` must be `tokenize(field_lower)` — precomputed once per app.
+fn field_score(
+    field_lower: &str,
+    field_words: &[String],
+    query_lower: &str,
+    query_chars: &[char],
+    query_words: &[String],
+) -> u32 {
     if field_lower == query_lower {
         return W_EXACT;
     }
@@ -204,10 +234,10 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
         return W_PREFIX;
     }
 
-    let words = tokenize(field_lower);
-    if query_words.len() <= words.len() {
-        let bounded = (0..=words.len() - query_words.len())
-            .any(|i| (0..query_words.len()).all(|j| words[i + j].starts_with(&query_words[j])));
+    if query_words.len() <= field_words.len() {
+        let bounded = (0..=field_words.len() - query_words.len()).any(|i| {
+            (0..query_words.len()).all(|j| field_words[i + j].starts_with(&query_words[j]))
+        });
         if bounded {
             return W_WORD_BOUNDARY;
         }
@@ -219,8 +249,8 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
 
     // fuzzy only for queries of 3+ chars; short queries must match a strong
     // tier or they are simply not a hit
-    if query_lower.chars().count() >= 3 {
-        let fs = fuzzy_score(field_lower, query_lower);
+    if query_chars.len() >= 3 {
+        let fs = fuzzy_score(field_lower, field_words, query_chars);
         if fs > 0.0 {
             return (fs * W_FUZZY as f64) as u32;
         }
@@ -230,24 +260,23 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
 
 /// Edit-distance similarity (0..1) between a whole text or any of its words
 /// and the query, within a tight per-length tolerance window.
-fn fuzzy_score(text: &str, query: &str) -> f64 {
-    let text_chars: Vec<char> = text.chars().collect();
-    let query_chars: Vec<char> = query.chars().collect();
+fn fuzzy_score(text: &str, text_words: &[String], query_chars: &[char]) -> f64 {
     let max_dist = match query_chars.len() {
         3 => 1,
         4..=6 => 2,
         _ => 3,
     };
+    let text_chars: Vec<char> = text.chars().collect();
 
     let mut best = 0.0f64;
     if (text_chars.len() as isize - query_chars.len() as isize).unsigned_abs() <= max_dist {
-        let dist = levenshtein(&text_chars, &query_chars);
+        let dist = levenshtein(&text_chars, query_chars);
         if dist <= max_dist {
             best = 1.0 - dist as f64 / text_chars.len().max(query_chars.len()) as f64;
         }
     }
 
-    for word in tokenize(text) {
+    for word in text_words {
         if best >= 0.8 {
             break;
         }
@@ -255,7 +284,7 @@ fn fuzzy_score(text: &str, query: &str) -> f64 {
         if (word_chars.len() as isize - query_chars.len() as isize).unsigned_abs() > max_dist {
             continue;
         }
-        let dist = levenshtein(&word_chars, &query_chars);
+        let dist = levenshtein(&word_chars, query_chars);
         if dist <= max_dist {
             let score = 1.0 - dist as f64 / word_chars.len().max(query_chars.len()) as f64;
             best = best.max(score);
@@ -289,50 +318,63 @@ fn levenshtein(a: &[char], b: &[char]) -> usize {
 /// stripped) — first non-zero tier wins. All string inputs must already be
 /// lowercased.
 fn score_app(
-    name_lower: &str,
-    comment_lower: Option<&str>,
-    meta: Option<&DesktopMeta>,
-    id: &str,
+    app: &CachedApp,
     query_lower: &str,
+    query_chars: &[char],
     query_words: &[String],
 ) -> u32 {
     if query_lower.is_empty() {
         return 1;
     }
 
-    let mut score = field_score(name_lower, query_lower, query_words);
+    let mut score = field_score(
+        &app.title_lower,
+        &app.title_words,
+        query_lower,
+        query_chars,
+        query_words,
+    );
     if score == 0
-        && let Some(c) = comment_lower
+        && let Some(comment) = app.comment_lower.as_deref()
     {
-        score = field_score(c, query_lower, query_words) * 5 / 10;
+        score = field_score(
+            comment,
+            &app.comment_words,
+            query_lower,
+            query_chars,
+            query_words,
+        ) * 5
+            / 10;
     }
     if score == 0
-        && let Some(v) = meta.and_then(|m| {
-            m.keywords.iter().find_map(|keyword| {
-                let ks = field_score(&keyword.to_lowercase(), query_lower, query_words);
-                (ks > 0).then_some(ks * 3 / 10)
-            })
-        })
+        && let Some(meta) = app.meta.as_ref()
     {
-        score = v;
-    }
-    if score == 0
-        && let Some(g) = meta.and_then(|m| m.generic.as_deref())
-    {
-        let generic_lower = g.to_lowercase();
-        score = if generic_lower.starts_with(query_lower) {
-            W_GENERIC_PREFIX
-        } else if generic_lower.contains(query_lower) {
-            W_GENERIC
-        } else {
-            0
-        };
-    }
-    if score == 0 {
-        let id_lower = id.to_lowercase().trim_end_matches(".desktop").to_string();
-        if id_lower.contains(query_lower) {
-            score = W_ID;
+        if let Some(keyword_score) = meta.keywords.iter().find_map(|keyword| {
+            let ks = field_score(
+                &keyword.lower,
+                &keyword.words,
+                query_lower,
+                query_chars,
+                query_words,
+            );
+            (ks > 0).then_some(ks * 3 / 10)
+        }) {
+            score = keyword_score;
         }
+        if score == 0
+            && let Some(generic) = meta.generic_lower.as_deref()
+        {
+            score = if generic.starts_with(query_lower) {
+                W_GENERIC_PREFIX
+            } else if generic.contains(query_lower) {
+                W_GENERIC
+            } else {
+                0
+            };
+        }
+    }
+    if score == 0 && app.id_lower.contains(query_lower) {
+        score = W_ID;
     }
     score
 }
@@ -341,7 +383,7 @@ fn score_app(
 /// (unlocalised) keys only — the `[xx]` variants follow later and would win.
 fn parse_meta(content: &str) -> DesktopMeta {
     let mut generic: Option<String> = None;
-    let mut keywords: Vec<String> = Vec::new();
+    let mut keywords: Vec<Keyword> = Vec::new();
     let mut actions: Vec<DesktopAction> = Vec::new();
     let mut in_entry = false;
     let mut action: Option<DesktopAction> = None;
@@ -374,8 +416,18 @@ fn parse_meta(content: &str) -> DesktopMeta {
                     }
                 }
             } else if let Some(v) = line.strip_prefix("Keywords=") {
-                let kw = v.split(';').filter(|s| !s.trim().is_empty());
-                keywords.extend(kw.map(|s| s.trim().to_string()));
+                let kw = v
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        let lower = s.to_lowercase();
+                        Keyword {
+                            words: tokenize(&lower),
+                            lower,
+                        }
+                    });
+                keywords.extend(kw);
             }
         } else if let Some(a) = action.as_mut()
             && let Some(v) = line.strip_prefix("Name=")
@@ -388,7 +440,7 @@ fn parse_meta(content: &str) -> DesktopMeta {
     actions.extend(action);
 
     DesktopMeta {
-        generic,
+        generic_lower: generic.map(|g| g.to_lowercase()),
         keywords,
         actions: actions.into_iter().filter(|a| !a.name.is_empty()).collect(),
     }
@@ -408,7 +460,7 @@ fn desktop_meta(id: &str) -> Option<DesktopMeta> {
         };
 
         let meta = parse_meta(&content);
-        if meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
+        if meta.generic_lower.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
             return Some(meta);
         }
     }
@@ -422,25 +474,41 @@ mod tests {
 
     fn meta(generic: Option<&str>, keywords: &[&str]) -> DesktopMeta {
         DesktopMeta {
-            generic: generic.map(String::from),
-            keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            generic_lower: generic.map(str::to_lowercase),
+            keywords: keywords
+                .iter()
+                .map(|keyword| {
+                    let lower = keyword.to_lowercase();
+                    Keyword {
+                        words: tokenize(&lower),
+                        lower,
+                    }
+                })
+                .collect(),
             actions: Vec::new(),
         }
     }
 
+    /// The same precomputation `APPS` does, for one synthetic app.
     fn s(name: &str, comment: Option<&str>, m: Option<&DesktopMeta>, id: &str, q: &str) -> u32 {
-        let name_lower = name.to_lowercase();
-        let comment_lower = comment.map(|c| c.to_lowercase());
+        let title_lower = name.to_lowercase();
+        let comment_lower = comment.map(str::to_lowercase);
         let query_lower = q.trim().to_lowercase();
         let query_words = tokenize(&query_lower);
-        score_app(
-            &name_lower,
-            comment_lower.as_deref(),
-            m,
-            id,
-            &query_lower,
-            &query_words,
-        )
+        let query_chars: Vec<char> = query_lower.chars().collect();
+        let app = CachedApp {
+            id: id.to_string(),
+            icon_spec: None,
+            title: name.to_string(),
+            title_words: tokenize(&title_lower),
+            title_lower,
+            comment: comment.map(str::to_string),
+            comment_words: comment_lower.as_deref().map(tokenize).unwrap_or_default(),
+            comment_lower,
+            id_lower: id.to_lowercase().trim_end_matches(".desktop").to_string(),
+            meta: m.cloned(),
+        };
+        score_app(&app, &query_lower, &query_chars, &query_words)
     }
 
     #[test]
@@ -590,8 +658,12 @@ mod tests {
              [Desktop Action Broken]\n\
              Name[de]=Nur auf Deutsch\n",
         );
-        assert_eq!(meta.generic.as_deref(), Some("Virtualization Software"));
-        assert_eq!(meta.keywords, ["virtualization"]);
+        assert_eq!(
+            meta.generic_lower.as_deref(),
+            Some("virtualization software")
+        );
+        assert_eq!(meta.keywords.len(), 1);
+        assert_eq!(meta.keywords[0].lower, "virtualization");
         // localised-only names are not entries of their own
         assert_eq!(meta.actions.len(), 1);
         assert_eq!(meta.actions[0].id, "Manager");

@@ -1,4 +1,6 @@
 use std::pin::Pin;
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -6,6 +8,16 @@ use serde::Deserialize;
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+
+/// How long a `niri msg -j windows` answer is reused: one call is ~11ms (a
+/// process spawn plus the IPC round trip), and the list only changes when the
+/// user acts.
+const CACHE_TTL: Duration = Duration::from_millis(250);
+
+/// The last successful `niri msg -j windows` payload, with the time it was read.
+type CachedWindows = Option<(Instant, Arc<str>)>;
+
+static CACHE: LazyLock<Mutex<CachedWindows>> = LazyLock::new(|| Mutex::new(None));
 
 pub struct Window;
 
@@ -26,7 +38,12 @@ impl Plugin for Window {
         _full: &str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let input = query.to_string();
-        Box::pin(async move { do_search(&input) })
+        // `niri msg` is a blocking process spawn: keep it off the async worker
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || do_search(&input))
+                .await
+                .unwrap_or_else(|_| Ok(vec![]))
+        })
     }
 }
 
@@ -40,22 +57,14 @@ struct WindowInfo {
     workspace_id: Option<u64>,
 }
 
-/// List niri's windows via `niri msg -j windows` and fuzzy-match title/app_id
-/// against the query. `on_click` focuses the window by id through `niri msg
-/// action focus-window` (runs detached after the launcher exits).
+/// List niri's windows (cached briefly) and fuzzy-match title/app_id.
+/// `on_click` focuses a window by id (runs detached after the launcher exits).
 fn do_search(query: &str) -> Result<Vec<ResultItem>> {
-    let output = std::process::Command::new("niri")
-        .args(["msg", "-j", "windows"])
-        .output();
-    let Ok(output) = output else {
+    let Some(payload) = windows_json() else {
         return Ok(Vec::new());
     };
-    if !output.status.success() {
+    let Ok(windows) = serde_json::from_str::<Vec<WindowInfo>>(&payload) else {
         return Ok(Vec::new());
-    }
-    let windows: Vec<WindowInfo> = match serde_json::from_slice(&output.stdout) {
-        Ok(w) => w,
-        Err(_) => return Ok(Vec::new()),
     };
 
     let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
@@ -66,9 +75,9 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     for w in windows {
         // Some apps leave the title empty (or untitled); fall back to app_id.
         let label = if w.title.trim().is_empty() {
-            w.app_id.clone().unwrap_or_default()
+            w.app_id.as_deref().unwrap_or_default()
         } else {
-            w.title.clone()
+            w.title.as_str()
         };
 
         let score = if query.is_empty() {
@@ -93,7 +102,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
             let title = if label.is_empty() {
                 String::from("Untitled")
             } else {
-                label.clone()
+                label.to_string()
             };
             let summary = w.app_id.as_ref().map(|a| match w.workspace_id {
                 Some(ws) => format!("{} · workspace {}", a, ws),
@@ -116,6 +125,33 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     }
 
     Ok(crate::provider::rank_results(results, false, 50))
+}
+
+/// The window list as niri printed it, reused for [`CACHE_TTL`].
+fn windows_json() -> Option<Arc<str>> {
+    let cached = {
+        let cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+        cache
+            .as_ref()
+            .filter(|(at, _)| at.elapsed() < CACHE_TTL)
+            .map(|(_, json)| json.clone())
+    };
+    if let Some(json) = cached {
+        return Some(json);
+    }
+
+    let output = std::process::Command::new("niri")
+        .args(["msg", "-j", "windows"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let json: Arc<str> = Arc::from(String::from_utf8_lossy(&output.stdout).into_owned());
+    let mut cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    *cache = Some((Instant::now(), json.clone()));
+    Some(json)
 }
 
 #[cfg(test)]

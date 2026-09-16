@@ -28,20 +28,21 @@ pub enum BackendEvent {
     CoreExited,
 }
 
+/// One `(sender, receiver-slot)`: the sender is shared, the receiver is taken
+/// exactly once by whoever owns the stream.
+type Mailbox<T> = (
+    mpsc::UnboundedSender<T>,
+    Mutex<Option<mpsc::UnboundedReceiver<T>>>,
+);
+
 /// Lines bound for the core's stdin, drained by one writer thread.
-static OUTBOX: LazyLock<(
-    mpsc::UnboundedSender<String>,
-    Mutex<Option<mpsc::UnboundedReceiver<String>>>,
-)> = LazyLock::new(|| {
+static OUTBOX: LazyLock<Mailbox<String>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::unbounded();
     (tx, Mutex::new(Some(rx)))
 });
 
 /// The core's stdout, handed to the subscription exactly once.
-static INBOX: LazyLock<(
-    mpsc::UnboundedSender<BackendEvent>,
-    Mutex<Option<mpsc::UnboundedReceiver<BackendEvent>>>,
-)> = LazyLock::new(|| {
+static INBOX: LazyLock<Mailbox<BackendEvent>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::unbounded();
     (tx, Mutex::new(Some(rx)))
 });
@@ -158,42 +159,116 @@ fn drain(mut stdin: ChildStdin, mut lines: mpsc::UnboundedReceiver<String>) {
     }
 }
 
+/// The line's first byte decides the shape, so the common payloads are parsed
+/// once — no `Value` round trip and no `data` clone per keystroke.
 fn parse(line: &str) -> Option<BackendEvent> {
     let line = line.trim();
-    if line.is_empty() {
+    match line.as_bytes().first()? {
+        b'[' => serde_json::from_str::<Vec<ResultItem>>(line)
+            .ok()
+            .map(BackendEvent::Results),
+        b'{' => parse_object(line),
+        _ => None,
+    }
+}
+
+/// `{"type":"theme","data":{…}}` / `{"type":"results","data":[…]}` in one pass.
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "lowercase")]
+enum Tagged {
+    Theme(ThemeConfig),
+    Results(Vec<ResultItem>),
+}
+
+/// A JSON-RPC reply: only `resolve_icon` answers are expected (matched back by
+/// request id).
+#[derive(serde::Deserialize)]
+struct RpcReply {
+    #[serde(default)]
+    jsonrpc: Option<String>,
+    #[serde(default)]
+    id: Option<u64>,
+    #[serde(default)]
+    result: Option<serde_json::Value>,
+}
+
+fn parse_object(line: &str) -> Option<BackendEvent> {
+    if let Ok(tagged) = serde_json::from_str::<Tagged>(line) {
+        return Some(match tagged {
+            Tagged::Theme(config) => BackendEvent::Theme(config),
+            Tagged::Results(items) => BackendEvent::Results(items),
+        });
+    }
+
+    // not a theme/results payload: either a watcher row the shell never
+    // renders, or a JSON-RPC icon reply
+    let reply: RpcReply = serde_json::from_str(line).ok()?;
+    if reply.jsonrpc.as_deref() != Some("2.0") {
         return None;
     }
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let id = reply.id?;
+    let spec = ICON_REQUESTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&id)?;
+    let path = reply
+        .result
+        .as_ref()
+        .and_then(|result| result.as_str())
+        .map(str::to_string);
 
-    if let Some(kind) = value.get("type").and_then(|kind| kind.as_str()) {
-        let data = value.get("data")?.clone();
-        return match kind {
-            "theme" => serde_json::from_value(data).ok().map(BackendEvent::Theme),
-            "results" => serde_json::from_value(data).ok().map(BackendEvent::Results),
-            // the core's watchers re-emit rows the shell never renders
-            _ => None,
-        };
+    Some(BackendEvent::Icon { spec, path })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_typed_payloads_without_a_value_round_trip() {
+        let theme = parse(r##"{"type":"theme","data":{"primary":"#fff"}}"##).unwrap();
+        assert!(matches!(theme, BackendEvent::Theme(_)));
+
+        let results = parse(r#"{"type":"results","data":[{"title":"a"}]}"#).unwrap();
+        match results {
+            BackendEvent::Results(items) => assert_eq!(items[0].title, "a"),
+            other => panic!("expected results, got {other:?}"),
+        }
+
+        // the bare array form is still accepted
+        let bare = parse(r#"[{"title":"b"}]"#).unwrap();
+        match bare {
+            BackendEvent::Results(items) => assert_eq!(items[0].title, "b"),
+            other => panic!("expected results, got {other:?}"),
+        }
     }
 
-    if value.is_array() {
-        return serde_json::from_value(value)
-            .ok()
-            .map(BackendEvent::Results);
+    #[test]
+    fn ignores_lines_the_shell_does_not_render() {
+        assert!(parse("").is_none());
+        assert!(parse(r#"{"type":"something-else","data":[]}"#).is_none());
+        assert!(parse("not json").is_none());
+        assert!(parse(r#"{"jsonrpc":"2.0","id":999,"result":"/x.svg"}"#).is_none());
     }
 
-    if value.get("jsonrpc").and_then(|v| v.as_str()) == Some("2.0") {
-        let id = value.get("id")?.as_u64()?;
-        let spec = ICON_REQUESTS
+    #[test]
+    fn matches_icon_replies_to_their_requested_spec() {
+        let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
+        ICON_REQUESTS
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(&id)?;
-        let path = value
-            .get("result")
-            .and_then(|result| result.as_str())
-            .map(str::to_string);
+            .insert(id, "papirus:folder".to_string());
 
-        return Some(BackendEvent::Icon { spec, path });
+        let event = parse(&format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"result":"/usr/share/icons/x.svg"}}"#
+        ))
+        .unwrap();
+        match event {
+            BackendEvent::Icon { spec, path } => {
+                assert_eq!(spec, "papirus:folder");
+                assert_eq!(path.as_deref(), Some("/usr/share/icons/x.svg"));
+            }
+            other => panic!("expected icon, got {other:?}"),
+        }
     }
-
-    None
 }

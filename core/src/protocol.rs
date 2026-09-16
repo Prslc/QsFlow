@@ -1,5 +1,8 @@
+use std::io::Write as _;
+use std::time::Duration;
+
 use anyhow::Result;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -50,23 +53,52 @@ pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value)
     }
 }
 
-/// Own stdout for the process lifetime: one channel, so no two producers can
-/// interleave half a line.
-fn spawn_writer(mut rx: mpsc::Receiver<String>) {
-    tokio::spawn(async move {
-        let mut stdout = io::stdout();
-        while let Some(json) = rx.recv().await {
-            let _ = stdout.write_all(json.as_bytes()).await;
-            let _ = stdout.write_all(b"\n").await;
-            let _ = stdout.flush().await;
+/// Sentinel asking the writer to flush and acknowledge (never a real payload).
+const DRAIN: &str = "\u{0}";
+
+/// Own stdout for the process lifetime: one writer thread, so no two producers
+/// can interleave half a line.
+///
+/// Deliberately a plain thread: `tokio::io::stdout()`'s `poll_flush` panics with
+/// "JoinHandle polled after completion" under a burst of output (tokio 1.53.1),
+/// and a dead writer silently mutes the core.
+fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::sync::mpsc::Receiver<()> {
+    let (ack_tx, ack_rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        // not a runtime worker thread, so `blocking_recv` is allowed here
+        while let Some(json) = rx.blocking_recv() {
+            if json == DRAIN {
+                let _ = out.flush();
+                let _ = ack_tx.send(());
+                continue;
+            }
+            if out.write_all(json.as_bytes()).is_err()
+                || out.write_all(b"\n").is_err()
+            {
+                break;
+            }
+            let _ = out.flush();
         }
     });
+
+    ack_rx
+}
+
+/// Drain before `main` returns: a one-shot client (`printf … | qsflow-core`)
+/// must still receive its last response.
+async fn drain_output(tx: &mpsc::Sender<String>, ack: &std::sync::mpsc::Receiver<()>) {
+    if tx.send(DRAIN.to_string()).await.is_ok() {
+        let _ = ack.recv_timeout(Duration::from_millis(500));
+    }
 }
 
 /// Serve the line protocol until stdin closes.
 pub async fn serve() -> Result<()> {
     let (tx, rx) = mpsc::channel::<String>(32);
-    spawn_writer(rx);
+    let ack_rx = spawn_writer(rx);
 
     emit(
         &tx,
@@ -111,24 +143,41 @@ pub async fn serve() -> Result<()> {
             Request::Run(cmd) => system::executor::execute_command(cmd),
             Request::Copy(payload) => system::executor::copy_json(payload),
             Request::Open(uri) => system::executor::open_uri(uri),
-            Request::Launch(id) => system::executor::launch_app(id),
+            // GIO's app list is ~7ms of synchronous work: off the async worker
+            Request::Launch(id) => {
+                let id = id.to_string();
+                let _ = tokio::task::spawn_blocking(move || {
+                    system::executor::launch_app(&id);
+                })
+                .await;
+            }
             Request::Action(spec) => system::executor::launch_desktop_action(spec),
             Request::Search(query) => start_search(&tx, &mut search, query),
         }
     }
 
+    // stdin closed: let the writer finish before the process goes away
+    drain_output(&tx, &ack_rx).await;
+
     Ok(())
 }
 
-/// The empty query: the full ranked history. A 20-row cap made ⌫ curation never
-/// visibly converge, since deleted rows kept refilling from beyond it.
+/// The empty query: the full ranked history, capped only to bound the payload
+/// the UI holds (`⌫` curation culls from that same payload).
+const HISTORY_CAP: i32 = 1000;
+
 async fn emit_history(tx: &mpsc::Sender<String>) {
-    let items = system::usage::get_top(i32::MAX).unwrap_or_default();
+    let items = system::usage::get_top(HISTORY_CAP).unwrap_or_default();
     emit(tx, &serde_json::json!({ "type": "results", "data": items })).await;
 }
 
-/// Searches supersede each other: the pending one is aborted, the new one emits
-/// its payload when it lands.
+/// Keystrokes coalesce: one dispatch per quiet window. Aborting the previous
+/// task is not a debounce — it stops the await, not a `spawn_blocking` provider
+/// or a host process.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(60);
+
+/// Searches supersede each other: the pending one is aborted, so only the last
+/// keystroke of a burst reaches `dispatch`.
 fn start_search(tx: &mpsc::Sender<String>, pending: &mut Option<JoinHandle<()>>, query: &str) {
     if let Some(handle) = pending.take() {
         handle.abort();
@@ -137,6 +186,10 @@ fn start_search(tx: &mpsc::Sender<String>, pending: &mut Option<JoinHandle<()>>,
     let tx = tx.clone();
     let query = query.to_string();
     *pending = Some(tokio::spawn(async move {
+        // An empty query is the local usage history: nothing to coalesce.
+        if !query.trim().is_empty() {
+            tokio::time::sleep(SEARCH_DEBOUNCE).await;
+        }
         let results = plugin::dispatch(&query).await;
         emit(
             &tx,

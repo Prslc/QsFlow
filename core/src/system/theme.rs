@@ -18,12 +18,21 @@ pub fn load_theme() -> ThemeConfig {
         let path = home.join(".config/gtk-4.0/dank-colors.css");
         let content = fs::read_to_string(path)?;
 
+        // Match the declaration itself: a substring hit could land on a
+        // comment, an alias (`@window_bg_color`) or a longer name.
         let find_color = |name: &str| -> Option<String> {
-            content
-                .lines()
-                .find(|l| l.contains(name))
-                .and_then(|l| l.split_whitespace().last())
-                .map(|s| s.trim_end_matches(';').to_string())
+            let prefix = format!("@define-color {name}");
+            content.lines().map(str::trim).find_map(|line| {
+                let rest = line.strip_prefix(&prefix)?;
+                // the name has to end here: `accent_bg_color` is not
+                // `accent_bg_color_more`
+                if !rest.is_empty() && !rest.starts_with([' ', '\t']) {
+                    return None;
+                }
+                let value = rest.trim();
+                let value = value.strip_suffix(';').unwrap_or(value).trim();
+                (!value.is_empty()).then(|| value.to_string())
+            })
         };
 
         if let Some(c) = find_color("accent_bg_color") {

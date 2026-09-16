@@ -28,10 +28,14 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 pub static VISIBLE: AtomicBool = AtomicBool::new(false);
 
 static LISTENER: LazyLock<Mutex<Option<UnixListener>>> = LazyLock::new(Default::default);
-static INBOX: LazyLock<(
-    mpsc::UnboundedSender<IpcCommand>,
-    Mutex<Option<mpsc::UnboundedReceiver<IpcCommand>>>,
-)> = LazyLock::new(|| {
+/// `(sender, receiver-slot)`: the accept thread shares the sender, the app's
+/// subscription takes the receiver exactly once.
+type Mailbox<T> = (
+    mpsc::UnboundedSender<T>,
+    Mutex<Option<mpsc::UnboundedReceiver<T>>>,
+);
+
+static INBOX: LazyLock<Mailbox<IpcCommand>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::unbounded();
     (tx, Mutex::new(Some(rx)))
 });

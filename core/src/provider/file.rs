@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::path::Path;
 use std::pin::Pin;
 
 use anyhow::Result;
@@ -72,30 +73,51 @@ search_plugin!(
     "Search files by path"
 );
 
-fn match_name(entry_name: &str, _entry_path: &str, query: &str) -> bool {
-    query.is_empty() || entry_name.to_lowercase().contains(query)
+fn match_name(entry_name: &str, _entry_path: &Path, query: &str) -> bool {
+    query.is_empty() || contains_ignore_ascii_case(entry_name, query)
 }
 
-fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
+/// Case-insensitive substring test: an ASCII fast path that allocates nothing
+/// (the caller already lowercased the query), folding for non-ASCII input.
+fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        return haystack
+            .as_bytes()
+            .windows(needle_lower.len())
+            .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()));
+    }
+    haystack.to_lowercase().contains(needle_lower)
+}
+
+fn match_path(_entry_name: &str, entry_path: &Path, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }
-    let path_lower = entry_path.to_lowercase();
+    let path_lower = entry_path.to_string_lossy().to_lowercase();
     query
         .split_whitespace()
         .all(|token| path_lower.contains(token))
 }
 
-fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str, matcher: fn(&str, &Path, &str) -> bool) -> Result<Vec<ResultItem>> {
     let home = match get_home() {
         Ok(h) => h,
         Err(_) => return Ok(vec![]),
     };
 
-    let roots = [
+    // the three folders keep priority; the home root skips them below
+    let subdirs = [
         home.join("Desktop"),
         home.join("Documents"),
         home.join("Downloads"),
+    ];
+    let roots = [
+        subdirs[0].clone(),
+        subdirs[1].clone(),
+        subdirs[2].clone(),
         home.clone(),
     ];
 
@@ -110,6 +132,10 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<R
             .max_depth(3)
             .into_iter()
             .filter_entry(|e| {
+                // `~` re-walks the folders that are already roots of their own
+                if e.depth() == 1 && subdirs.iter().any(|subdir| subdir == e.path()) {
+                    return false;
+                }
                 let name = e.file_name().to_string_lossy();
                 !name.starts_with('.')
                     && name != "node_modules"
@@ -124,12 +150,14 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<R
                 continue;
             }
 
-            let path = entry.path().to_string_lossy().into_owned();
-            let name = entry.file_name().to_string_lossy();
-
-            if !matcher(&name, &path, query) {
+            // match before materializing: paths are built only for hits
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !matcher(&name, entry.path(), query) {
                 continue;
             }
+
+            let path = entry.path().to_string_lossy().into_owned();
 
             // GLib builds the URI: raw paths are invalid for spaces/non-ASCII
             let file_url = gio::File::for_path(&path).uri().to_string();
@@ -159,4 +187,20 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<R
     }
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::contains_ignore_ascii_case;
+
+    #[test]
+    fn ascii_and_unicode_substring_matching() {
+        assert!(contains_ignore_ascii_case("Report.PDF", "report"));
+        assert!(!contains_ignore_ascii_case("Report", "pdf"));
+        assert!(!contains_ignore_ascii_case("Report", "zzz"));
+        assert!(contains_ignore_ascii_case("anything", ""));
+        // Unicode falls back to the folding compare
+        assert!(contains_ignore_ascii_case("Ärger", "ärger"));
+        assert!(contains_ignore_ascii_case("准考证.pdf", "准考证"));
+    }
 }

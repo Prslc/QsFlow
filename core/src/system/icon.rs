@@ -1,4 +1,4 @@
-use itertools::iproduct;
+
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -63,12 +63,22 @@ fn find_papirus(spec: &str) -> Option<String> {
         bases.push(format!("{}/.local/share/icons", home));
     }
 
-    // Cartesian scan in base × size × category order; first existing file
-    // wins, same as the loop it replaces
-    iproduct!(&bases, PAPIRUS_SIZES, &categories).find_map(|(base, size, category)| {
-        let path = format!("{base}/Papirus/{size}/{category}/{name}.svg");
-        Path::new(&path).exists().then_some(path)
-    })
+    // base × size × category, first existing file wins
+    for base in &bases {
+        for size in PAPIRUS_SIZES {
+            for category in &categories {
+                let dir = format!("{base}/Papirus/{size}/{category}");
+                if !dir_exists(&dir) {
+                    continue;
+                }
+                let path = format!("{dir}/{name}.svg");
+                if Path::new(&path).exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -112,18 +122,7 @@ fn do_find(name: &str) -> Option<String> {
 
     let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
 
-    let search = |dir: &str| {
-        // lazy Cartesian scan, theme × category × size × ext; first existing
-        // file wins (same order & early exit as the nested loops it replaces)
-        iproduct!(themes, THEME_CATEGORIES, ICON_SIZES, ICON_EXTS).find_map(
-            |(theme, category, size, ext)| {
-                let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
-                Path::new(&path).exists().then_some(path)
-            },
-        )
-    };
-
-    if let Some(p) = search("/usr/share/icons") {
+    if let Some(p) = search_theme_tree("/usr/share/icons", &themes, name) {
         return Some(p);
     }
 
@@ -141,7 +140,7 @@ fn do_find(name: &str) -> Option<String> {
         flatpak_bases.push(format!("{home}/.local/share/flatpak/exports/share"));
     }
     for base in &flatpak_bases {
-        if let Some(p) = search(&format!("{base}/icons")) {
+        if let Some(p) = search_theme_tree(&format!("{base}/icons"), &themes, name) {
             return Some(p);
         }
     }
@@ -154,6 +153,43 @@ fn do_find(name: &str) -> Option<String> {
     }
 
     fallback()
+}
+
+/// theme × category × size × ext under one icon root, first existing file wins.
+/// The directory level is memoized: nearly every `theme/size/category`
+/// combination is absent, so a miss would otherwise stat hundreds of paths.
+fn search_theme_tree(root: &str, themes: &[&str], name: &str) -> Option<String> {
+    for theme in themes {
+        for category in THEME_CATEGORIES {
+            for size in ICON_SIZES {
+                let dir = format!("{root}/{theme}/{size}/{category}");
+                if !dir_exists(&dir) {
+                    continue;
+                }
+                for ext in ICON_EXTS {
+                    let path = format!("{dir}/{name}.{ext}");
+                    if Path::new(&path).exists() {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `dir` existence, remembered per process.
+fn dir_exists(dir: &str) -> bool {
+    static DIRS: OnceLock<Mutex<rustc_hash::FxHashMap<std::path::PathBuf, bool>>> = OnceLock::new();
+    let dirs = DIRS.get_or_init(|| Mutex::new(rustc_hash::FxHashMap::default()));
+
+    let mut dirs = dirs.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some(&known) = dirs.get(Path::new(dir)) {
+        return known;
+    }
+    let exists = Path::new(dir).is_dir();
+    dirs.insert(std::path::PathBuf::from(dir), exists);
+    exists
 }
 #[cfg(test)]
 mod tests {

@@ -83,6 +83,12 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
+        // Only content changes (write/create/rename): the reload below reads
+        // `plugins.toml` itself, and that access event would re-trigger this
+        // watcher forever. Same guard as the theme watcher.
+        if matches!(ev.kind, notify::EventKind::Access(_)) {
+            return;
+        }
         if !ev.paths.iter().any(|p| p == &watch_path) {
             return;
         }

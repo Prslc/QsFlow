@@ -63,11 +63,7 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
             continue;
         }
 
-        let preview = if preview.len() > 80 {
-            format!("{}…", &preview[..80])
-        } else {
-            preview.to_string()
-        };
+        let preview = truncate_preview(preview);
 
         results.push(ResultItem {
             title: preview,
@@ -82,6 +78,20 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
     }
 
     results
+}
+
+/// At most 80 characters of preview, elided with `…`.
+///
+/// Clipboard entries are arbitrary user data, so cut on a character boundary: a
+/// byte slice panics when a multi-byte character straddles offset 80, and the
+/// panic surfaces as a silently empty result list.
+fn truncate_preview(preview: &str) -> String {
+    const MAX_CHARS: usize = 80;
+
+    match preview.char_indices().nth(MAX_CHARS) {
+        Some((end, _)) => format!("{}…", &preview[..end]),
+        None => preview.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -112,6 +122,22 @@ mod tests {
         let entries = parse_entries("", &raw);
         assert!(entries[0].title.len() <= 83); // 80 chars max + "…"
         assert!(entries[0].title.ends_with('…'));
+    }
+
+    #[test]
+    fn multibyte_previews_are_cut_on_a_character_boundary() {
+        // byte offset 80 lands inside a character here, which a byte slice
+        // would panic on
+        let raw = format!("1\ttext/plain\t{}", "中".repeat(100));
+        let entries = parse_entries("", &raw);
+        assert_eq!(entries[0].title.chars().count(), 81); // 80 + the ellipsis
+        assert!(entries[0].title.ends_with('…'));
+
+        // a preview shorter than the cap is untouched
+        let raw = format!("2\ttext/plain\t{}", "中".repeat(79));
+        let entries = parse_entries("", &raw);
+        assert_eq!(entries[0].title.chars().count(), 79);
+        assert!(!entries[0].title.ends_with('…'));
     }
 
     #[test]
