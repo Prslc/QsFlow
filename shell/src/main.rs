@@ -57,6 +57,9 @@ fn run() -> iced_exwlshell::Result {
         ..Settings::default()
     })
     .subscription(app::subscription)
+    // Antialiased geometry (MSAA): without it the canvas magnifier's curves come
+    // out stair-stepped — the QML canvas had `antialiasing: true`.
+    .antialiasing(true)
     // The layer surface must stay transparent: the launcher draws its own
     // backdrop and the frosted card over the blurred wallpaper. Without this
     // the runtime clears every frame with the theme's opaque background color.

@@ -91,11 +91,12 @@ fn search_row(state: &State) -> Element<'_, Message> {
         .on_submit(Message::Submit)
         .padding(8)
         .size(18)
-        // Bold query text: the typed input reads as the field's content rather
-        // than as another dim hint (iced shares one font between the value and
-        // the placeholder; the placeholder stays recessive through its color).
+        // Medium (not Bold): the typed query gains a little emphasis over the
+        // hint without the full weight, which read as too heavy at 18px — and
+        // iced shares one font between the value and the placeholder, so Bold
+        // put the dimmed hint in a bold face as well.
         .font(Font {
-            weight: Weight::Bold,
+            weight: Weight::Medium,
             ..Font::DEFAULT
         })
         .style(move |_theme, _status| text_input::Style {
@@ -175,6 +176,8 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
     } else {
         Color::TRANSPARENT
     };
+    // a 1px ring so the button reads as a button even when it is not hovered
+    let ring = solid(state.theme.fg, if hovered { 0.45 } else { 0.25 });
 
     mouse_area(
         container(text("✕").size(12).color(dim))
@@ -185,8 +188,9 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
             .style(move |_theme| container::Style {
                 background: Some(Background::Color(background)),
                 border: Border {
+                    color: ring,
+                    width: 1.0,
                     radius: 13.0.into(),
-                    ..Border::default()
                 },
                 ..container::Style::default()
             }),
