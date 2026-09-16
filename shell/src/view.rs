@@ -91,6 +91,13 @@ fn search_row(state: &State) -> Element<'_, Message> {
         .on_submit(Message::Submit)
         .padding(8)
         .size(18)
+        // Bold query text: the typed input reads as the field's content rather
+        // than as another dim hint (iced shares one font between the value and
+        // the placeholder; the placeholder stays recessive through its color).
+        .font(Font {
+            weight: Weight::Bold,
+            ..Font::DEFAULT
+        })
         .style(move |_theme, _status| text_input::Style {
             background: Background::Color(Color::TRANSPARENT),
             border: Border::default(),
