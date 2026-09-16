@@ -11,7 +11,7 @@ use iced::keyboard::key::Named;
 use iced::time::Instant;
 use iced::widget::{Id, operation};
 use iced::window::Id as WindowId;
-use iced::{Color, Size, Subscription, Task};
+use iced::{Color, Point, Size, Subscription, Task};
 use iced_core::input_method;
 use iced_exwlshell::reexport::{
     Anchor, BlurOption, KeyboardInteractivity, Layer, LayerSize, NewLayerShellSettings,
@@ -48,6 +48,10 @@ pub enum Message {
     /// Whether the pointer is over the card, which gates the wheel so that
     /// scrolling the backdrop does nothing.
     PointerOnCard(bool),
+    /// Pointer position, tracked so the hover can be re-derived when the rows
+    /// move underneath a stationary pointer.
+    PointerMoved(Point),
+    PointerLeft,
     /// Mouse wheel over the list, in rows (positive scrolls down).
     Wheel(f32),
     Key(Key, iced::keyboard::Modifiers),
@@ -95,6 +99,8 @@ pub struct State {
     pub hovered: Option<Hover>,
     /// Pointer over the card (see `Message::PointerOnCard`).
     pointer_on_card: bool,
+    /// Last pointer position while it is over the surface.
+    cursor: Option<Point>,
     /// Wheel deltas smaller than a row (trackpads, the pixel half of a notch).
     wheel_accum: f32,
     /// Last applied result payload: an identical re-send is dropped so the
@@ -130,6 +136,23 @@ use crate::geometry::MAX_ROWS;
 
 /// Top visible row for `selected`, given the current `first`.
 ///
+/// The row index under a point, `None` outside the card or the list band. The
+/// inverse of the layout `view` builds, so it has to agree with `geometry`.
+fn row_at(surface: Size, first: usize, rows: usize, point: Point) -> Option<usize> {
+    let x = geometry::card_x(surface);
+    if point.x < x || point.x > x + geometry::card_w(surface) {
+        return None;
+    }
+
+    let top = geometry::rows_top(surface);
+    if point.y < top || point.y >= top + geometry::list_h(rows) {
+        return None;
+    }
+
+    let index = first + ((point.y - top) / geometry::ROW_H) as usize;
+    (index < rows).then_some(index)
+}
+
 /// Whole rows from a possibly fractional wheel delta, carrying the remainder.
 /// One mouse notch arrives as a discrete line *and* its pixel equivalent (the
 /// compositor sends both `axis` and `axis_value120`), so the pixel half must not
@@ -180,6 +203,10 @@ fn input_event(
             Some(Message::Key(key, modifiers))
         }
         iced::Event::InputMethod(event) => Some(Message::Ime(event)),
+        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::PointerMoved(position))
+        }
+        iced::Event::Mouse(iced::mouse::Event::CursorLeft) => Some(Message::PointerLeft),
         // The launcher has no scrollable any more (the list is a state-driven
         // five-row window), so the wheel has to be handled here.
         iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
@@ -209,6 +236,7 @@ pub fn boot(shell_events: ShellReceiver) -> (State, Task<Message>) {
         surface_known: false,
         hovered: None,
         pointer_on_card: false,
+        cursor: None,
         wheel_accum: 0.0,
         last_payload: String::new(),
         shown: None,
@@ -295,6 +323,14 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.hovered == Some(target) {
                 state.hovered = None;
             }
+            Task::none()
+        }
+        Message::PointerMoved(position) => {
+            state.cursor = Some(position);
+            Task::none()
+        }
+        Message::PointerLeft => {
+            state.cursor = None;
             Task::none()
         }
         Message::PointerOnCard(over) => {
@@ -569,6 +605,21 @@ impl State {
     /// `positionViewAtIndex(currentIndex, ListView.Contain)`.
     fn contain(&mut self) {
         self.first = contain(self.selected, self.first, self.rows.len());
+        self.resync_hover();
+    }
+
+    /// The rows a scroll (or a new payload) puts under a stationary pointer are
+    /// *different* rows drawn in the same widgets, so no `enter`/`exit` fires and
+    /// the tint would stay on the old row index — at best on the wrong row, at
+    /// worst on a row that is no longer drawn at all. Re-derive it from the
+    /// tracked pointer instead.
+    fn resync_hover(&mut self) {
+        let row = self
+            .cursor
+            .and_then(|point| row_at(self.surface, self.first, self.rows.len(), point));
+        if let Some(row) = row {
+            self.hovered = Some(Hover::Row(row));
+        }
     }
 
     /// Move the selection by `rows` (the wheel). The selection — not just the
@@ -681,6 +732,7 @@ impl State {
         // a genuinely new payload starts from the top result
         self.selected = 0;
         self.first = 0;
+        self.resync_hover();
         let retarget = self.retarget_height(Instant::now());
 
         let unresolved: Vec<String> = self
@@ -749,8 +801,40 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{contain, take_whole_rows};
-    use crate::geometry::MAX_ROWS;
+    use super::{contain, row_at, take_whole_rows};
+    use crate::geometry::{self, MAX_ROWS, ROW_H};
+    use iced::{Point, Size};
+
+    #[test]
+    fn row_at_maps_the_layout_it_is_drawn_in() {
+        let surface = Size::new(1920.0, 1080.0);
+        let top = geometry::rows_top(surface);
+        let x = geometry::card_x(surface) + 10.0;
+
+        // the first row starts where the layout puts it, and rows are ROW_H tall
+        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 1.0)), Some(0));
+        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + ROW_H)), Some(1));
+        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 4.9 * ROW_H)), Some(4));
+        // the window start is added, and never past the last row
+        assert_eq!(row_at(surface, 3, 20, Point::new(x, top + 1.0)), Some(3));
+        assert_eq!(row_at(surface, 15, 20, Point::new(x, top + 4.9 * ROW_H)), Some(19));
+
+        // the window's last row ends at the list's bottom edge, and one pixel
+        // past it is below the list
+        assert_eq!(
+            row_at(surface, 0, 20, Point::new(x, top + 5.0 * ROW_H - 1.0)),
+            Some(4)
+        );
+        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 5.0 * ROW_H)), None);
+
+        // a list shorter than the window cannot be hit below its own last row
+        assert_eq!(row_at(surface, 0, 3, Point::new(x, top + 2.5 * ROW_H)), Some(2));
+        assert_eq!(row_at(surface, 0, 3, Point::new(x, top + 3.0 * ROW_H)), None);
+
+        // above the card's list, or beside the card: not the pointer's row
+        assert_eq!(row_at(surface, 0, 20, Point::new(x, top - 1.0)), None);
+        assert_eq!(row_at(surface, 0, 20, Point::new(x - 700.0, top + 1.0)), None);
+    }
 
     #[test]
     fn a_wheel_notch_moves_exactly_one_row() {

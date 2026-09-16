@@ -38,6 +38,12 @@ pub fn card_top(surface: Size) -> f32 {
     (surface.height * 0.28).round()
 }
 
+/// The y of the first list row: the card's padding, the search field and the
+/// column's spacing.
+pub fn rows_top(surface: Size) -> f32 {
+    card_top(surface) + PAD + SEARCH_H + GAP
+}
+
 pub fn list_h(rows: usize) -> f32 {
     (rows as f32 * ROW_H).min(MAX_ROWS as f32 * ROW_H)
 }
