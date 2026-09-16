@@ -14,7 +14,7 @@ async fn respond(tx: &mpsc::Sender<String>, id: Value, result: Result<Value, (i6
             "id": id,
         }),
     };
-    crate::emit(tx, &payload).await;
+    crate::protocol::emit(tx, &payload).await;
 }
 
 fn search_text(params: &Option<Value>) -> Result<String, ()> {

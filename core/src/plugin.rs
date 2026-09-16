@@ -205,6 +205,24 @@ fn merge_config(mut base: Config, user: Config) -> Config {
     base
 }
 
+/// Print the registry table (`--list-plugins`).
+pub async fn print_list() {
+    println!(
+        "{:<24} {:<24} {:<12} {:<24} STATUS",
+        "ID", "NAME", "KEYWORD", "ICON"
+    );
+    println!("{:-<24} {:-<24} {:-<12} {:-<24} {:-<8}", "", "", "", "", "");
+    for (id, name, icon, keyword, enabled) in list_plugins().await {
+        let kw = if keyword.is_empty() {
+            "(default)"
+        } else {
+            &keyword
+        };
+        let status = if enabled { "" } else { "[disabled]" };
+        println!("{id:<24} {name:<24} {kw:<12} {icon:<24}{status}");
+    }
+}
+
 pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
     let map = crate::provider::plugin_map();
     ensure_loaded().await;

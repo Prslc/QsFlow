@@ -1,0 +1,173 @@
+use anyhow::Result;
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+use crate::{plugin, rpc, system, watchers};
+
+/// One line of the text protocol; JSON-RPC requests are handled before this.
+enum Request<'a> {
+    /// Empty query: the usage-ranked history.
+    History,
+    Select(&'a str),
+    Forget(&'a str),
+    Run(&'a str),
+    Copy(&'a str),
+    Open(&'a str),
+    Launch(&'a str),
+    /// Anything else is a query.
+    Search(&'a str),
+}
+
+impl<'a> Request<'a> {
+    fn parse(input: &'a str) -> Self {
+        if input.trim().is_empty() {
+            return Self::History;
+        }
+        // verbatim argument: `run run tests` runs "run tests"
+        let Some((name, argument)) = input.split_once(' ') else {
+            return Self::Search(input);
+        };
+        match name {
+            "select" => Self::Select(argument),
+            "forget" => Self::Forget(argument),
+            "run" => Self::Run(argument),
+            "copy" => Self::Copy(argument),
+            "open" => Self::Open(argument),
+            "launch" => Self::Launch(argument),
+            _ => Self::Search(input),
+        }
+    }
+}
+
+/// Serialize `payload` onto the stdout stream owned by [`spawn_writer`].
+pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
+    if let Ok(json) = serde_json::to_string(payload) {
+        let _ = tx.send(json).await;
+    }
+}
+
+/// Own stdout for the process lifetime: one channel, so no two producers can
+/// interleave half a line.
+fn spawn_writer(mut rx: mpsc::Receiver<String>) {
+    tokio::spawn(async move {
+        let mut stdout = io::stdout();
+        while let Some(json) = rx.recv().await {
+            let _ = stdout.write_all(json.as_bytes()).await;
+            let _ = stdout.write_all(b"\n").await;
+            let _ = stdout.flush().await;
+        }
+    });
+}
+
+/// Serve the line protocol until stdin closes.
+pub async fn serve() -> Result<()> {
+    let (tx, rx) = mpsc::channel::<String>(32);
+    spawn_writer(rx);
+
+    emit(
+        &tx,
+        &serde_json::json!({
+            "type": "theme",
+            "data": system::theme::load_theme()
+        }),
+    )
+    .await;
+
+    // Keep the watchers alive for the core's lifetime: resident mode re-emits
+    // the theme / reloads the registry on file change instead of holding the
+    // startup read forever.
+    let _theme_watcher = watchers::watch_theme(&tx);
+
+    let _plugins_watcher = watchers::watch_plugins();
+
+    // Purge copy:-keyed rows recorded before the exclusion rule (idempotent;
+    // the guard in usage::record keeps new ones out).
+    let _ = system::usage::purge_ephemeral();
+
+    let mut reader = BufReader::new(io::stdin()).lines();
+    let mut search: Option<JoinHandle<()>> = None;
+
+    while let Some(line) = reader.next_line().await? {
+        let input = line.trim_start();
+
+        // JSON-RPC 2.0 requests — independent of the text protocol
+        if rpc::handle(input, &tx).await {
+            continue;
+        }
+
+        match Request::parse(input) {
+            Request::History => emit_history(&tx).await,
+            Request::Select(item) => {
+                let _ = system::usage::record(item);
+            }
+            Request::Forget(key) => {
+                let _ = system::usage::forget(key);
+                plugin::forget_row(key).await;
+            }
+            Request::Run(cmd) => system::executor::execute_command(cmd),
+            Request::Copy(payload) => system::executor::copy_json(payload),
+            Request::Open(uri) => system::executor::open_uri(uri),
+            Request::Launch(id) => system::executor::launch_app(id),
+            Request::Search(query) => start_search(&tx, &mut search, query),
+        }
+    }
+
+    Ok(())
+}
+
+/// The empty query: the full ranked history. A 20-row cap made ⌫ curation never
+/// visibly converge, since deleted rows kept refilling from beyond it.
+async fn emit_history(tx: &mpsc::Sender<String>) {
+    let items = system::usage::get_top(i32::MAX).unwrap_or_default();
+    emit(tx, &serde_json::json!({ "type": "results", "data": items })).await;
+}
+
+/// Searches supersede each other: the pending one is aborted, the new one emits
+/// its payload when it lands.
+fn start_search(tx: &mpsc::Sender<String>, pending: &mut Option<JoinHandle<()>>, query: &str) {
+    if let Some(handle) = pending.take() {
+        handle.abort();
+    }
+
+    let tx = tx.clone();
+    let query = query.to_string();
+    *pending = Some(tokio::spawn(async move {
+        let results = plugin::dispatch(&query).await;
+        emit(
+            &tx,
+            &serde_json::json!({ "type": "results", "data": results }),
+        )
+        .await;
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Request;
+
+    #[test]
+    fn parse_splits_command_and_verbatim_argument() {
+        assert!(matches!(Request::parse("  "), Request::History));
+        assert!(matches!(Request::parse("select {}"), Request::Select("{}")));
+        assert!(matches!(
+            Request::parse("open file:///tmp/x"),
+            Request::Open("file:///tmp/x")
+        ));
+        // the argument keeps its own leading words: this runs `run tests`
+        assert!(matches!(
+            Request::parse("run run tests"),
+            Request::Run("run tests")
+        ));
+        // no separator, or an unknown first word, is a query — line preserved
+        assert!(matches!(Request::parse("run"), Request::Search("run")));
+        assert!(matches!(
+            Request::parse("firefox"),
+            Request::Search("firefox")
+        ));
+        assert!(matches!(
+            Request::parse("selects x"),
+            Request::Search("selects x")
+        ));
+    }
+}
