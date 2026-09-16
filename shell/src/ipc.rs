@@ -3,7 +3,7 @@
 //! listener.
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +19,10 @@ pub enum IpcCommand {
     Close,
     Toggle,
 }
+
+/// Both sides give up after this: the daemon so a silent client cannot wedge the
+/// accept thread, the client so a wedged daemon cannot hang the keybind.
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Whether a surface is up, answered by the accept thread for `status`.
 pub static VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -60,6 +64,9 @@ pub fn bind() -> Result<(), String> {
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path)
         .map_err(|error| format!("cannot bind {}: {error}", path.display()))?;
+    // `bind` honours the umask, which need not hide the socket from other local
+    // users; the launcher's IPC is owner-only.
+    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     *LISTENER.lock().unwrap_or_else(PoisonError::into_inner) = Some(listener);
 
     Ok(())
@@ -94,7 +101,12 @@ fn spawn_accept_thread() {
     std::thread::spawn(move || {
         loop {
             match listener.accept() {
-                Ok((stream, _)) => serve(stream),
+                // One thread per connection: a client that connects and never
+                // writes (or is killed mid-request) must not stall a later
+                // `toggle` from the keybind.
+                Ok((stream, _)) => {
+                    std::thread::spawn(move || serve(stream));
+                }
                 Err(error) => {
                     eprintln!("qsflow-shell: IPC accept failed: {error}");
                     std::thread::sleep(Duration::from_millis(100));
@@ -106,6 +118,11 @@ fn spawn_accept_thread() {
 
 /// One line in, one line back, then the connection closes.
 fn serve(mut stream: UnixStream) {
+    // A client that connects and never writes must not wedge the accept thread:
+    // that would freeze every later `toggle`/`status` (the launcher would look
+    // dead to the keybind).
+    let _ = stream.set_read_timeout(Some(CLIENT_TIMEOUT));
+
     let Ok(reader) = stream.try_clone() else {
         return;
     };
@@ -170,6 +187,7 @@ pub fn client(command: &str) -> i32 {
     }
 
     let mut reply = String::new();
+    let _ = stream.set_read_timeout(Some(CLIENT_TIMEOUT));
     match BufReader::new(stream).read_line(&mut reply) {
         Ok(0) | Err(_) => {
             eprintln!("qsflow-shell: no reply from the running instance");

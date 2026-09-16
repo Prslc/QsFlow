@@ -397,6 +397,11 @@ fn parse_meta(content: &str) -> DesktopMeta {
 /// Locate the `.desktop` file by id through the XDG data dirs and read the
 /// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
 /// so this is the only way to reach them.
+///
+/// The first existing file wins even when it carries none of those keys (an
+/// override in `~/.local/share` therefore shadows a system-wide copy that had
+/// them) — the same precedence the launcher's XDG lookup uses, and the reason
+/// this shares [`system_fs::find_desktop_file`].
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     let content = fs::read_to_string(system_fs::find_desktop_file(id)?).ok()?;
     let meta = parse_meta(&content);

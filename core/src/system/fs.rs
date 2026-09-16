@@ -32,7 +32,15 @@ pub fn ensure_flatpak_data_dirs() {
 /// (already padded with the flatpak export dirs by
 /// [`ensure_flatpak_data_dirs`]) plus the user's `~/.local/share`. One lookup
 /// path for both the icon/meta reader and the desktop-action launcher.
+///
+/// A desktop id never contains a path separator, so one is rejected: the id can
+/// arrive from an external plugin host's `action:` row, and joining
+/// `../../etc/foo` would read (and run the `Exec=` of) an arbitrary file.
 pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
+    if id.contains('/') {
+        return None;
+    }
+
     let dirs =
         env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
     let mut bases: Vec<PathBuf> = dirs
