@@ -23,7 +23,12 @@ pub fn view(state: &State, _window: WindowId) -> Element<'_, Message> {
     let surface = state.surface;
 
     let dim = solid(Color::BLACK, geometry::DIM_ALPHA * state.dim_alpha());
-    let card = mouse_area(card(state, surface)).on_press(Message::SwallowClick);
+    // Enter/exit only gate the wheel; the press is what keeps a click inside the
+    // card from dismissing.
+    let card = mouse_area(card(state, surface))
+        .on_press(Message::SwallowClick)
+        .on_enter(Message::PointerOnCard(true))
+        .on_exit(Message::PointerOnCard(false));
 
     let backdrop = container(card)
         .width(Length::Fixed(surface.width))

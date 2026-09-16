@@ -45,6 +45,11 @@ pub enum Message {
     /// Pointer left a target: clears the hover only if it is still that one, so
     /// a same-batch `exit(A) enter(B)` cannot wipe B's tint.
     Unhover(Hover),
+    /// Whether the pointer is over the card, which gates the wheel so that
+    /// scrolling the backdrop does nothing.
+    PointerOnCard(bool),
+    /// Mouse wheel over the list, in rows (positive scrolls down).
+    Wheel(f32),
     Key(Key, iced::keyboard::Modifiers),
     Ime(input_method::Event),
     Frame(Instant),
@@ -88,6 +93,10 @@ pub struct State {
     /// Whether `surface` came from the runtime rather than the fallback.
     surface_known: bool,
     pub hovered: Option<Hover>,
+    /// Pointer over the card (see `Message::PointerOnCard`).
+    pointer_on_card: bool,
+    /// Wheel deltas smaller than a row (trackpads, the pixel half of a notch).
+    wheel_accum: f32,
     /// Last applied result payload: an identical re-send is dropped so the
     /// selection survives it (the QML's `lastResults` dedupe).
     last_payload: String,
@@ -121,6 +130,24 @@ use crate::geometry::MAX_ROWS;
 
 /// Top visible row for `selected`, given the current `first`.
 ///
+/// Whole rows from a possibly fractional wheel delta, carrying the remainder.
+/// One mouse notch arrives as a discrete line *and* its pixel equivalent (the
+/// compositor sends both `axis` and `axis_value120`), so the pixel half must not
+/// add a second row — while a trackpad (pixel deltas only) has to accumulate to
+/// one row per ~64px rather than be dropped.
+fn take_whole_rows(accum: &mut f32, delta: f32) -> i32 {
+    // A reversal starts a new gesture: without this the previous direction's
+    // slack (the pixel half of a notch) would swallow the first notch back.
+    if accum.signum() * delta.signum() < 0.0 {
+        *accum = 0.0;
+    }
+
+    *accum += delta;
+    let whole = accum.trunc();
+    *accum -= whole;
+    whole as i32
+}
+
 /// The launcher shows at most [`MAX_ROWS`] rows, so the list is a window rather
 /// than a scroll offset: `Contain` semantics — move only as far as the selection
 /// requires, and never move while it is already visible. (A `scroll_to`
@@ -153,6 +180,17 @@ fn input_event(
             Some(Message::Key(key, modifiers))
         }
         iced::Event::InputMethod(event) => Some(Message::Ime(event)),
+        // The launcher has no scrollable any more (the list is a state-driven
+        // five-row window), so the wheel has to be handled here.
+        iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+            // A downward wheel arrives as a negative y (verified with a
+            // virtual pointer), so the message means "rows to move down".
+            let rows = match delta {
+                iced::mouse::ScrollDelta::Lines { y, .. } => -y,
+                iced::mouse::ScrollDelta::Pixels { y, .. } => -y / crate::geometry::ROW_H,
+            };
+            (rows != 0.0).then_some(Message::Wheel(rows))
+        }
         _ => None,
     }
 }
@@ -170,6 +208,8 @@ pub fn boot(shell_events: ShellReceiver) -> (State, Task<Message>) {
         surface: Size::new(1920.0, 1080.0),
         surface_known: false,
         hovered: None,
+        pointer_on_card: false,
+        wheel_accum: 0.0,
         last_payload: String::new(),
         shown: None,
         preedit_active: false,
@@ -254,6 +294,16 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Unhover(target) => {
             if state.hovered == Some(target) {
                 state.hovered = None;
+            }
+            Task::none()
+        }
+        Message::PointerOnCard(over) => {
+            state.pointer_on_card = over;
+            Task::none()
+        }
+        Message::Wheel(rows) => {
+            if state.pointer_on_card {
+                state.scroll(rows);
             }
             Task::none()
         }
@@ -521,6 +571,26 @@ impl State {
         self.first = contain(self.selected, self.first, self.rows.len());
     }
 
+    /// Move the selection by `rows` (the wheel). The selection — not just the
+    /// window — has to move: otherwise the accent bar scrolls out of view and
+    /// Enter launches a row the user cannot see. The window then follows through
+    /// the same `contain` the arrows use, so a wheel notch and an arrow press
+    /// are the same gesture.
+    fn scroll(&mut self, rows: f32) {
+        if self.rows.is_empty() {
+            return;
+        }
+
+        let whole = take_whole_rows(&mut self.wheel_accum, rows);
+        if whole == 0 {
+            return;
+        }
+
+        let last = (self.rows.len() - 1) as i32;
+        self.selected = (self.selected as i32 + whole).clamp(0, last) as usize;
+        self.contain();
+    }
+
     fn ime(&mut self, event: input_method::Event) {
         match event {
             input_method::Event::Preedit(text, _) => self.preedit_active = !text.is_empty(),
@@ -679,8 +749,37 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::contain;
+    use super::{contain, take_whole_rows};
     use crate::geometry::MAX_ROWS;
+
+    #[test]
+    fn a_wheel_notch_moves_exactly_one_row() {
+        // the line delta and its pixel twin both arrive for one notch
+        let mut accum = 0.0;
+        assert_eq!(take_whole_rows(&mut accum, 1.0), 1);
+        assert_eq!(take_whole_rows(&mut accum, 0.03125), 0);
+        assert_eq!(take_whole_rows(&mut accum, 1.0), 1);
+        assert_eq!(take_whole_rows(&mut accum, 0.03125), 0);
+
+        // the first notch back moves a row too (the slack must not absorb it)
+        assert_eq!(take_whole_rows(&mut accum, -1.0), -1);
+        assert_eq!(take_whole_rows(&mut accum, -0.03125), 0);
+
+        // a trackpad sends pixels only: four 16px steps are one row, no fraction
+        // is lost
+        let mut pixels = 0.0;
+        let mut rows = 0;
+        for _ in 0..16 {
+            rows += take_whole_rows(&mut pixels, 0.25);
+        }
+        assert_eq!(rows, 4);
+
+        // half a row one way and half back is nothing, but the next half is a row
+        let mut trackpad = 0.0;
+        assert_eq!(take_whole_rows(&mut trackpad, 0.5), 0);
+        assert_eq!(take_whole_rows(&mut trackpad, -0.5), 0);
+        assert_eq!(take_whole_rows(&mut trackpad, -0.5), -1);
+    }
 
     #[test]
     fn contain_moves_only_as_far_as_the_selection_needs() {
