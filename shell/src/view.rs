@@ -178,6 +178,16 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
 
     mouse_area(
         container(text("✕").size(12).color(dim))
+            // The glyph's ink sits 1.5px above and 0.5px left of its line box, so
+            // centring the box leaves the ✕ visibly high inside the disc (invisible
+            // while the button had no fill). A 3px top / 1px left padding shifts the
+            // centred box back by half of each, putting the ink on the disc's centre.
+            .padding(Padding {
+                top: 3.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 1.0,
+            })
             .width(26)
             .height(26)
             .center_x(26)
