@@ -28,6 +28,9 @@ PanelWindow {
         window.BackgroundEffect.blurRegion = blurRegion
         window.showEntrance()
         initTimer.start()
+        // Quickshell loads its desktop-entry model lazily: touch it so
+        // `action:` rows can resolve
+        void DesktopEntries.applications.values
     }
 
     // Frosted glass: compositor-side blur (ext-background-effect) exactly over
@@ -340,6 +343,8 @@ PanelWindow {
             window.searchTriggered("run " + target.substring(4))
         } else if (target.startsWith("copy:")) {
             window.searchTriggered("copy " + target.substring(5))
+        } else if (target.startsWith("action:")) {
+            window.launchDesktopAction(target)
         } else if (isUrl) {
             // the core opens URIs via GLib; Qt.openUrlExternally falls back to
             // xdg-open, which drops Terminal=true
@@ -348,6 +353,17 @@ PanelWindow {
             window.searchTriggered("run " + target)
         }
         exitTimer.start()
+    }
+
+    // `action:<desktop-id>:<action-id>` — app-search emits one row per desktop
+    // action (DMS-style); running it is Quickshell's job, since gio binds no
+    // action launcher.
+    function launchDesktopAction(target) {
+        const parts = target.split(":")
+        const id = parts[1].replace(/\.desktop$/, "")
+        const entry = (DesktopEntries.applications.values || []).find(a => a.id === id)
+        const action = entry && entry.actions ? entry.actions.find(a => a.id === parts[2]) : null
+        if (action) action.execute()
     }
     function open() {
         visible = true

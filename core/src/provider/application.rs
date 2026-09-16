@@ -21,6 +21,9 @@ const W_GENERIC_PREFIX: u32 = 800;
 const W_GENERIC: u32 = 400;
 const W_ID: u32 = 350;
 const W_FUZZY: u32 = 100;
+const W_ACTION_EXACT: u32 = 8_000;
+const W_ACTION_PREFIX: u32 = 4_000;
+const W_ACTION_SUBSTRING: u32 = 400;
 
 /// `GenericName` + `Keywords` from the app's `.desktop` file (plain,
 /// unlocalised keys only). Parsed lazily — the gio `AppInfo` interface does
@@ -28,6 +31,14 @@ const W_FUZZY: u32 = 100;
 struct DesktopMeta {
     generic: Option<String>,
     keywords: Vec<String>,
+    actions: Vec<DesktopAction>,
+}
+
+/// One `[Desktop Action <id>]` group, surfaced as its own row (DMS-style).
+struct DesktopAction {
+    id: String,
+    name: String,
+    name_lower: String,
 }
 
 /// One installed application, precomputed at first search and reused for the
@@ -137,6 +148,25 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                 },
             ));
         }
+
+        // each action is its own row (DMS-style), titled after the action and
+        // launched by the UI; the empty query is the history view, so no rows
+        if !query_lower.is_empty() {
+            for action in app.meta.iter().flat_map(|m| &m.actions) {
+                let action_score = action_score(&action.name_lower, &query_lower);
+                if action_score > 0 {
+                    results.push((
+                        action_score,
+                        ResultItem {
+                            title: action.name.clone(),
+                            summary: Some(app.title.clone()),
+                            on_click: Some(format!("action:{}:{}", app.id, action.id)),
+                            icon: app.icon_path(),
+                        },
+                    ));
+                }
+            }
+        }
     }
 
     Ok(crate::provider::rank_results(results, true, 50))
@@ -147,6 +177,19 @@ fn tokenize(s: &str) -> Vec<String> {
         .filter(|w| !w.is_empty())
         .map(|w| w.to_string())
         .collect()
+}
+
+/// DMS's action tiers: exact, prefix, substring.
+fn action_score(name_lower: &str, query_lower: &str) -> u32 {
+    if name_lower == query_lower {
+        W_ACTION_EXACT
+    } else if name_lower.starts_with(query_lower) {
+        W_ACTION_PREFIX
+    } else if name_lower.contains(query_lower) {
+        W_ACTION_SUBSTRING
+    } else {
+        0
+    }
 }
 
 /// Score one match surface. Fields are tried in order with decaying
@@ -294,6 +337,63 @@ fn score_app(
     score
 }
 
+/// Read `[Desktop Entry]` keys and `[Desktop Action <id>]` groups. Plain
+/// (unlocalised) keys only — the `[xx]` variants follow later and would win.
+fn parse_meta(content: &str) -> DesktopMeta {
+    let mut generic: Option<String> = None;
+    let mut keywords: Vec<String> = Vec::new();
+    let mut actions: Vec<DesktopAction> = Vec::new();
+    let mut in_entry = false;
+    let mut action: Option<DesktopAction> = None;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(id) = line
+            .strip_prefix("[Desktop Action ")
+            .and_then(|rest| rest.strip_suffix(']'))
+        {
+            if let Some(prev) = action.replace(DesktopAction {
+                id: id.to_string(),
+                name: String::new(),
+                name_lower: String::new(),
+            }) {
+                actions.push(prev);
+            }
+            in_entry = false;
+        } else if line.starts_with('[') {
+            if let Some(prev) = action.take() {
+                actions.push(prev);
+            }
+            in_entry = line == "[Desktop Entry]";
+        } else if in_entry {
+            if let Some(v) = line.strip_prefix("GenericName=") {
+                if generic.is_none() {
+                    let v = v.trim();
+                    if !v.is_empty() {
+                        generic = Some(v.to_string());
+                    }
+                }
+            } else if let Some(v) = line.strip_prefix("Keywords=") {
+                let kw = v.split(';').filter(|s| !s.trim().is_empty());
+                keywords.extend(kw.map(|s| s.trim().to_string()));
+            }
+        } else if let Some(a) = action.as_mut()
+            && let Some(v) = line.strip_prefix("Name=")
+            && a.name.is_empty()
+        {
+            a.name = v.trim().to_string();
+            a.name_lower = a.name.to_lowercase();
+        }
+    }
+    actions.extend(action);
+
+    DesktopMeta {
+        generic,
+        keywords,
+        actions: actions.into_iter().filter(|a| !a.name.is_empty()).collect(),
+    }
+}
+
 /// Locate the `.desktop` file by id through the XDG data dirs and read the
 /// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
 /// so this is the only way to reach them.
@@ -311,32 +411,9 @@ fn desktop_meta(id: &str) -> Option<DesktopMeta> {
             continue;
         };
 
-        let mut generic: Option<String> = None;
-        let mut keywords: Vec<String> = Vec::new();
-        let mut in_entry = false;
-        for line in content.lines() {
-            let line = line.trim();
-            if line.starts_with('[') {
-                in_entry = line == "[Desktop Entry]";
-            } else if in_entry {
-                // plain (unlocalised) keys only — the [xx] variants follow
-                // later in the file and would otherwise overwrite these
-                if let Some(v) = line.strip_prefix("GenericName=") {
-                    if generic.is_none() {
-                        let v = v.trim();
-                        if !v.is_empty() {
-                            generic = Some(v.to_string());
-                        }
-                    }
-                } else if let Some(v) = line.strip_prefix("Keywords=") {
-                    let kw = v.split(';').filter(|s| !s.trim().is_empty());
-                    keywords.extend(kw.map(|s| s.trim().to_string()));
-                }
-            }
-        }
-
-        if generic.is_some() || !keywords.is_empty() {
-            return Some(DesktopMeta { generic, keywords });
+        let meta = parse_meta(&content);
+        if meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
+            return Some(meta);
         }
     }
     None
@@ -350,6 +427,7 @@ mod tests {
         DesktopMeta {
             generic: generic.map(String::from),
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            actions: Vec::new(),
         }
     }
 
@@ -485,6 +563,43 @@ mod tests {
         assert!(s("Krita", None, Some(&m), "krita.desktop", "krta") < W_FUZZY);
         // two-char typo is not enough to matter
         assert_eq!(s("Krita", None, Some(&m), "krita.desktop", "kt"), 0);
+    }
+
+    #[test]
+    fn action_rows_use_dms_tiers() {
+        assert_eq!(
+            action_score("open vm manager", "open vm manager"),
+            W_ACTION_EXACT
+        );
+        assert_eq!(action_score("open vm manager", "open"), W_ACTION_PREFIX);
+        assert_eq!(action_score("open vm manager", "vm"), W_ACTION_SUBSTRING);
+        assert_eq!(action_score("open vm manager", "zzz"), 0);
+    }
+
+    #[test]
+    fn parse_meta_reads_action_groups() {
+        let meta = parse_meta(
+            "[Desktop Entry]\n\
+             GenericName=Virtualization Software\n\
+             Keywords=virtualization;\n\
+             Actions=Manager;\n\
+             Name[de]=Oracle VirtualBox\n\
+             \n\
+             [Desktop Action Manager]\n\
+             Name=Open VM Manager\n\
+             Name[de]=VM Manager oeffnen\n\
+             Exec=VirtualBox\n\
+             \n\
+             [Desktop Action Broken]\n\
+             Name[de]=Nur auf Deutsch\n",
+        );
+        assert_eq!(meta.generic.as_deref(), Some("Virtualization Software"));
+        assert_eq!(meta.keywords, ["virtualization"]);
+        // localised-only names are not entries of their own
+        assert_eq!(meta.actions.len(), 1);
+        assert_eq!(meta.actions[0].id, "Manager");
+        assert_eq!(meta.actions[0].name, "Open VM Manager");
+        assert_eq!(meta.actions[0].name_lower, "open vm manager");
     }
 
     #[test]

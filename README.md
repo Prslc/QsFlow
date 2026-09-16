@@ -23,7 +23,8 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 
 ## Features
 
-- **Fuzzy app launcher** — search `.desktop` entries across XDG data dirs.
+- **Fuzzy app launcher** — search `.desktop` entries across XDG data dirs
+  (name, GenericName, Keywords — plus each desktop action as its own row).
 - **Proper app launching** — apps open via the GLib `GAppInfo` registry
   (`g_app_info_launch`, honouring Exec quoting, field codes, env and
   `DBusActivatable` single-instance), never a raw `sh -c`.
@@ -185,7 +186,7 @@ full protocol spec and the result-item (schema) contract are in
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — Firefox profile and usage database access.
 - **[walkdir](https://github.com/BurntSushi/walkdir)** — recursive directory traversal for file and path search.
-- **[nucleo](https://github.com/helix-editor/nucleo)** — fuzzy matching for application search.
+- **[nucleo](https://github.com/helix-editor/nucleo)** — fuzzy matching for `r` (commands) and `w` (windows).
 - **[rustc-hash](https://github.com/rust-lang/rustc-hash)** — fast non-cryptographic hashing for plugin maps and icon cache.
 - **[gio (gtk-rs)](https://gtk-rs.org/)** — GLib `GAppInfo` registry for application discovery and launching.
 - **[fasteval](https://github.com/likebike/fasteval)** — calculator expression evaluation.

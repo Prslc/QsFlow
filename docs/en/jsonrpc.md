@@ -119,6 +119,7 @@ keys — all four are always present (`null` for an absent optional field):
 | `run:<shell cmd>` | execute a shell command (system commands, clipboard) |
 | `launch:<desktop-id>` | launch an app by desktop id (app-search) |
 | `copy:{"text":"…"}` | write the text to the Wayland clipboard (translate copy) |
+| `action:<desktop-id>:<action-id>` | run a desktop action; the UI resolves it through Quickshell's desktop-entry model (app-search emits one row per action, DMS-style) |
 | bare URL / `file:` / `mailto:` URI | opened by the core with GLib `g_app_info_launch_default_for_uri` |
 
 File URIs are percent-encoded, so paths with spaces or non-ASCII characters

@@ -20,7 +20,8 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ## 功能特性
 
-- **模糊应用启动器** — 搜索 XDG 数据目录中的 `.desktop` 条目。
+- **模糊应用启动器** — 搜索 XDG 数据目录中的 `.desktop` 条目
+  （Name、GenericName、Keywords，以及每条 desktop action 作为独立结果行）。
 - **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 与主目录，直接打开结果。
 - **剪贴板历史** — 通过 `c` 前缀搜索并粘贴 `cliphist` 记录。
 - **系统命令** — `lock`、`reboot`、`shutdown`、`suspend`、`logout`。
@@ -165,7 +166,7 @@ keyword = "s"
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — SQLite 绑定，用于读取 Firefox 数据库和使用历史。
 - **[walkdir](https://github.com/BurntSushi/walkdir)** — 递归目录遍历，支撑文件搜索。
-- **[nucleo](https://github.com/helix-editor/nucleo)** — 模糊匹配引擎，用于应用搜索。
+- **[nucleo](https://github.com/helix-editor/nucleo)** — 模糊匹配引擎，用于 `r`（命令）与 `w`（窗口）搜索。
 - **[rustc-hash](https://github.com/rust-lang/rustc-hash)** — 快速非加密哈希，用于插件表和图标注销缓存。
 - **[gio (gtk-rs)](https://gtk-rs.org/)** — GLib `GAppInfo` 应用注册表，用于应用发现与启动。
 - **[fasteval](https://github.com/likebike/fasteval)** — 计算器表达式求值。
