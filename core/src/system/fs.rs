@@ -28,17 +28,16 @@ pub fn ensure_flatpak_data_dirs() {
     }
 }
 
-/// The first `<dir>/applications/<id>` that exists on `XDG_DATA_DIRS`
-/// (already padded with the flatpak export dirs by
-/// [`ensure_flatpak_data_dirs`]) plus the user's `~/.local/share`. One lookup
-/// path for both the icon/meta reader and the desktop-action launcher.
+/// Every `<dir>/applications/<id>` candidate on `XDG_DATA_DIRS` (already padded
+/// with the flatpak export dirs by [`ensure_flatpak_data_dirs`]) plus the user's
+/// `~/.local/share`, in precedence order.
 ///
 /// A desktop id never contains a path separator, so one is rejected: the id can
 /// arrive from an external plugin host's `action:` row, and joining
 /// `../../etc/foo` would read (and run the `Exec=` of) an arbitrary file.
-pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
+pub fn desktop_file_candidates(id: &str) -> Vec<PathBuf> {
     if id.contains('/') {
-        return None;
+        return Vec::new();
     }
 
     let dirs =
@@ -55,6 +54,16 @@ pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
     bases
         .into_iter()
         .map(|base| base.join("applications").join(id))
+        .collect()
+}
+
+/// The first of [`desktop_file_candidates`] that exists — what a launcher needs
+/// to run one entry. Readers that need a *key* from the file (the app-search
+/// metadata) iterate the candidates instead, so a shadowing copy without those
+/// keys does not hide the packaged one.
+pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
+    desktop_file_candidates(id)
+        .into_iter()
         .find(|candidate| candidate.is_file())
 }
 

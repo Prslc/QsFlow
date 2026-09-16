@@ -12,7 +12,7 @@ use iced::time::Instant;
 use iced::widget::scrollable::AbsoluteOffset;
 use iced::widget::{Id, operation};
 use iced::window::Id as WindowId;
-use iced::{Size, Subscription, Task};
+use iced::{Color, Size, Subscription, Task};
 use iced_core::input_method;
 use iced_exwlshell::reexport::{
     Anchor, BlurOption, KeyboardInteractivity, Layer, LayerSize, NewLayerShellSettings,
@@ -258,7 +258,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Shell(ShellEvent::Closed(id)) => {
             if Some(id) == state.shown {
-                state.shown = None;
+                state.surface_gone();
             }
             Task::none()
         }
@@ -274,7 +274,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Closed(id) => {
             if Some(id) == state.shown {
-                state.shown = None;
+                state.surface_gone();
             }
             Task::none()
         }
@@ -297,6 +297,17 @@ impl State {
     pub fn entrance_alpha(&self) -> f32 {
         self.entrance
             .interpolate_with(|value| value, Instant::now())
+    }
+
+    /// A card-content colour at `alpha`, scaled by the entrance fade. iced has no
+    /// subtree opacity, so every colour inside the card goes through here — the
+    /// card then arrives as one unit (the QML faded the whole `content` item) and
+    /// the first frame really is invisible.
+    pub fn fade(&self, color: Color, alpha: f32) -> Color {
+        Color {
+            a: alpha * self.entrance_alpha(),
+            ..color
+        }
     }
 
     fn open(&mut self) -> Task<Message> {
@@ -353,6 +364,20 @@ impl State {
         backend::send("");
 
         task
+    }
+
+    /// The runtime destroyed our surface without us asking (the output it was on
+    /// went away, or the compositor closed it): drop the state that claimed a
+    /// surface exists, including the flag the accept thread answers `status`
+    /// from — otherwise `status` keeps reporting `visible` for the session.
+    fn surface_gone(&mut self) {
+        self.shown = None;
+        self.dismiss_at = None;
+        self.animating = false;
+        self.hovered = None;
+        self.preedit_active = false;
+        self.blur_sent = None;
+        ipc::VISIBLE.store(false, Ordering::Relaxed);
     }
 
     fn dismiss(&mut self) -> Task<Message> {
@@ -426,9 +451,7 @@ impl State {
         backend::send(&format!("forget {key}"));
         self.rows.remove(self.selected);
         self.selected = self.selected.min(self.rows.len().saturating_sub(1));
-        self.retarget_height(Instant::now());
-
-        Task::none()
+        self.retarget_height(Instant::now())
     }
 
     fn key(&mut self, key: Key) -> Task<Message> {
@@ -561,7 +584,7 @@ impl State {
 
         // a genuinely new payload starts from the top result
         self.selected = 0;
-        self.retarget_height(Instant::now());
+        let retarget = self.retarget_height(Instant::now());
 
         let unresolved: Vec<String> = self
             .rows
@@ -577,14 +600,16 @@ impl State {
 
         // a new payload scrolls back to the top, like the QML's
         // `positionViewAtIndex(0, Contain)`
-        self.scroll_to_selection()
+        Task::batch([retarget, self.scroll_to_selection()])
     }
 
-    fn retarget_height(&mut self, now: Instant) {
+    /// Returns a blur re-sync when the caller must push it itself: with reduced
+    /// motion no animation runs, so no `Frame` will arrive to sync it later.
+    fn retarget_height(&mut self, now: Instant) -> Task<Message> {
         let target = geometry::content_h(self.rows.len());
         if self.reduce_motion {
             self.card_h = resting_card(self.rows.len());
-            return;
+            return self.sync_blur();
         }
 
         if self.card_h.value() != target {
@@ -593,6 +618,8 @@ impl State {
             // hidden resident launcher must not wake the process at 60fps.
             self.animating |= self.shown.is_some();
         }
+
+        Task::none()
     }
 
     /// Frost tracks the card: the region is only re-sent when the rounded rect

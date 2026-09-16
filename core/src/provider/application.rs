@@ -398,15 +398,22 @@ fn parse_meta(content: &str) -> DesktopMeta {
 /// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
 /// so this is the only way to reach them.
 ///
-/// The first existing file wins even when it carries none of those keys (an
-/// override in `~/.local/share` therefore shadows a system-wide copy that had
-/// them) — the same precedence the launcher's XDG lookup uses, and the reason
-/// this shares [`system_fs::find_desktop_file`].
+/// Candidates are tried in precedence order and the first file that actually
+/// carries one of the keys wins: a hand-written override in `~/.local/share`
+/// that only sets `Name=`/`Exec=` must not hide the packaged copy's keywords.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
-    let content = fs::read_to_string(system_fs::find_desktop_file(id)?).ok()?;
-    let meta = parse_meta(&content);
-    (meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty())
-        .then_some(meta)
+    for candidate in system_fs::desktop_file_candidates(id) {
+        let Ok(content) = fs::read_to_string(&candidate) else {
+            continue;
+        };
+
+        let meta = parse_meta(&content);
+        if meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
+            return Some(meta);
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

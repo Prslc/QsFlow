@@ -47,10 +47,7 @@ pub fn view(state: &State, _window: WindowId) -> Element<'_, Message> {
 
 fn card(state: &State, surface: Size) -> Element<'_, Message> {
     let theme = &state.theme;
-    let fill = solid(
-        theme.container,
-        geometry::CARD_ALPHA * state.entrance_alpha(),
-    );
+    let fill = state.fade(theme.container, geometry::CARD_ALPHA);
 
     let mut content = Column::new().spacing(geometry::GAP).push(search_row(state));
 
@@ -72,7 +69,7 @@ fn card(state: &State, surface: Size) -> Element<'_, Message> {
             background: Some(Background::Color(fill)),
             border: Border {
                 // a hairline that masks the rounded-rect AA rim
-                color: Color::from_rgba(1.0, 1.0, 1.0, 0.35),
+                color: state.fade(Color::WHITE, 0.35),
                 width: 1.0,
                 radius: geometry::RADIUS.into(),
             },
@@ -85,7 +82,7 @@ fn search_row(state: &State) -> Element<'_, Message> {
     let theme = &state.theme;
     let accent = theme.primary;
     let fg = theme.fg;
-    let dim = solid(fg, 0.55);
+    let dim = state.fade(fg, 0.55);
 
     let magnifier = canvas(Magnifier { color: dim }).width(22.0).height(22.0);
 
@@ -108,8 +105,8 @@ fn search_row(state: &State) -> Element<'_, Message> {
             border: Border::default(),
             icon: dim,
             placeholder: dim,
-            value: fg,
-            selection: solid(accent, 0.35),
+            value: state.fade(fg, 1.0),
+            selection: state.fade(accent, 0.35),
         });
 
     let mut toolbar = Row::new().spacing(6).align_y(Alignment::Center);
@@ -122,7 +119,7 @@ fn search_row(state: &State) -> Element<'_, Message> {
                         weight: Weight::Bold,
                         ..Font::DEFAULT
                     })
-                    .color(accent),
+                    .color(state.fade(accent, 1.0)),
             )
             .height(24)
             .center_y(24)
@@ -133,7 +130,7 @@ fn search_row(state: &State) -> Element<'_, Message> {
                 left: 8.0,
             })
             .style(move |_theme| container::Style {
-                background: Some(Background::Color(solid(accent, 0.16))),
+                background: Some(Background::Color(state.fade(accent, 0.16))),
                 border: Border {
                     radius: 6.0.into(),
                     ..Border::default()
@@ -163,7 +160,7 @@ fn search_row(state: &State) -> Element<'_, Message> {
             left: 14.0,
         })
         .style(move |_theme| container::Style {
-            background: Some(Background::Color(solid(fg, 0.08))),
+            background: Some(Background::Color(state.fade(fg, 0.08))),
             border: Border {
                 radius: 9.0.into(),
                 ..Border::default()
@@ -178,7 +175,7 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
     // A soft disc rather than a 1px outline: a thin ring around a 26px circle
     // reads as a scratchy hairline, while the tinted disc gives the ✕ the same
     // "this is a button" affordance quietly (and deepens on hover).
-    let background = solid(state.theme.fg, if hovered { 0.18 } else { 0.10 });
+    let background = state.fade(state.theme.fg, if hovered { 0.18 } else { 0.10 });
 
     mouse_area(
         container(text("✕").size(12).color(dim))
@@ -236,8 +233,8 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
     let selected = index == state.selected;
     let hovered = state.hovered == Some(Hover::Row(index));
     let background = match (selected, hovered) {
-        (true, _) => solid(accent, 0.15),
-        (false, true) => solid(accent, 0.08),
+        (true, _) => state.fade(accent, 0.15),
+        (false, true) => state.fade(accent, 0.08),
         (false, false) => Color::TRANSPARENT,
     };
 
@@ -247,7 +244,7 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
         .width(3.0)
         .height(28.0)
         .style(move |_theme| container::Style {
-            background: selected.then(|| Background::Color(accent)),
+            background: selected.then(|| Background::Color(state.fade(accent, 1.0))),
             border: Border {
                 radius: 1.5.into(),
                 ..Border::default()
@@ -264,7 +261,7 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
                     ..Font::DEFAULT
                 })
                 .wrapping(Wrapping::None)
-                .color(theme.fg),
+                .color(state.fade(theme.fg, 1.0)),
         );
 
         if let Some(summary) = row.summary.as_deref() {
@@ -272,7 +269,7 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
                 text(summary)
                     .size(SUMMARY_SIZE)
                     .wrapping(Wrapping::None)
-                    .color(solid(theme.fg, 0.7)),
+                    .color(state.fade(theme.fg, 0.7)),
             );
         }
 
@@ -287,14 +284,14 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
         .align_y(Alignment::Center)
         .push(bar)
         .push(Space::new().width(5.0))
-        .push(icon(row.icon_path.as_deref()))
+        .push(icon(row.icon_path.as_deref(), state.entrance_alpha()))
         .push(Space::new().width(12.0))
         .push(container(labels).width(Length::Fill).clip(true));
 
     if selected {
         content = content
             .push(Space::new().width(12.0))
-            .push(text("↵").size(13).color(solid(accent, 0.55)));
+            .push(text("↵").size(13).color(state.fade(accent, 0.55)));
     }
 
     mouse_area(
@@ -324,7 +321,7 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
 }
 
 /// Absolute paths render directly (the core resolves every other spec).
-fn icon(path: Option<&str>) -> Element<'_, Message> {
+fn icon(path: Option<&str>, fade: f32) -> Element<'_, Message> {
     const SIZE: f32 = 30.0;
 
     let Some(path) = path else {
@@ -336,12 +333,14 @@ fn icon(path: Option<&str>) -> Element<'_, Message> {
             .width(SIZE)
             .height(SIZE)
             .content_fit(ContentFit::Contain)
+            .opacity(fade)
             .into()
     } else {
         image(image::Handle::from_path(path))
             .width(SIZE)
             .height(SIZE)
             .content_fit(ContentFit::Contain)
+            .opacity(fade)
             .into()
     }
 }
@@ -367,13 +366,13 @@ fn footer(state: &State) -> Element<'_, Message> {
         .push(
             text(hints)
                 .size(SUGGESTION_SIZE)
-                .color(solid(theme.fg, 0.5)),
+                .color(state.fade(theme.fg, 0.5)),
         )
         .push(Space::new().width(Length::Fill))
         .push(
             text(count)
                 .size(SUGGESTION_SIZE)
-                .color(solid(theme.fg, 0.45)),
+                .color(state.fade(theme.fg, 0.45)),
         )
         .into()
 }
