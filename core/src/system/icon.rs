@@ -1,3 +1,4 @@
+//! Icon spec resolution to the absolute path the UI renders.
 
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -18,15 +19,14 @@ const PAPIRUS_CATEGORIES: &[&str] = &[
     "places",
     "status",
 ];
-/// Preferred size order — the UI renders rows at 22–30px, so 48x48 gives crisp
-/// downscale headroom without wasting load time on the 128px+ variants.
+/// Preferred size order: rows render at 22–30px, so 48x48 is crisp without the
+/// load cost of the 128px+ variants.
 const PAPIRUS_SIZES: &[&str] = &[
     "48x48", "32x32", "64x64", "128x128", "96x96", "84x84", "42x42", "24x24", "22x22", "18x18",
     "16x16", "8x8",
 ];
 
-/// Generic theme search space, shared by the /usr/share/icons scan and the
-/// flatpak-export hicolor scan below.
+/// Generic theme search space, shared by the icon-root and flatpak scans.
 const THEME_CATEGORIES: &[&str] = &["places", "apps", "mimetypes", "devices", "panel", "actions"];
 const ICON_SIZES: &[&str] = &[
     "scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16",
@@ -45,8 +45,7 @@ fn parse_papirus_spec(spec: &str) -> (Option<&str>, &str) {
 fn find_papirus(spec: &str) -> Option<String> {
     let (hint, name) = parse_papirus_spec(spec);
 
-    // category hint first when it names a real Papirus category, then the rest
-    // (some names live under multiple categories)
+    // a real category hint first (some names live under several categories)
     let mut categories: Vec<&str> = Vec::with_capacity(PAPIRUS_CATEGORIES.len() + 1);
     if let Some(h) = hint.filter(|h| PAPIRUS_CATEGORIES.contains(h)) {
         categories.push(h);
@@ -112,10 +111,8 @@ fn do_find(name: &str) -> Option<String> {
     if name.starts_with('/') {
         return Some(name.to_string());
     }
-    // `papirus:<name>` — explicit Papirus theme reference for external hosts;
-    // `papirus:<category>/<name>` scopes the lookup to one category first.
-    // The UI only renders absolute paths, so resolve here rather than passing
-    // the scheme through to the wire.
+    // papirus:<name> / papirus:<category>/<name>: the UI renders absolute paths,
+    // so resolve here rather than passing the scheme through to the wire
     if let Some(spec) = name.strip_prefix("papirus:") {
         return find_papirus(spec).or_else(fallback);
     }
@@ -156,8 +153,8 @@ fn do_find(name: &str) -> Option<String> {
 }
 
 /// theme × category × size × ext under one icon root, first existing file wins.
-/// The directory level is memoized: nearly every `theme/size/category`
-/// combination is absent, so a miss would otherwise stat hundreds of paths.
+/// The directory level is memoized: nearly every combination is absent, so a
+/// miss would otherwise stat hundreds of paths.
 fn search_theme_tree(root: &str, themes: &[&str], name: &str) -> Option<String> {
     for theme in themes {
         for category in THEME_CATEGORIES {
@@ -215,9 +212,7 @@ mod tests {
     }
     #[test]
     fn absolute_path_passes_through_unchanged() {
-        // regression: do_find used to drop the leading-`/` early return,
-        // so resolved paths re-entered the theme search and fell back to
-        // the default placeholder
+        // an already-resolved path must not re-enter the theme search
         let p = "/usr/share/icons/Papirus/48x48/apps/github.svg";
         assert_eq!(find_icon_path(p), Some(p.to_string()));
     }

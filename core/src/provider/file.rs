@@ -1,3 +1,4 @@
+//! File and path search over the home directory (`f` / `d`).
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;

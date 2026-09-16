@@ -63,9 +63,8 @@ fn card(state: &State, surface: Size) -> Element<'_, Message> {
     container(content)
         .width(Length::Fixed(geometry::card_w(surface)))
         .height(Length::Fixed(state.card_height()))
-        // During the 150ms reflow the column is already at its final height while
-        // the card animates towards it, so a growing payload would paint the last
-        // rows below the card's edge. The QML clipped the card for this reason.
+        // the column is already at its final height during the 150ms reflow, so
+        // a growing payload would paint rows below the card's edge
         .clip(true)
         .padding(geometry::PAD)
         .style(move |_theme| container::Style {
@@ -95,10 +94,8 @@ fn search_row(state: &State) -> Element<'_, Message> {
         .on_submit(Message::Submit)
         .padding(8)
         .size(18)
-        // Medium (not Bold): the typed query gains a little emphasis over the
-        // hint without the full weight, which read as too heavy at 18px — and
-        // iced shares one font between the value and the placeholder, so Bold
-        // put the dimmed hint in a bold face as well.
+        // Medium, not Bold: iced shares one font between the value and the
+        // placeholder, so Bold would also bold the dimmed hint.
         .font(Font {
             weight: Weight::Medium,
             ..Font::DEFAULT
@@ -175,17 +172,14 @@ fn search_row(state: &State) -> Element<'_, Message> {
 
 fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
     let hovered = state.hovered == Some(Hover::Clear);
-    // A soft disc rather than a 1px outline: a thin ring around a 26px circle
-    // reads as a scratchy hairline, while the tinted disc gives the ✕ the same
-    // "this is a button" affordance quietly (and deepens on hover).
+    // a soft disc reads better than a 1px ring on a 26px circle, and deepens
+    // on hover
     let background = state.fade(state.theme.fg, if hovered { 0.18 } else { 0.10 });
 
     mouse_area(
         container(text("✕").size(12).color(dim))
-            // The glyph's ink sits 1.5px above and 0.5px left of its line box, so
-            // centring the box leaves the ✕ visibly high inside the disc (invisible
-            // while the button had no fill). A 3px top / 1px left padding shifts the
-            // centred box back by half of each, putting the ink on the disc's centre.
+            // the ✕'s ink sits 1.5px above and 0.5px left of its line box; this
+            // padding shifts the centred box back by half of each
             .padding(Padding {
                 top: 3.0,
                 right: 0.0,
@@ -212,9 +206,8 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
 }
 
 fn list(state: &State) -> Element<'_, Message> {
-    // Only the visible window is built: `State::first` is the whole scroll
-    // state, so a page change is a repaint rather than an operation the runtime
-    // applies one dispatch later (which also never requested a redraw).
+    // only the visible window is built: `State::first` is the whole scroll
+    // state, so a page change is a repaint and nothing else
     let rows = Column::new().width(Length::Fill).extend(
         state
             .rows
@@ -279,9 +272,8 @@ fn row_view<'a>(state: &'a State, index: usize, row: &'a crate::app::Row) -> Ele
         labels
     };
 
-    // Explicit gaps, not one uniform spacing: the QML puts the icon 11px from
-    // the row's left edge (bar 3 + gap 5) and the labels 12px after the 30px
-    // icon.
+    // explicit gaps from the QML: icon 11px from the left edge (bar 3 + gap 5),
+    // labels 12px after the 30px icon
     let mut content = Row::new()
         .spacing(0)
         .align_y(Alignment::Center)
@@ -380,9 +372,8 @@ fn footer(state: &State) -> Element<'_, Message> {
         .into()
 }
 
-/// The active keyword prefix (`b`, `h`, `f`, …): `^([a-zA-Z]{1,3})\s`.
-///
-/// Pure frontend derivation — the core has no prefix table.
+/// The active keyword prefix (`b`, `h`, `f`, …): `^([a-zA-Z]{1,3})\s` — a pure
+/// frontend derivation, the core has no prefix table.
 fn keyword_prefix(query: &str) -> Option<&str> {
     let end = query
         .as_bytes()

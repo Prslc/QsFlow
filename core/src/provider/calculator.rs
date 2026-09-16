@@ -1,3 +1,4 @@
+//! Inline calculator: fasteval with a meval-style function and constant namespace.
 use std::future::Future;
 use std::pin::Pin;
 

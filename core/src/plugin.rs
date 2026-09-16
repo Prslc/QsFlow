@@ -1,3 +1,4 @@
+//! The plugin registry: config load/merge, the built-in map, dispatch and reload.
 use rustc_hash::FxHashMap as HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -21,10 +22,8 @@ struct PluginEntry {
     keyword: String,
     #[serde(default = "default_enable")]
     enable: bool,
-    /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
-    /// is NOT compiled into the core: it is spawned on demand, `search`
-    /// requests are relayed verbatim, and its identity (name/icon/ready) is
-    /// discovered from the host's `list_plugins` response.
+    /// External JSON-RPC host binary (PATH-resolved). When set the plugin is not
+    /// compiled into the core: it is spawned on demand and `search` is relayed.
     #[serde(default)]
     command: Option<String>,
 }
@@ -49,10 +48,8 @@ pub trait Plugin: Send + Sync {
         query: &str,
         full: &str,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<ResultItem>>> + Send + '_>>;
-    /// Default view shown when the plugin is opened with its keyword and an
-    /// empty query. `Ok(None)` (or an empty list) keeps the identity card;
-    /// built-ins keep the default, external hosts override it with the
-    /// host's `top` method.
+    /// View for `keyword` + empty query. `Ok(None)` (or an empty list) keeps the
+    /// identity card; external hosts override it with their `top` method.
     #[allow(clippy::type_complexity)] // same hand-rolled future type as `search`
     fn default_view(
         &self,
@@ -60,10 +57,8 @@ pub trait Plugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
-    /// Drop a result row's data (best effort, invoked by `forget`). Usage
-    /// history is handled by the caller; external hosts that own the row —
-    /// its `on_click` is a `run:` command invoking their `command` — relay a
-    /// core → host `forget` so they can delete their own data. Default: no-op.
+    /// Drop a row's data (best effort, called by `forget`). Only external hosts
+    /// that own the row act on it; usage history is the caller's business.
     fn forget(
         &self,
         _on_click: &str,
@@ -97,9 +92,8 @@ async fn ensure_loaded() {
     }
 }
 
-/// Re-read `plugins.toml` and rebuild the registry. Called by the file watcher
-/// so resident mode picks up config edits without a core restart; the change
-/// is visible on the next search / `?` / `list_plugins`.
+/// Re-read `plugins.toml` and rebuild the registry (the file watcher calls this
+/// so a resident core picks up edits); visible on the next search.
 pub async fn reload() {
     let _guard = INIT.lock().await;
     do_reload().await;
@@ -203,11 +197,9 @@ fn load_or_default() -> Config {
     config
 }
 
-/// Overlay a user config onto the shipped default. Known ids are updated
-/// (keyword/enable, plus `command` when the user sets one); unknown ids are
-/// appended so external plugins can be declared purely from the user config
-/// without touching the core. Unknown ids without a host are still skipped at
-/// registry build.
+/// Overlay a user config onto the shipped default: known ids are updated
+/// (keyword/enable, plus `command` when the user sets one), unknown ids are
+/// appended. Unknown ids without a host are skipped at registry build.
 fn merge_config(mut base: Config, user: Config) -> Config {
     for up in user.plugins {
         match base.plugins.iter_mut().find(|p| p.id == up.id) {
@@ -284,8 +276,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
         .collect()
 }
 
-/// The compiled-in plugin identities, built once: `list_plugins` used to
-/// rebuild (and box) the whole plugin map on every call.
+/// The compiled-in plugin identities, built once per process.
 fn builtins() -> &'static [(&'static str, &'static Meta)] {
     static BUILTINS: std::sync::OnceLock<Vec<(&'static str, &'static Meta)>> =
         std::sync::OnceLock::new();
@@ -314,9 +305,8 @@ fn builtin_meta(id: &str) -> Option<&'static Meta> {
         .map(|(_, meta)| *meta)
 }
 
-/// Drop a result row's data across the registry (best effort). Called by the
-/// `forget` paths after usage history is removed; only external hosts that
-/// own the `on_click` act on it (see `Plugin::forget`).
+/// Offer a removed row to every plugin (best effort, after usage history is
+/// gone); only external hosts that own the `on_click` act on it.
 pub async fn forget_row(on_click: &str) {
     ensure_loaded().await;
     let reg = REGISTRY.read().await;
@@ -358,9 +348,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         && query.is_empty()
         && let Some(entry) = reg.iter().find(|entry| entry.keyword == keyword)
     {
-        // Keyword-only input opens the plugin: an external host may serve a
-        // default view (`top`); fall back to the identity card when it has
-        // none or returns nothing.
+        // keyword-only input opens the plugin: host `top` view, else the card
         if let Ok(Some(items)) = entry.plugin.default_view().await
             && !items.is_empty()
         {

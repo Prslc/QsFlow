@@ -1,7 +1,6 @@
 //! The core's wire types: one search result and the theme payload.
 
-/// One row of a `{"type":"results","data":[…]}` payload. Absent keys are
-/// normal (the core omits `summary`/`on_click`/`icon` for rows that lack them).
+/// One row of a `{"type":"results","data":[…]}` payload; absent keys are normal.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 pub struct ResultItem {
     pub title: String,
@@ -13,10 +12,8 @@ pub struct ResultItem {
     pub icon: Option<String>,
 }
 
-/// The `{"type":"theme","data":{…}}` payload. The core also sends `bg` and
-/// `on_primary`; the shell renders neither, so they are not modelled. Every
-/// field is optional, so a partial payload degrades field-by-field instead of
-/// dropping the whole message.
+/// The `{"type":"theme","data":{…}}` payload. `bg`/`on_primary` are not modelled
+/// (unused); every field is optional, so a partial payload still applies.
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct ThemeConfig {
     #[serde(default)]

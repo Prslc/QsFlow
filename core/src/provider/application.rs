@@ -1,3 +1,4 @@
+//! App search over the installed `.desktop` entries, with DMS-style tiered scoring.
 use std::fs;
 use std::pin::Pin;
 use std::sync::LazyLock;
@@ -10,9 +11,8 @@ use crate::plugin::{Meta, Plugin};
 use crate::system::fs as system_fs;
 use crate::system::icon::find_icon_path;
 
-// Tiered weights, ported from DMS's launcher scorer: a strong textual tier
-// wins outright; fuzzy matching is a weak last resort for 3+ char queries
-// only, so short queries must hit a strong tier or miss entirely.
+// Tiered weights, ported from DMS's launcher scorer: a strong textual tier wins
+// outright, and fuzzy matching is only a last resort for 3+ char queries.
 const W_EXACT: u32 = 10_000;
 const W_PREFIX: u32 = 5_000;
 const W_WORD_BOUNDARY: u32 = 3_000;
@@ -25,9 +25,8 @@ const W_ACTION_EXACT: u32 = 8_000;
 const W_ACTION_PREFIX: u32 = 4_000;
 const W_ACTION_SUBSTRING: u32 = 400;
 
-/// `GenericName` + `Keywords` from the app's `.desktop` file (plain, unlocalised
-/// keys only — gio does not expose them). Lowercased and tokenized once at
-/// cache-build time: a search visits every app.
+/// `GenericName` + `Keywords` from the app's `.desktop` file (plain keys only —
+/// gio does not expose them), lowercased and tokenized once at cache build.
 #[derive(Clone)]
 struct DesktopMeta {
     generic_lower: Option<String>,
@@ -51,8 +50,8 @@ struct DesktopAction {
 }
 
 /// One installed application, precomputed at first search and reused for the
-/// process lifetime (same freshness tradeoff as runner's `path_binaries`). Every
-/// lowercase form, tokenization and the `.desktop`-stripped id is precomputed.
+/// process lifetime. Every lowercase form, tokenization and the
+/// `.desktop`-stripped id is precomputed.
 struct CachedApp {
     id: String,
     icon_spec: Option<String>,
@@ -76,8 +75,8 @@ fn resolve_icon_spec(spec: &str) -> Option<String> {
     }
 }
 
-/// Resolve the icons of the rows that survived ranking: a first-time spec costs
-/// a filesystem scan, which a truncated row should not pay for.
+/// Resolve icons for the rows that survived ranking: a first-time spec costs a
+/// filesystem scan, which a truncated row should not pay for.
 fn resolve_icons(items: Vec<ResultItem>) -> Vec<ResultItem> {
     items
         .into_iter()
@@ -106,10 +105,7 @@ static APPS: LazyLock<Vec<CachedApp>> = LazyLock::new(|| {
             let comment_lower = comment.as_ref().map(|c| c.to_lowercase());
             Some(CachedApp {
                 title_words: tokenize(&title_lower),
-                comment_words: comment_lower
-                    .as_deref()
-                    .map(tokenize)
-                    .unwrap_or_default(),
+                comment_words: comment_lower.as_deref().map(tokenize).unwrap_or_default(),
                 id_lower: id.to_lowercase().trim_end_matches(".desktop").to_string(),
                 meta: desktop_meta(&id),
                 title_lower,
@@ -192,7 +188,9 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    Ok(resolve_icons(crate::provider::rank_results(results, true, 50)))
+    Ok(resolve_icons(crate::provider::rank_results(
+        results, true, 50,
+    )))
 }
 
 fn tokenize(s: &str) -> Vec<String> {
@@ -215,11 +213,9 @@ fn action_score(name_lower: &str, query_lower: &str) -> u32 {
     }
 }
 
-/// Score one match surface. Fields are tried in order with decaying
-/// weights: exact name, prefix, word-boundary (each query word prefixes a
-/// consecutive name word), plain substring, then edit-distance fuzziness.
-/// `field_lower`/`field_words` and the query must already be lowercased, and
-/// `field_words` must be `tokenize(field_lower)` — precomputed once per app.
+/// Tiers in order: exact, prefix, word-boundary (each query word prefixes a
+/// consecutive field word), substring, then edit-distance. Inputs and the query
+/// must already be lowercased; `field_words` must be `tokenize(field_lower)`.
 fn field_score(
     field_lower: &str,
     field_words: &[String],
@@ -247,8 +243,7 @@ fn field_score(
         return W_SUBSTRING;
     }
 
-    // fuzzy only for queries of 3+ chars; short queries must match a strong
-    // tier or they are simply not a hit
+    // a last resort, and never for short queries
     if query_chars.len() >= 3 {
         let fs = fuzzy_score(field_lower, field_words, query_chars);
         if fs > 0.0 {
@@ -313,10 +308,9 @@ fn levenshtein(a: &[char], b: &[char]) -> usize {
     prev[b.len()]
 }
 
-/// Full app relevance. Name at full weight, comment at 0.5x, each keyword at
-/// 0.3x, GenericName prefix/contains, then the desktop id (`.desktop`
-/// stripped) — first non-zero tier wins. All string inputs must already be
-/// lowercased.
+/// Full app relevance: name at full weight, comment at 0.5x, each keyword at
+/// 0.3x, GenericName, then the `.desktop`-stripped id — first non-zero tier
+/// wins.
 fn score_app(
     app: &CachedApp,
     query_lower: &str,
@@ -379,8 +373,8 @@ fn score_app(
     score
 }
 
-/// Read `[Desktop Entry]` keys and `[Desktop Action <id>]` groups. Plain
-/// (unlocalised) keys only — the `[xx]` variants follow later and would win.
+/// Read `[Desktop Entry]` keys and `[Desktop Action <id>]` groups. Plain keys
+/// only: the `[xx]` variants follow later in the file and would win.
 fn parse_meta(content: &str) -> DesktopMeta {
     let mut generic: Option<String> = None;
     let mut keywords: Vec<Keyword> = Vec::new();
@@ -446,13 +440,11 @@ fn parse_meta(content: &str) -> DesktopMeta {
     }
 }
 
-/// Locate the `.desktop` file by id through the XDG data dirs and read the
-/// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
-/// so this is the only way to reach them.
-///
-/// Candidates are tried in precedence order and the first file that actually
-/// carries one of the keys wins: a hand-written override in `~/.local/share`
-/// that only sets `Name=`/`Exec=` must not hide the packaged copy's keywords.
+/// Read `GenericName`/`Keywords` from the app's `.desktop` file: gio-rs binds no
+/// GDesktopAppInfo, so the file is parsed here. Candidates are tried in
+/// precedence order and the first one that actually carries a key wins — a
+/// hand-written override that only sets `Name=`/`Exec=` must not hide the
+/// packaged copy's keywords.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     for candidate in system_fs::desktop_file_candidates(id) {
         let Ok(content) = fs::read_to_string(&candidate) else {

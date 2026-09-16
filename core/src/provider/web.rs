@@ -1,3 +1,4 @@
+//! Google search suggestions (`s`).
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::LazyLock;
@@ -82,17 +83,20 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         // same engine icon and summary as the header row — icon-less
         // or summary-less rows would otherwise render as the UI's bare
         // 48px text-only "simple" rows and look incoherent
-        results.extend(suggestions.iter().filter_map(|item| item.as_str()).map(
-            |phrase| ResultItem {
-                title: phrase.to_string(),
-                summary: Some("Search on Google".to_string()),
-                on_click: Some(url_with_query(
-                    "https://www.google.com/search",
-                    &[("q", phrase)],
-                )),
-                icon: Some(icon.clone()),
-            },
-        ));
+        results.extend(
+            suggestions
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(|phrase| ResultItem {
+                    title: phrase.to_string(),
+                    summary: Some("Search on Google".to_string()),
+                    on_click: Some(url_with_query(
+                        "https://www.google.com/search",
+                        &[("q", phrase)],
+                    )),
+                    icon: Some(icon.clone()),
+                }),
+        );
     }
 
     Ok(results)

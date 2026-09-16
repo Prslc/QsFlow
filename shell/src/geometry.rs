@@ -20,8 +20,8 @@ pub const CARD_ALPHA: f32 = 0.72;
 
 pub const ENTRANCE_MS: u64 = 240;
 pub const REFLOW_MS: u64 = 150;
-/// `exitTimer` in the QML: launch dismissals wait this long so the click has
-/// time to land before the surface goes away.
+/// The QML's `exitTimer`: launch dismissals wait this long before the surface
+/// goes away.
 pub const EXIT_DELAY_MS: u64 = 150;
 
 pub fn card_w(surface: Size) -> f32 {
@@ -32,8 +32,8 @@ pub fn card_x(surface: Size) -> f32 {
     ((surface.width - card_w(surface)) / 2.0).round()
 }
 
-/// Fixed card top in the upper half of the screen: results only extend the
-/// card downward, so the search bar never moves when the row count changes.
+/// Fixed card top: results only extend the card downward, so the search bar
+/// never moves when the row count changes.
 pub fn card_top(surface: Size) -> f32 {
     (surface.height * 0.28).round()
 }
@@ -48,9 +48,8 @@ pub fn list_h(rows: usize) -> f32 {
     (rows as f32 * ROW_H).min(MAX_ROWS as f32 * ROW_H)
 }
 
-/// The card's real height: `pad + search + gap + footer + pad`, plus a second
-/// gap and the list when there are rows. There is no separator element: with no
-/// rows the column holds `search + footer` and exactly one gap.
+/// `pad + search + gap + footer + pad`, plus a second gap and the list when
+/// there are rows (with no rows the column holds one gap, not two).
 pub fn content_h(rows: usize) -> f32 {
     let base = PAD + SEARCH_H + GAP + FOOTER_H + PAD;
     let height = if rows == 0 {
@@ -62,11 +61,9 @@ pub fn content_h(rows: usize) -> f32 {
 }
 
 /// The blur region covering the card's rounded rect, in surface-local
-/// coordinates. A single rect cannot carry a radius, so the corners are
-/// approximated by 2px scanline bands whose inset follows the circle:
-/// `inset(dy) = r - sqrt(r² - (r - dy)²)`. The band inset is taken at the top
-/// of each band, which keeps every rect inside the card (never a blurred sliver
-/// outside the rounded edge).
+/// coordinates. A rect cannot carry a radius, so the corners are 2px scanline
+/// bands inset by `r - sqrt(r² - (r - dy)²)`, taken at each band's top so no
+/// rect pokes outside the rounded edge.
 pub fn blur_rects(surface: Size, card_height: f32) -> Vec<BlurRegion> {
     // Floor to 4px so an in-flight reflow does not commit a region per frame.
     let height = ((card_height / 4.0).floor() * 4.0).max(4.0);

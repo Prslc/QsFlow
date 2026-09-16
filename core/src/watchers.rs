@@ -4,9 +4,8 @@
 use notify::Watcher;
 use tokio::sync::mpsc;
 
-/// Watch the parent dir (for atomic rename saves) AND the file itself (for
-/// in-place writes, which a directory watch never reports). Deleted/recreated
-/// files are still caught by the directory's create events.
+/// Watch the parent dir (atomic rename saves) AND the file itself: a directory
+/// watch never reports an in-place write.
 fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Path) {
     if let Some(dir) = path.parent() {
         let _ = watcher.watch(dir, notify::RecursiveMode::NonRecursive);
@@ -22,10 +21,8 @@ fn theme_css_path() -> Option<std::path::PathBuf> {
     Some(home.join(".config/gtk-4.0/dank-colors.css"))
 }
 
-/// Watch `dank-colors.css` so a GTK theme change is picked up live even while
-/// the core is resident (which otherwise reads the theme once at start). On a
-/// change it reloads the theme and re-emits a `{"type":"theme",...}` message to
-/// the UI over the same mpsc; the UI rebinds its colors and re-renders.
+/// Watch `dank-colors.css` so a resident core picks up a GTK theme change: on a
+/// change the theme is reloaded and re-emitted to the UI as `{"type":"theme"}`.
 pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatcher> {
     let path = theme_css_path()?;
     let tx_theme = tx.clone();
@@ -70,9 +67,8 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
     Some(watcher)
 }
 
-/// Watch `~/.config/qsflow/plugins.toml` and reload the plugin registry on
-/// change (resident mode would otherwise keep the config read at startup
-/// forever). Debounced: editors typically fire several events per save.
+/// Watch `~/.config/qsflow/plugins.toml` and reload the registry on change,
+/// debounced: editors fire several events per save.
 pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
     let path = crate::system::fs::get_home()
         .ok()?
@@ -83,9 +79,8 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
-        // Only content changes (write/create/rename): the reload below reads
-        // `plugins.toml` itself, and that access event would re-trigger this
-        // watcher forever. Same guard as the theme watcher.
+        // only content changes: the reload below reads `plugins.toml`, and that
+        // access event would re-trigger this watcher forever
         if matches!(ev.kind, notify::EventKind::Access(_)) {
             return;
         }

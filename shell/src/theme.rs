@@ -37,9 +37,8 @@ impl Theme {
 
 fn parse(spec: &Option<String>) -> Option<Color> {
     let hex = spec.as_deref()?.trim();
-    // iced's `Color::FromStr` slices the value by byte index, so a multi-byte
-    // character panics inside the parse (which `.ok()` cannot catch). The value
-    // is arbitrary user data from dank-colors.css.
+    // iced's `Color::FromStr` slices by byte index, so a multi-byte value panics
+    // inside the parse — `.ok()` cannot catch that (the value is user data).
     if !hex.is_ascii() {
         return None;
     }
@@ -64,8 +63,7 @@ mod tests {
         assert_eq!(theme.container, Theme::default().container);
     }
 
-    /// `Color`'s `FromStr` slices the input by byte index, so a multi-byte value
-    /// panics inside the parse — `.ok()` cannot catch that.
+    /// Non-ASCII must not reach the byte-slicing `FromStr`.
     #[test]
     fn non_ascii_values_do_not_panic() {
         assert!(parse(&Some("主色".into())).is_none());

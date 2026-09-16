@@ -1,3 +1,4 @@
+//! Usage history in `~/.local/share/qsflow/usage.db` (sqlite).
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::collections::BTreeMap;
@@ -27,9 +28,8 @@ fn open_conn() -> Result<Connection> {
     Ok(conn)
 }
 
-/// One connection for the process lifetime — every keystroke of an empty
-/// query calls `get_top`, and re-opening the database file each time was
-/// pure overhead.
+/// One connection for the process lifetime: every keystroke of an empty query
+/// calls `get_top`.
 static DB: LazyLock<Mutex<Connection>> =
     LazyLock::new(|| Mutex::new(open_conn().expect("failed to open qsflow usage database")));
 
@@ -133,10 +133,8 @@ fn init_schema(conn: &Connection) {
     .ok();
 }
 
-/// Clipboard-write rows (`copy:`) are one-shot — the value is the copied
-/// text, not a re-launchable target — so they never enter usage history.
-/// The scheme declares the semantics, so this holds for every source with no
-/// per-plugin knowledge or host cooperation.
+/// `copy:` rows are one-shot (the payload is the text, not a target), so they
+/// never enter history — for every source, with no per-plugin knowledge.
 fn is_ephemeral(on_click: &str) -> bool {
     on_click.starts_with("copy:")
 }
@@ -170,9 +168,8 @@ fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     Ok(())
 }
 
-/// Drop one history entry. Callers pass the row's `on_click`; resolve it to
-/// the title-keyed entry first so a merged row (same title, several actions)
-/// is removed whole instead of leaving its siblings behind as ghosts.
+/// Drop one history entry. The row's `on_click` is resolved to the title-keyed
+/// entry first, so a merged row (same title, several actions) goes whole.
 fn forget_with(conn: &Connection, on_click: &str) -> Result<()> {
     let title: Option<String> = conn
         .query_row(
@@ -189,8 +186,7 @@ fn forget_with(conn: &Connection, on_click: &str) -> Result<()> {
     Ok(())
 }
 
-/// Drop `copy:` rows recorded before the `is_ephemeral` guard existed. Runs at
-/// core startup so older usage databases heal on upgrade; idempotent.
+/// Drop legacy `copy:` rows at startup so older databases heal; idempotent.
 pub fn purge_ephemeral() -> Result<()> {
     with_db(purge_with)
 }

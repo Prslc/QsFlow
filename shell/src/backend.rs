@@ -1,8 +1,5 @@
 //! The `qsflow-core` child process: one long-lived line-protocol connection.
-//!
-//! The core owns search/usage/launch; this module owns the pipe. Both channels
-//! live in `LazyLock`s and each receiving end is taken exactly once, so a
-//! subscription rebuild can never start a second core.
+//! Both channels are `LazyLock`s whose receiving end is taken exactly once.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -51,9 +48,8 @@ static INBOX: LazyLock<Mailbox<BackendEvent>> = LazyLock::new(|| {
 static ICON_REQUESTS: LazyLock<Mutex<HashMap<u64, String>>> = LazyLock::new(Default::default);
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
-/// The core's stdout as a stream. Called once per process by the subscription
-/// recipe; a later call finds the receiver taken and yields nothing rather than
-/// spawning a second core.
+/// The core's stdout as a stream. Called once per process: a later call finds
+/// the receiver taken and yields nothing rather than spawning a second core.
 pub fn stream() -> impl Stream<Item = BackendEvent> {
     match take(&INBOX.1) {
         Some(receiver) => {
@@ -70,9 +66,8 @@ pub fn send(line: &str) {
     let _ = OUTBOX.0.unbounded_send(line.to_string());
 }
 
-/// Ask the core to resolve an icon spec (theme name, `papirus:<name>`, …) to an
-/// absolute path; the reply arrives as [`BackendEvent::Icon`]. The returned id
-/// is only the correlation handle for that reply.
+/// Ask the core to resolve an icon spec to an absolute path; the reply arrives
+/// as [`BackendEvent::Icon`]. The returned id only correlates that reply.
 pub fn resolve_icon(spec: &str) -> u64 {
     let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     ICON_REQUESTS
@@ -97,9 +92,8 @@ fn take<T>(slot: &Mutex<Option<T>>) -> Option<T> {
     slot.lock().unwrap_or_else(PoisonError::into_inner).take()
 }
 
-/// Spawn the core and wire the reader/writer threads. One writer thread owns
-/// stdin, so no two producers can interleave half a line; the reader thread
-/// reaps the child when stdout closes.
+/// Spawn the core and wire the reader/writer threads: one writer owns stdin (no
+/// interleaved lines), the reader reaps the child when stdout closes.
 fn start() {
     let spawned = Command::new("qsflow-core")
         .stdin(Stdio::piped())
@@ -141,12 +135,10 @@ fn start() {
         });
     }
 
-    // The core builds its per-process application cache on the first app search
-    // (~540ms; every later search is 0-1ms), so spend that here instead of on the
-    // first keystroke — in resident mode the daemon boots long before the
-    // launcher is shown. A real search supersedes this one and only its *await*
-    // is aborted: the cache build runs on a blocking task and completes either
-    // way. The warmup's own payload is dropped if a search follows it.
+    // Warm the core's caches (app list + external host discovery) here rather
+    // than on the first keystroke: in resident mode the daemon boots long before
+    // the launcher is shown. A real search supersedes this one and its payload
+    // is dropped, but the blocking work completes either way.
     send("a");
 }
 
@@ -200,8 +192,7 @@ fn parse_object(line: &str) -> Option<BackendEvent> {
         });
     }
 
-    // not a theme/results payload: either a watcher row the shell never
-    // renders, or a JSON-RPC icon reply
+    // not a theme/results payload: a watcher row, or a JSON-RPC icon reply
     let reply: RpcReply = serde_json::from_str(line).ok()?;
     if reply.jsonrpc.as_deref() != Some("2.0") {
         return None;

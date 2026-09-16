@@ -1,0 +1,2 @@
+# Applies to both crates (rustfmt walks up from each source file).
+edition = "2024"

@@ -1,3 +1,4 @@
+//! The line protocol on stdin/stdout: text verbs, JSON-RPC, and the stdout writer.
 use std::io::Write as _;
 use std::time::Duration;
 
@@ -57,11 +58,9 @@ pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value)
 const DRAIN: &str = "\u{0}";
 
 /// Own stdout for the process lifetime: one writer thread, so no two producers
-/// can interleave half a line.
-///
-/// Deliberately a plain thread: `tokio::io::stdout()`'s `poll_flush` panics with
-/// "JoinHandle polled after completion" under a burst of output (tokio 1.53.1),
-/// and a dead writer silently mutes the core.
+/// can interleave half a line. Deliberately not an async task —
+/// `tokio::io::stdout()`'s `poll_flush` panics under a burst of output
+/// (tokio 1.53.1), and a dead writer silently mutes the core.
 fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::sync::mpsc::Receiver<()> {
     let (ack_tx, ack_rx) = std::sync::mpsc::channel();
 
@@ -75,9 +74,7 @@ fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::sync::mpsc::Receiver<()>
                 let _ = ack_tx.send(());
                 continue;
             }
-            if out.write_all(json.as_bytes()).is_err()
-                || out.write_all(b"\n").is_err()
-            {
+            if out.write_all(json.as_bytes()).is_err() || out.write_all(b"\n").is_err() {
                 break;
             }
             let _ = out.flush();
@@ -109,15 +106,13 @@ pub async fn serve() -> Result<()> {
     )
     .await;
 
-    // Keep the watchers alive for the core's lifetime: resident mode re-emits
-    // the theme / reloads the registry on file change instead of holding the
-    // startup read forever.
+    // held for the core's lifetime: they re-emit the theme and reload the
+    // registry on change instead of freezing the startup read.
     let _theme_watcher = watchers::watch_theme(&tx);
 
     let _plugins_watcher = watchers::watch_plugins();
 
-    // Purge copy:-keyed rows recorded before the exclusion rule (idempotent;
-    // the guard in usage::record keeps new ones out).
+    // purge legacy copy: rows (idempotent; usage::record keeps new ones out)
     let _ = system::usage::purge_ephemeral();
 
     let mut reader = BufReader::new(io::stdin()).lines();
@@ -172,8 +167,7 @@ async fn emit_history(tx: &mpsc::Sender<String>) {
 }
 
 /// Keystrokes coalesce: one dispatch per quiet window. Aborting the previous
-/// task is not a debounce — it stops the await, not a `spawn_blocking` provider
-/// or a host process.
+/// task is not a debounce — it stops the await, not a blocking provider.
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(60);
 
 /// Searches supersede each other: the pending one is aborted, so only the last

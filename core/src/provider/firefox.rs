@@ -1,3 +1,4 @@
+//! Firefox bookmarks and history, read from `places.sqlite`.
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -74,7 +75,9 @@ fn query_in_place(db_path: &Path, mode: Mode, query: &str) -> Result<Vec<ResultI
     let uri = format!("{}?immutable=1", gio::File::for_path(db_path).uri());
     let conn = Connection::open_with_flags(
         uri,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     run_query(&conn, mode, query)
 }

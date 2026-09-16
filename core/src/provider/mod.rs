@@ -1,3 +1,4 @@
+//! The search providers and the shared ranking tail every scored provider uses.
 pub mod application;
 pub mod calculator;
 pub mod clipboard;

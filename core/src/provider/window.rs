@@ -1,3 +1,4 @@
+//! Switching between open niri windows (`w`).
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};

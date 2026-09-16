@@ -1,3 +1,4 @@
+//! XDG paths: home, resource lookup and `.desktop` candidates.
 use anyhow::{Context, Result};
 use dirs;
 use std::env;
@@ -8,8 +9,7 @@ pub fn get_home() -> Result<PathBuf> {
 }
 
 /// Flatpak apps live in `<installation>/exports/share`, which only reaches
-/// `XDG_DATA_DIRS` from a login shell's profile script. Runs before GLib caches
-/// the dirs.
+/// `XDG_DATA_DIRS` from a login shell. Runs before GLib caches the dirs.
 pub fn ensure_flatpak_data_dirs() {
     let home = env::var("HOME").unwrap_or_default();
     let dirs =
@@ -28,13 +28,11 @@ pub fn ensure_flatpak_data_dirs() {
     }
 }
 
-/// Every `<dir>/applications/<id>` candidate on `XDG_DATA_DIRS` (already padded
-/// with the flatpak export dirs by [`ensure_flatpak_data_dirs`]) plus the user's
-/// `~/.local/share`, in precedence order.
+/// Every `<dir>/applications/<id>` candidate on `XDG_DATA_DIRS` (flatpak dirs
+/// already padded in) plus `~/.local/share`, in precedence order.
 ///
-/// A desktop id never contains a path separator, so one is rejected: the id can
-/// arrive from an external plugin host's `action:` row, and joining
-/// `../../etc/foo` would read (and run the `Exec=` of) an arbitrary file.
+/// An id containing `/` is rejected: it can arrive from an external host's
+/// `action:` row, and joining `../../etc/foo` would run an arbitrary `Exec=`.
 pub fn desktop_file_candidates(id: &str) -> Vec<PathBuf> {
     if id.contains('/') {
         return Vec::new();
@@ -57,10 +55,9 @@ pub fn desktop_file_candidates(id: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// The first of [`desktop_file_candidates`] that exists — what a launcher needs
-/// to run one entry. Readers that need a *key* from the file (the app-search
-/// metadata) iterate the candidates instead, so a shadowing copy without those
-/// keys does not hide the packaged one.
+/// The first existing [`desktop_file_candidates`] entry. Readers that need a
+/// *key* iterate the candidates instead, so a shadowing copy lacking the key
+/// does not hide the packaged one.
 pub fn find_desktop_file(id: &str) -> Option<PathBuf> {
     desktop_file_candidates(id)
         .into_iter()

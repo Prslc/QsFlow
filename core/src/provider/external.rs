@@ -1,3 +1,4 @@
+//! Plugins served by an external JSON-RPC host (a `plugins.toml` entry with `command`).
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -25,20 +26,16 @@ pub struct HostMeta {
     pub ready: String,
 }
 
-/// A plugin whose results come from an external JSON-RPC subprocess declared
-/// in `plugins.toml` via `command`. The core is a generic client: it spawns
-/// `command`, relays `search`, and discovers the plugin's identity from the
-/// host's `list_plugins` response. It has no compiled-in knowledge of the
-/// plugin — the same binary can serve any number of ids.
+/// A plugin served by an external JSON-RPC subprocess. The core is a generic
+/// client with no compiled-in knowledge of it, so one host binary can serve any
+/// number of ids.
 pub struct External {
     meta: Meta,
     command: String,
 }
 
-/// The registry is built once per process, so these small strings live exactly
-/// the process lifetime that `Meta`'s `&'static str` requires. Interning keeps
-/// that true across `plugins.toml` reloads: re-registering the same identity
-/// reuses the string instead of leaking a second copy.
+/// `Meta` holds `&'static str`; interning keeps a reload from leaking a second
+/// copy of an identity the registry already registered.
 fn leak(s: String) -> &'static str {
     static POOL: LazyLock<StdMutex<HashSet<&'static str>>> =
         LazyLock::new(|| StdMutex::new(HashSet::new()));
@@ -53,9 +50,8 @@ fn leak(s: String) -> &'static str {
 }
 
 impl External {
-    /// Build from the configured id + host command + host-discovered identity.
-    /// `None` identity (host missing or not self-describing) degrades to the
-    /// id as display name; search still relays and just yields no results.
+    /// `None` identity (host missing or not self-describing) degrades to the id
+    /// as display name; search still relays.
     pub fn new(id: &str, command: String, discovered: Option<HostMeta>) -> Self {
         let (name, icon, ready) = match discovered {
             Some(m) => (m.name, m.icon, m.ready),
@@ -65,9 +61,7 @@ impl External {
                 format!("External plugin via {command}"),
             ),
         };
-        // The host may name its identity with a `papirus:` spec; the UI only
-        // renders absolute paths (`file://` + icon), so resolve before the
-        // string leaks into `Meta`.
+        // the UI renders absolute paths, so resolve `papirus:` before interning
         let icon = if icon.starts_with("papirus:") {
             find_icon_path(&icon).unwrap_or_default()
         } else {
@@ -345,9 +339,8 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
 }
 
 /// One request against a throwaway process: spawn, write, close stdin, reap.
-/// Used for identity discovery, which must not leave a host resident. The wait
-/// is bounded — a host that answers and then lingers would otherwise block the
-/// first search forever.
+/// Used for identity discovery, which must not leave a host resident; the wait
+/// is bounded so a lingering host cannot block the first search.
 async fn one_shot_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
     let mut req_str = serde_json::to_string(request).ok()?;
     req_str.push('\n');
@@ -393,8 +386,8 @@ async fn one_shot_call(command: &str, request: &serde_json::Value) -> Option<ser
         .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
 }
 
-/// Ask the host who it serves. Returns every plugin it describes via
-/// `list_plugins`; empty when the host is missing or does not self-describe.
+/// Every plugin the host describes via `list_plugins` (empty when it is missing
+/// or does not self-describe).
 pub async fn discover(command: &str) -> Vec<HostMeta> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -431,9 +424,8 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
         .collect()
 }
 
-/// Normalize a host response's `result` array into rows, resolving each
-/// icon to what the UI can render. `None` when the response has no usable
-/// `result` array.
+/// Normalize a host response's `result` array into rows with resolved icons;
+/// `None` when there is no usable `result` array.
 fn parse_result_items(response: &serde_json::Value, icon: &str) -> Option<Vec<ResultItem>> {
     let items = response.get("result")?.as_array()?;
     let mut parsed: Vec<ResultItem> = items
@@ -466,9 +458,8 @@ async fn query_external(
     Ok(parse_result_items(&response, icon).unwrap_or_default())
 }
 
-/// Ask the host for its default view (its `top` method). `Ok(None)` when the
-/// host has no such method (`-32601`), it errored, or produced no usable
-/// result — the caller falls back to the identity card.
+/// The host's default view (`top`). `Ok(None)` when it has no such method, it
+/// errored, or returned nothing usable — the caller shows the identity card.
 async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option<Vec<ResultItem>>> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -485,9 +476,8 @@ async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option
     Ok(parse_result_items(&response, icon))
 }
 
-/// First shell token of a `run:` payload (argv0), or `None` for any other
-/// scheme. Hosts emit single-token commands (plugins.toml contract), so a
-/// plain whitespace split is sufficient.
+/// First shell token of a `run:` payload (argv0), `None` for any other scheme.
+/// Hosts emit single-token commands, so a whitespace split suffices.
 fn run_argv0(on_click: &str) -> Option<&str> {
     let rest = on_click.strip_prefix("run:")?;
     if rest.is_empty() {
@@ -496,8 +486,7 @@ fn run_argv0(on_click: &str) -> Option<&str> {
     rest.split_whitespace().next()
 }
 
-/// Resolve a plugins.toml `command` to an absolute path when it is a bare
-/// name (PATH lookup); absolute paths pass through unchanged.
+/// PATH-resolve a bare `command`; absolute paths pass through.
 fn resolve_command(command: &str) -> String {
     if command.contains('/') {
         return command.to_string();
@@ -513,12 +502,9 @@ fn resolve_command(command: &str) -> String {
     command.to_string()
 }
 
-/// Relay a row's removal to the host that owns it: when `on_click` is a
-/// `run:` shell command whose first token is this host's `command` (as
-/// configured or resolved on PATH), ask the host to `forget` the row — it
-/// may delete plugin data (e.g. a todo item). Host failures are silent:
-/// usage history was already removed, and a host without a `forget` method
-/// simply has no data to drop.
+/// Relay a row's removal to the host that owns it (a `run:` command whose
+/// first token is this host's `command`), so it can delete its own data. Host
+/// failures are silent: usage history is already gone by then.
 async fn forget_external(command: &str, on_click: &str) -> Result<()> {
     let Some(argv0) = run_argv0(on_click) else {
         return Ok(());
@@ -536,9 +522,8 @@ async fn forget_external(command: &str, on_click: &str) -> Result<()> {
     let _ = rpc_call(command, &request).await;
     Ok(())
 }
-/// Resolve one result icon to what the UI can render (`file://` + path):
-/// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,
-/// anything else (already an absolute path) passes through.
+/// Resolve one result icon for the UI: empty -> the plugin's own icon,
+/// `papirus:` -> absolute path, anything else passes through.
 fn resolve_item_icon(icon: &str, fallback: Option<String>) -> Option<String> {
     if icon.is_empty() {
         return fallback;
@@ -680,10 +665,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_host_is_not_an_error() {
-        assert!(rpc_call("/nonexistent/qsflow-host", &request(1)).await.is_none());
-        assert!(one_shot_call("/nonexistent/qsflow-host", &request(1))
-            .await
-            .is_none());
+        assert!(
+            rpc_call("/nonexistent/qsflow-host", &request(1))
+                .await
+                .is_none()
+        );
+        assert!(
+            one_shot_call("/nonexistent/qsflow-host", &request(1))
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

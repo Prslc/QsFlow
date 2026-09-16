@@ -1,3 +1,4 @@
+//! Entry point: pad the data dirs, build the tokio runtime, serve the protocol.
 use anyhow::Result;
 
 mod models;

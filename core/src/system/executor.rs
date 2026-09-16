@@ -1,11 +1,12 @@
+//! Action execution: shell commands, app/URI launch and clipboard writes.
 use gio::prelude::*;
 use std::path::Path;
 use std::process;
 
 use crate::system::fs;
 
-/// Run a shell command detached from the backend (system commands, …). Shell
-/// is intended here: `%u`/`%f` leftovers are stripped before execution.
+/// Run a shell command detached (system commands, descriptors that need a
+/// shell); `%u`/`%f` leftovers are stripped first.
 pub fn execute_command(cmd: &str) {
     let clean_cmd = cmd
         .replace("%u", "")
@@ -20,10 +21,9 @@ pub fn execute_command(cmd: &str) {
         .ok();
 }
 
-/// Launch an application by desktop id via GLib's `GAppInfo` (`g_app_info_launch`)
-/// — no shell, no external `gio` binary. Re-fetches the registered `GAppInfo`
-/// so Exec quoting, field codes, env and `DBusActivatable` single-instance are
-/// all honoured. Falls back silently (no-op) if the id is not found.
+/// Launch an app by desktop id through GLib's `g_app_info_launch`, so Exec
+/// quoting, field codes, env and `DBusActivatable` are honoured. A missing id
+/// is a silent no-op.
 pub fn launch_app(desktop_id: &str) {
     for app in gio::AppInfo::all() {
         if app.id().as_deref() == Some(desktop_id) {
@@ -39,11 +39,10 @@ pub fn open_uri(uri: &str) {
     let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
 }
 
-/// Launch a `[Desktop Action …]` group of a desktop file: `<desktop-id>:<action-id>`.
-/// The shell forwards `action:` rows here because gio-rs binds no
-/// desktop-action launcher; the `Exec=` line is expanded and run through the
-/// same detached shell path as every other command. A malformed spec, a
-/// missing file/group/`Exec=`, or unreadable content is a silent no-op.
+/// Run the `[Desktop Action <id>]` group of `<desktop-id>`: gio-rs binds no
+/// desktop-action launcher, so the `Exec=` line is expanded here and run through
+/// the detached shell path. A malformed spec or a missing file/group is a silent
+/// no-op.
 pub fn launch_desktop_action(spec: &str) {
     let Some((id, action_id)) = spec.split_once(':') else {
         return;
@@ -74,9 +73,7 @@ fn action_exec(text: &str, action_id: &str) -> Option<String> {
         let line = line.trim();
         if line.starts_with('[') {
             in_group = line == header;
-        } else if in_group
-            && let Some(exec) = line.strip_prefix("Exec=")
-        {
+        } else if in_group && let Some(exec) = line.strip_prefix("Exec=") {
             let exec = exec.trim();
             if !exec.is_empty() {
                 return Some(exec.to_string());
@@ -94,9 +91,7 @@ fn entry_name(text: &str) -> Option<String> {
         let line = line.trim();
         if line.starts_with('[') {
             in_entry = line == "[Desktop Entry]";
-        } else if in_entry
-            && let Some(name) = line.strip_prefix("Name=")
-        {
+        } else if in_entry && let Some(name) = line.strip_prefix("Name=") {
             let name = name.trim();
             if !name.is_empty() {
                 return Some(name.to_string());
@@ -106,9 +101,9 @@ fn entry_name(text: &str) -> Option<String> {
     None
 }
 
-/// Expand the `Exec=` field codes a launcher substitutes: `%%` `%c` `%k`;
-/// `%i` and the file/URL codes are dropped (`execute_command` already strips
-/// the latter, and `%i` carries an icon name no shell command can use).
+/// Expand the `Exec=` field codes: `%%` `%c` `%k`; `%i` and the file/URL codes
+/// are dropped (`execute_command` strips the latter, `%i` is useless in a shell
+/// command).
 fn expand_exec(exec: &str, name: Option<&str>, desktop: &Path) -> String {
     let mut expanded = String::with_capacity(exec.len());
     let mut chars = exec.chars();
@@ -134,10 +129,9 @@ fn expand_exec(exec: &str, name: Option<&str>, desktop: &Path) -> String {
     expanded
 }
 
-/// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
-/// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
-/// survives embedded newlines/quotes; parse failure or a missing `wl-copy`
-/// is a silent no-op.
+/// Write text to the Wayland clipboard via `wl-copy`. The payload is JSON
+/// (`{"text":…}`) so embedded newlines/quotes survive the line protocol; a parse
+/// failure or a missing `wl-copy` is a silent no-op.
 pub fn copy_json(payload: &str) {
     let Ok(req) = serde_json::from_str::<CopyRequest>(payload) else {
         return;

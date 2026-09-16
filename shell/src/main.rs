@@ -1,8 +1,5 @@
 //! `qsflow-shell` — the launcher's native frontend: an `iced` + `wlr-layer-shell`
-//! overlay that drives the `qsflow-core` backend over its line protocol.
-//!
-//! `qsflow-shell {open|close|toggle|status}` is the IPC client; every other
-//! invocation starts the daemon.
+//! overlay driving `qsflow-core`; any argument is an IPC client call instead.
 
 mod app;
 mod backend;
@@ -44,10 +41,9 @@ fn run() -> iced_exwlshell::Result {
         view::view,
     )
     .settings(Settings {
-        // `Background` for both modes: the runtime tears the event loop down
-        // when the last surface closes unless the start mode is AllScreens or
-        // Background, so a resident toggle needs it to survive a dismissal. It
-        // creates no startup surface — every show is a `NewLayerShell`.
+        // `Background`: the runtime tears the event loop down when the last
+        // surface closes unless the start mode is AllScreens/Background, so a
+        // resident toggle needs it. It creates no startup surface.
         layer_settings: LayerShellSettings {
             start_mode: StartMode::Background,
             ..LayerShellSettings::default()
@@ -57,12 +53,10 @@ fn run() -> iced_exwlshell::Result {
         ..Settings::default()
     })
     .subscription(app::subscription)
-    // Antialiased geometry (MSAA): without it the canvas magnifier's curves come
-    // out stair-stepped — the QML canvas had `antialiasing: true`.
+    // MSAA: without it the canvas magnifier's curves are stair-stepped
     .antialiasing(true)
-    // The layer surface must stay transparent: the launcher draws its own
-    // backdrop and the frosted card over the blurred wallpaper. Without this
-    // the runtime clears every frame with the theme's opaque background color.
+    // the surface must stay transparent: the launcher draws its own backdrop,
+    // otherwise every frame is cleared with the theme's opaque background
     .style(|_state, theme| iced_core::theme::Style {
         background_color: iced::Color::TRANSPARENT,
         ..iced_core::theme::default(theme)

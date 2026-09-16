@@ -68,8 +68,7 @@ pub fn bind() -> Result<(), String> {
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path)
         .map_err(|error| format!("cannot bind {}: {error}", path.display()))?;
-    // `bind` honours the umask, which need not hide the socket from other local
-    // users; the launcher's IPC is owner-only.
+    // `bind` honours the umask; the launcher's IPC is owner-only
     let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     *LISTENER.lock().unwrap_or_else(PoisonError::into_inner) = Some(listener);
 
@@ -122,9 +121,6 @@ fn spawn_accept_thread() {
 
 /// One line in, one line back, then the connection closes.
 fn serve(mut stream: UnixStream) {
-    // A client that connects and never writes must not wedge the accept thread:
-    // that would freeze every later `toggle`/`status` (the launcher would look
-    // dead to the keybind).
     let _ = stream.set_read_timeout(Some(CLIENT_TIMEOUT));
 
     let Ok(reader) = stream.try_clone() else {

@@ -1,3 +1,4 @@
+//! The fixed system commands: lock, suspend, reboot, shutdown, logout.
 use std::future::Future;
 use std::pin::Pin;
 
@@ -53,10 +54,9 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         ),
     ];
 
-    // prefix match only: the default fallback chain short-circuits on the
-    // first non-empty plugin (calculator -> system-commands -> apps), so
-    // loose mid-word substring hits ("bo" inside "reBOot") shadowed
-    // app-search's stronger whole-name matches and hid apps like Bottles
+    // prefix match only: the fallback chain short-circuits on the first
+    // non-empty plugin, so a mid-word hit ("bo" in "reBOot") would shadow
+    // app-search's stronger whole-name matches
     commands
         .iter()
         .filter(|(name, keyword, _, _)| {

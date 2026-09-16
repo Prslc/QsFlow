@@ -40,16 +40,13 @@ pub enum Message {
     SwallowClick,
     ClearQuery,
     RowClick(usize),
-    /// Pointer entered a hover target.
     Hover(Hover),
-    /// Pointer left a target: clears the hover only if it is still that one, so
-    /// a same-batch `exit(A) enter(B)` cannot wipe B's tint.
+    /// Pointer left a target: clear only if it is still that one, so a
+    /// same-batch `exit(A) enter(B)` cannot wipe B's tint.
     Unhover(Hover),
-    /// Whether the pointer is over the card, which gates the wheel so that
-    /// scrolling the backdrop does nothing.
+    /// Pointer over the card: the wheel ignores a backdrop scroll.
     PointerOnCard(bool),
-    /// Pointer position, tracked so the hover can be re-derived when the rows
-    /// move underneath a stationary pointer.
+    /// Pointer position, so the hover can be re-derived when rows move under it.
     PointerMoved(Point),
     PointerLeft,
     /// Mouse wheel over the list, in rows (positive scrolls down).
@@ -84,20 +81,17 @@ pub struct State {
     pub query: String,
     pub rows: Vec<Row>,
     pub selected: usize,
-    /// Index of the top visible row. The list is a fixed five-row window, so it
-    /// is scrolled by moving this instead of through a `scroll_to` operation —
-    /// see `contain`.
+    /// Index of the top visible row of the fixed five-row window (`contain`).
     pub first: usize,
     pub theme: Theme,
-    /// The layer surface size in logical pixels. Before the runtime reports the
-    /// real one, this holds a fallback: the first frame keeps a full widget tree
-    /// (so the text input exists and can be focused) and is invisible anyway —
-    /// the entrance animation starts at zero alpha.
+    /// The layer surface size in logical pixels. Starts at a fallback because
+    /// the first frame must already contain the text input (it is the frame the
+    /// runtime focuses) and is invisible anyway.
     pub surface: Size,
     /// Whether `surface` came from the runtime rather than the fallback.
     surface_known: bool,
     pub hovered: Option<Hover>,
-    /// Pointer over the card (see `Message::PointerOnCard`).
+    /// Pointer over the card (gates the wheel).
     pointer_on_card: bool,
     /// Last pointer position while it is over the surface.
     cursor: Option<Point>,
@@ -121,8 +115,8 @@ pub struct State {
     shell_events: ShellReceiver,
 }
 
-/// The card height animation at rest for `rows` rows: the 150ms OutCubic reflow
-/// the QML's `Behavior on height` played. `go_mut` retargets it in place.
+/// The card height animation at rest for `rows` rows (the QML's 150ms OutCubic
+/// reflow). `go_mut` retargets it in place.
 fn resting_card(rows: usize) -> Animation<f32> {
     Animation::new(geometry::content_h(rows))
         .duration(Duration::from_millis(geometry::REFLOW_MS))
@@ -131,16 +125,14 @@ fn resting_card(rows: usize) -> Animation<f32> {
 
 use crate::geometry::MAX_ROWS;
 
-/// Whether `items` is the payload the current rows were built from. The fields
-/// compared are exactly the ones the payload carries; `icon_path` is derived.
+/// Whether `items` is the payload the current rows were built from.
 fn rows_match(rows: &[Row], items: &[ResultItem]) -> bool {
     rows.len() == items.len()
         && rows.iter().zip(items).all(|(row, item)| {
             row.title == item.title
                 && row.summary == item.summary
                 && row.on_click == item.on_click
-                && row.icon_spec.as_deref()
-                    == item.icon.as_deref().filter(|spec| !spec.is_empty())
+                && row.icon_spec.as_deref() == item.icon.as_deref().filter(|spec| !spec.is_empty())
         })
 }
 
@@ -161,11 +153,9 @@ fn row_at(surface: Size, first: usize, rows: usize, point: Point) -> Option<usiz
     (index < rows).then_some(index)
 }
 
-/// Whole rows from a possibly fractional wheel delta, carrying the remainder.
-/// One mouse notch arrives as a discrete line *and* its pixel equivalent (the
-/// compositor sends both `axis` and `axis_value120`), so the pixel half must not
-/// add a second row — while a trackpad (pixel deltas only) has to accumulate to
-/// one row per ~64px rather than be dropped.
+/// Whole rows from a fractional wheel delta, carrying the remainder. One notch
+/// arrives as a line *and* its pixel equivalent, so the pixel half must not add
+/// a second row; a trackpad (pixels only) accumulates to ~64px per row.
 fn take_whole_rows(accum: &mut f32, delta: f32) -> i32 {
     // A reversal starts a new gesture: without this the previous direction's
     // slack (the pixel half of a notch) would swallow the first notch back.
@@ -179,12 +169,10 @@ fn take_whole_rows(accum: &mut f32, delta: f32) -> i32 {
     whole as i32
 }
 
-/// The launcher shows at most [`MAX_ROWS`] rows, so the list is a window rather
-/// than a scroll offset: `Contain` semantics — move only as far as the selection
-/// requires, and never move while it is already visible. (A `scroll_to`
-/// operation would be applied by the runtime a dispatch later *without*
-/// requesting a redraw, which made a page change visible only on the next blink
-/// or keystroke.)
+/// `Contain` semantics for the fixed [`MAX_ROWS`]-row window: move `first` only
+/// as far as the selection requires, and never while it is already visible.
+/// (A `scroll_to` operation is applied a dispatch late and requests no redraw,
+/// so a page change would only appear on the next caret blink.)
 fn contain(selected: usize, first: usize, rows: usize) -> usize {
     if rows <= MAX_ROWS {
         return 0;
@@ -215,8 +203,7 @@ fn input_event(
             Some(Message::PointerMoved(position))
         }
         iced::Event::Mouse(iced::mouse::Event::CursorLeft) => Some(Message::PointerLeft),
-        // The launcher has no scrollable any more (the list is a state-driven
-        // five-row window), so the wheel has to be handled here.
+        // the list is a state-driven window, not a scrollable: wheel here
         iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
             // A downward wheel arrives as a negative y (verified with a
             // virtual pointer), so the message means "rows to move down".
@@ -273,11 +260,8 @@ pub fn boot(shell_events: ShellReceiver) -> (State, Task<Message>) {
 
 pub fn subscription(state: &State) -> Subscription<Message> {
     let mut subscriptions = vec![
-        // `listen` would drop everything a widget captured — and the focused
-        // text input captures Escape, Delete, Enter, Home/End and the left/right
-        // arrows. `listen_raw` sees all of them, so the launcher keeps its own
-        // Escape/Delete navigation (the arrow keys are untouched by the input
-        // and reach us either way).
+        // `listen_raw`, not `listen`: the focused text input captures Escape,
+        // Delete and Enter, and `listen` drops widget-captured events.
         iced::event::listen_raw(input_event),
         iced::window::resize_events().map(|(id, size)| Message::Resized(id, size)),
         iced::window::close_events().map(Message::Closed),
@@ -488,10 +472,9 @@ impl State {
         task
     }
 
-    /// The runtime destroyed our surface without us asking (the output it was on
-    /// went away, or the compositor closed it): drop the state that claimed a
-    /// surface exists, including the flag the accept thread answers `status`
-    /// from — otherwise `status` keeps reporting `visible` for the session.
+    /// The runtime destroyed our surface without us asking (output gone, or the
+    /// compositor closed it): drop the state that claimed it exists, including
+    /// the `VISIBLE` flag `status` is answered from.
     fn surface_gone(&mut self) {
         self.shown = None;
         self.dismiss_at = None;
@@ -615,12 +598,9 @@ impl State {
         self.resync_hover();
     }
 
-    /// The rows a scroll (or a new payload) puts under a stationary pointer are
-    /// *different* rows drawn in the same widgets, so no `enter`/`exit` fires and
-    /// the tint would stay on the old row index — at best on the wrong row, at
-    /// worst on a row that is no longer drawn at all. Re-derive it from the
-    /// tracked pointer instead.
-    /// A pointer that is not over the list at all drops a stale row hover;
+    /// Rows that move under a stationary pointer are different rows in the same
+    /// widgets, so no `enter`/`exit` fires: re-derive the hover from the tracked
+    /// pointer. A pointer outside the list drops a stale row hover, but
     /// `Hover::Clear` is left alone (the clear button sits outside the list).
     fn resync_hover(&mut self) {
         let row = self
@@ -638,11 +618,8 @@ impl State {
         rows_match(&self.rows, items)
     }
 
-    /// Move the selection by `rows` (the wheel). The selection — not just the
-    /// window — has to move: otherwise the accent bar scrolls out of view and
-    /// Enter launches a row the user cannot see. The window then follows through
-    /// the same `contain` the arrows use, so a wheel notch and an arrow press
-    /// are the same gesture.
+    /// Move the selection by `rows` (the wheel). The selection moves, not just
+    /// the window: the highlighted row is what Enter launches.
     fn scroll(&mut self, rows: f32) {
         if self.rows.is_empty() {
             return;
@@ -831,10 +808,16 @@ mod tests {
         // the first row starts where the layout puts it, and rows are ROW_H tall
         assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 1.0)), Some(0));
         assert_eq!(row_at(surface, 0, 20, Point::new(x, top + ROW_H)), Some(1));
-        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 4.9 * ROW_H)), Some(4));
+        assert_eq!(
+            row_at(surface, 0, 20, Point::new(x, top + 4.9 * ROW_H)),
+            Some(4)
+        );
         // the window start is added, and never past the last row
         assert_eq!(row_at(surface, 3, 20, Point::new(x, top + 1.0)), Some(3));
-        assert_eq!(row_at(surface, 15, 20, Point::new(x, top + 4.9 * ROW_H)), Some(19));
+        assert_eq!(
+            row_at(surface, 15, 20, Point::new(x, top + 4.9 * ROW_H)),
+            Some(19)
+        );
 
         // the window's last row ends at the list's bottom edge, and one pixel
         // past it is below the list
@@ -842,15 +825,27 @@ mod tests {
             row_at(surface, 0, 20, Point::new(x, top + 5.0 * ROW_H - 1.0)),
             Some(4)
         );
-        assert_eq!(row_at(surface, 0, 20, Point::new(x, top + 5.0 * ROW_H)), None);
+        assert_eq!(
+            row_at(surface, 0, 20, Point::new(x, top + 5.0 * ROW_H)),
+            None
+        );
 
         // a list shorter than the window cannot be hit below its own last row
-        assert_eq!(row_at(surface, 0, 3, Point::new(x, top + 2.5 * ROW_H)), Some(2));
-        assert_eq!(row_at(surface, 0, 3, Point::new(x, top + 3.0 * ROW_H)), None);
+        assert_eq!(
+            row_at(surface, 0, 3, Point::new(x, top + 2.5 * ROW_H)),
+            Some(2)
+        );
+        assert_eq!(
+            row_at(surface, 0, 3, Point::new(x, top + 3.0 * ROW_H)),
+            None
+        );
 
         // above the card's list, or beside the card: not the pointer's row
         assert_eq!(row_at(surface, 0, 20, Point::new(x, top - 1.0)), None);
-        assert_eq!(row_at(surface, 0, 20, Point::new(x - 700.0, top + 1.0)), None);
+        assert_eq!(
+            row_at(surface, 0, 20, Point::new(x - 700.0, top + 1.0)),
+            None
+        );
     }
 
     #[test]
@@ -892,7 +887,12 @@ mod tests {
         }
     }
 
-    fn item(title: &str, summary: Option<&str>, on_click: Option<&str>, icon: Option<&str>) -> crate::model::ResultItem {
+    fn item(
+        title: &str,
+        summary: Option<&str>,
+        on_click: Option<&str>,
+        icon: Option<&str>,
+    ) -> crate::model::ResultItem {
         crate::model::ResultItem {
             title: title.to_string(),
             summary: summary.map(str::to_string),
@@ -904,11 +904,21 @@ mod tests {
     #[test]
     fn the_result_dedupe_matches_the_payload_it_was_built_from() {
         let rows = vec![
-            row("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+            row(
+                "Firefox",
+                Some("Browser"),
+                Some("launch:firefox.desktop"),
+                Some("/i.svg"),
+            ),
             row("Files", None, None, None),
         ];
         let same = vec![
-            item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+            item(
+                "Firefox",
+                Some("Browser"),
+                Some("launch:firefox.desktop"),
+                Some("/i.svg"),
+            ),
             item("Files", None, None, None),
         ];
         assert!(rows_match(&rows, &same));
@@ -923,7 +933,12 @@ mod tests {
         assert!(!rows_match(
             &rows,
             &[
-                item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+                item(
+                    "Firefox",
+                    Some("Browser"),
+                    Some("launch:firefox.desktop"),
+                    Some("/i.svg")
+                ),
                 item("Files!", None, None, None),
             ]
         ));
@@ -931,14 +946,24 @@ mod tests {
             &rows,
             &[
                 item("Files", None, None, None),
-                item("Firefox", Some("Browser"), Some("launch:firefox.desktop"), Some("/i.svg")),
+                item(
+                    "Firefox",
+                    Some("Browser"),
+                    Some("launch:firefox.desktop"),
+                    Some("/i.svg")
+                ),
             ]
         ));
         assert!(!rows_match(&rows, &same[..1]));
         assert!(!rows_match(
             &rows,
             &[
-                item("Firefox", Some("Browser"), Some("run:firefox"), Some("/i.svg")),
+                item(
+                    "Firefox",
+                    Some("Browser"),
+                    Some("run:firefox"),
+                    Some("/i.svg")
+                ),
                 item("Files", None, None, None),
             ]
         ));

@@ -1,3 +1,4 @@
+//! JSON-RPC 2.0 for lines that carry a `"jsonrpc":"2.0"` object.
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -57,9 +58,8 @@ fn run_cmd(params: &Option<Value>) -> Result<String, ()> {
     }
 }
 
-/// Handle a line as a JSON-RPC 2.0 request. Returns `true` if `line` was a
-/// JSON-RPC request (valid or not); `false` if it should fall through to the
-/// legacy text protocol.
+/// Handle a line as JSON-RPC. `true` if it was a request (valid or not), `false`
+/// if it falls through to the text protocol.
 pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
     // JSON-RPC requests are always objects; skip the JSON parse on the hot
     // text-search path where most lines are plain queries.
@@ -99,13 +99,10 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
                     return true;
                 }
             };
-            // Await inline (request/response), unlike the streaming text-search
-            // path: a JSON-RPC client gets its correlated response even for a
-            // one-shot `printf ... | qsflow-core` (no need to hold stdin open).
+            // inline request/response, so a one-shot client gets its response
+            // without holding stdin open
             if text.is_empty() {
-                // `top` is the dedicated most-used method; an empty `search`
-                // query is not a search. (The text protocol handles its own
-                // empty-line default in main.rs, so this never affects the UI.)
+                // `top` is the most-used method; an empty query is not a search
                 if has_id {
                     respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
@@ -169,8 +166,7 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
             }
         }
         "resolve_icon" => {
-            // Resolve any icon spec (absolute path, theme name, or the
-            // `papirus:<name>` scheme) to the absolute path the UI renders.
+            // resolve any icon spec to the absolute path the UI renders
             let name = match params {
                 Some(Value::Object(map)) => match map.get("name") {
                     Some(Value::String(s)) if !s.is_empty() => s.clone(),
@@ -292,8 +288,7 @@ mod tests {
     }
     #[tokio::test]
     async fn resolve_icon_passes_absolute_path_through() {
-        // regression: do_find dropped its leading-`/` early return, so an
-        // already-resolved path fell through to the default placeholder
+        // an already-resolved path must not re-enter the theme search
         let (handled, msgs) = run(
             r#"{"jsonrpc":"2.0","method":"resolve_icon","params":{"name":"/usr/share/icons/Papirus/48x48/apps/github.svg"},"id":8}"#,
         )

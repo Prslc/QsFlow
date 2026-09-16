@@ -1,10 +1,10 @@
+//! Theme colours, parsed from GTK4's `dank-colors.css`.
 use crate::models::ThemeConfig;
 use crate::system::fs::get_home;
 use anyhow::Result;
 use std::fs;
 
 pub fn load_theme() -> ThemeConfig {
-    // default color
     let mut theme = ThemeConfig {
         primary: "#ffb59f".into(),
         on_primary: "#561f0f".into(),

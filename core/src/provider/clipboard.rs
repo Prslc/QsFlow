@@ -1,3 +1,4 @@
+//! Clipboard history, read through `cliphist`.
 use std::future::Future;
 use std::pin::Pin;
 use std::process::Command;

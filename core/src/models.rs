@@ -1,3 +1,4 @@
+//! Wire types shared by every provider: one result row and the theme payload.
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
