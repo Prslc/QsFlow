@@ -9,7 +9,6 @@ use iced::animation::{Animation, Easing};
 use iced::keyboard::Key;
 use iced::keyboard::key::Named;
 use iced::time::Instant;
-use iced::widget::scrollable::AbsoluteOffset;
 use iced::widget::{Id, operation};
 use iced::window::Id as WindowId;
 use iced::{Color, Size, Subscription, Task};
@@ -28,7 +27,6 @@ use crate::model::ResultItem;
 use crate::theme::Theme;
 
 pub const INPUT_ID: Id = Id::new("qsflow-input");
-pub const LIST_ID: Id = Id::new("qsflow-list");
 const NAMESPACE: &str = "QsFlow";
 
 #[to_exwlshell_message]
@@ -77,6 +75,10 @@ pub struct State {
     pub query: String,
     pub rows: Vec<Row>,
     pub selected: usize,
+    /// Index of the top visible row. The list is a fixed five-row window, so it
+    /// is scrolled by moving this instead of through a `scroll_to` operation —
+    /// see `contain`.
+    pub first: usize,
     pub theme: Theme,
     /// The layer surface size in logical pixels. Before the runtime reports the
     /// real one, this holds a fallback: the first frame keeps a full widget tree
@@ -115,6 +117,31 @@ fn resting_card(rows: usize) -> Animation<f32> {
         .easing(Easing::EaseOutCubic)
 }
 
+use crate::geometry::MAX_ROWS;
+
+/// Top visible row for `selected`, given the current `first`.
+///
+/// The launcher shows at most [`MAX_ROWS`] rows, so the list is a window rather
+/// than a scroll offset: `Contain` semantics — move only as far as the selection
+/// requires, and never move while it is already visible. (A `scroll_to`
+/// operation would be applied by the runtime a dispatch later *without*
+/// requesting a redraw, which made a page change visible only on the next blink
+/// or keystroke.)
+fn contain(selected: usize, first: usize, rows: usize) -> usize {
+    if rows <= MAX_ROWS {
+        return 0;
+    }
+
+    let mut first = first.min(rows - MAX_ROWS);
+    if selected < first {
+        first = selected;
+    }
+    if selected >= first + MAX_ROWS {
+        first = selected + 1 - MAX_ROWS;
+    }
+    first
+}
+
 /// The runtime events the launcher reacts to, regardless of widget capture.
 fn input_event(
     event: iced::Event,
@@ -138,6 +165,7 @@ pub fn boot(shell_events: ShellReceiver) -> (State, Task<Message>) {
         query: String::new(),
         rows: Vec::new(),
         selected: 0,
+        first: 0,
         theme: Theme::default(),
         surface: Size::new(1920.0, 1080.0),
         surface_known: false,
@@ -337,6 +365,7 @@ impl State {
         self.preedit_active = false;
         self.dismiss_at = None;
         self.blur_sent = None;
+        self.contain();
         ipc::VISIBLE.store(true, Ordering::Relaxed);
 
         // The card opens at its resting height (the QML only animated the
@@ -451,6 +480,7 @@ impl State {
         backend::send(&format!("forget {key}"));
         self.rows.remove(self.selected);
         self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.contain();
         self.retarget_height(Instant::now())
     }
 
@@ -460,39 +490,35 @@ impl State {
             Key::Named(Named::Escape) => self.dismiss(),
             Key::Named(Named::ArrowUp) => {
                 self.selected = self.selected.saturating_sub(1);
-                self.scroll_to_selection()
+                self.contain();
+                Task::none()
             }
             Key::Named(Named::ArrowDown) => {
                 if self.selected + 1 < self.rows.len() {
                     self.selected += 1;
                 }
-                self.scroll_to_selection()
+                self.contain();
+                Task::none()
             }
             Key::Named(Named::PageUp) => {
-                self.selected = self.selected.saturating_sub(5);
-                self.scroll_to_selection()
+                self.selected = self.selected.saturating_sub(MAX_ROWS);
+                self.contain();
+                Task::none()
             }
             Key::Named(Named::PageDown) => {
-                self.selected = (self.selected + 5).min(self.rows.len().saturating_sub(1));
-                self.scroll_to_selection()
+                self.selected = (self.selected + MAX_ROWS).min(self.rows.len().saturating_sub(1));
+                self.contain();
+                Task::none()
             }
             Key::Named(Named::Delete) => self.forget(),
             _ => Task::none(),
         }
     }
 
+    /// Keep the selection inside the five-row window, minimally: the QML's
     /// `positionViewAtIndex(currentIndex, ListView.Contain)`.
-    fn scroll_to_selection(&self) -> Task<Message> {
-        let rows = self.rows.len();
-        if rows == 0 {
-            return Task::none();
-        }
-
-        let offset = (self.selected as f32 * geometry::ROW_H - geometry::list_h(rows)
-            + geometry::ROW_H)
-            .max(0.0);
-
-        operation::scroll_to(LIST_ID, AbsoluteOffset { x: 0.0, y: offset })
+    fn contain(&mut self) {
+        self.first = contain(self.selected, self.first, self.rows.len());
     }
 
     fn ime(&mut self, event: input_method::Event) {
@@ -584,6 +610,7 @@ impl State {
 
         // a genuinely new payload starts from the top result
         self.selected = 0;
+        self.first = 0;
         let retarget = self.retarget_height(Instant::now());
 
         let unresolved: Vec<String> = self
@@ -598,9 +625,7 @@ impl State {
             backend::resolve_icon(&spec);
         }
 
-        // a new payload scrolls back to the top, like the QML's
-        // `positionViewAtIndex(0, Contain)`
-        Task::batch([retarget, self.scroll_to_selection()])
+        retarget
     }
 
     /// Returns a blur re-sync when the caller must push it itself: with reduced
@@ -649,5 +674,31 @@ impl State {
             id,
             option: BlurOption::Region(geometry::blur_rects(self.surface, height)),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::contain;
+    use crate::geometry::MAX_ROWS;
+
+    #[test]
+    fn contain_moves_only_as_far_as_the_selection_needs() {
+        // a full first page needs no scroll
+        assert_eq!(contain(0, 0, 20), 0);
+        assert_eq!(contain(MAX_ROWS - 1, 0, 20), 0);
+        // stepping past the window scrolls by exactly one row
+        assert_eq!(contain(MAX_ROWS, 0, 20), 1);
+        assert_eq!(contain(MAX_ROWS + 1, 1, 20), 2);
+        // moving up *inside* the window keeps it put (ListView.Contain) …
+        assert_eq!(contain(3, 1, 20), 1);
+        // … but leaving it upwards follows the selection
+        assert_eq!(contain(0, 3, 20), 0);
+        // the window never runs past the last row
+        assert_eq!(contain(19, 0, 20), 15);
+        assert_eq!(contain(19, 17, 20), 15);
+        // a list shorter than the window cannot scroll
+        assert_eq!(contain(0, 5, 3), 0);
+        assert_eq!(contain(2, 5, 3), 0);
     }
 }

@@ -4,16 +4,14 @@
 use iced::font::Weight;
 use iced::widget::canvas;
 use iced::widget::text::Wrapping;
-use iced::widget::{
-    Column, Row, Space, container, image, mouse_area, scrollable, svg, text, text_input,
-};
+use iced::widget::{Column, Row, Space, container, image, mouse_area, svg, text, text_input};
 use iced::window::Id as WindowId;
 use iced::{
     Alignment, Background, Border, Color, ContentFit, Element, Font, Length, Padding, Point,
     Rectangle, Renderer, Size, Theme as IcedTheme, mouse,
 };
 
-use crate::app::{Hover, INPUT_ID, LIST_ID, Message, State};
+use crate::app::{Hover, INPUT_ID, Message, State};
 use crate::geometry;
 
 /// Text/icon size defaults of the QML.
@@ -209,21 +207,21 @@ fn clear_button(state: &State, dim: Color) -> Element<'_, Message> {
 }
 
 fn list(state: &State) -> Element<'_, Message> {
+    // Only the visible window is built: `State::first` is the whole scroll
+    // state, so a page change is a repaint rather than an operation the runtime
+    // applies one dispatch later (which also never requested a redraw).
     let rows = Column::new().width(Length::Fill).extend(
         state
             .rows
             .iter()
             .enumerate()
+            .skip(state.first)
+            .take(geometry::MAX_ROWS)
             .map(|(index, row)| row_view(state, index, row)),
     );
 
-    // A zero-width scrollbar: key navigation scrolls, nothing is drawn.
-    scrollable(rows)
-        .id(LIST_ID)
+    container(rows)
         .height(Length::Fixed(geometry::list_h(state.rows.len())))
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::hidden(),
-        ))
         .into()
 }
 
