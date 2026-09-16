@@ -63,6 +63,10 @@ fn card(state: &State, surface: Size) -> Element<'_, Message> {
     container(content)
         .width(Length::Fixed(geometry::card_w(surface)))
         .height(Length::Fixed(state.card_height()))
+        // During the 150ms reflow the column is already at its final height while
+        // the card animates towards it, so a growing payload would paint the last
+        // rows below the card's edge. The QML clipped the card for this reason.
+        .clip(true)
         .padding(geometry::PAD)
         .style(move |_theme| container::Style {
             background: Some(Background::Color(fill)),
