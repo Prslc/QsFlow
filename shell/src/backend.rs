@@ -139,6 +139,14 @@ fn start() {
             let _ = child.wait();
         });
     }
+
+    // The core builds its per-process application cache on the first app search
+    // (~540ms; every later search is 0-1ms), so spend that here instead of on the
+    // first keystroke — in resident mode the daemon boots long before the
+    // launcher is shown. A real search supersedes this one and only its *await*
+    // is aborted: the cache build runs on a blocking task and completes either
+    // way. The warmup's own payload is dropped if a search follows it.
+    send("a");
 }
 
 fn drain(mut stdin: ChildStdin, mut lines: mpsc::UnboundedReceiver<String>) {
