@@ -120,7 +120,7 @@ export component LauncherWindow inherits Window {
     out property <length> card-x: card.x;
     out property <length> card-y: card.y;
     out property <length> card-width: card.width;
-    out property <length> card-height: card.height;
+    out property <length> card-height: min(card.height, root.content-h);
     out property <float> card-opacity: root.progress;
     out property <length> card-radius: 16px;
 
@@ -180,21 +180,32 @@ export component LauncherWindow inherits Window {
         clicked => { root.dismiss(); }
     }
 
+    // The animated box: only its height animates, and it only clips.
     card := Rectangle {
         x: (root.width - self.width) / 2;
         y: root.height * 0.28;
         width: root.card-w;
         height: root.card-h;
-        // Deliberately not animated: a Slint layout inside a parent whose
-        // height is mid-animation gets squeezed, which moved the search field
-        // and the whole list on every payload change. Snapping the card to its
-        // new height keeps the field and the rows still; smoothing it again
-        // needs the clip to animate while the layout stays at its target size.
-        border-radius: 16px;
-        background: root.theme.container.with-alpha(0.72);
-        border-width: 1px;
-        border-color: white.with-alpha(0.35);
-        opacity: root.progress;
+        animate height {
+            duration: root.reduce-motion ? 0ms : 150ms;
+            easing: ease-out-quart;
+        }
+        // A plain rectangular clip; the software renderer ignores `clip`
+        // combined with `border-radius`. The rounded paint and the layout live
+        // on the child below, which is always at the *target* height: a Slint
+        // layout inside a parent whose height is mid-animation is squeezed, and
+        // that is what used to move the search field on every payload change.
+        clip: true;
+        background: transparent;
+
+        panel := Rectangle {
+            width: parent.width;
+            height: root.content-h;
+            border-radius: 16px;
+            background: root.theme.container.with-alpha(0.72);
+            border-width: 1px;
+            border-color: white.with-alpha(0.35);
+            opacity: root.progress;
 
         // Swallow presses on the card's padding.
         TouchArea {
@@ -396,6 +407,7 @@ export component LauncherWindow inherits Window {
                         font-size: 11px;
                     }
                 }
+        }
         }
         }
     }
