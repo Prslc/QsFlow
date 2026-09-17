@@ -83,6 +83,13 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
+        // React to writes, not reads: `plugin::reload` reads this very file, so
+        // an unfiltered Access event would reload again — the watcher would
+        // re-trigger itself every debounce, re-forking every external host and
+        // (with a stalling host) holding `plugin::INIT` until it returned.
+        if matches!(ev.kind, notify::EventKind::Access(_)) {
+            return;
+        }
         if !ev.paths.iter().any(|p| p == &watch_path) {
             return;
         }

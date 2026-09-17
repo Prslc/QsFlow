@@ -102,14 +102,35 @@ impl Plugin for External {
     }
 }
 
+/// How long one host call may take. A plugin answers over the network (github's
+/// search API, a translation service), so this is a ceiling and not an
+/// expectation: a host that stalls must cost the launcher a few seconds, never
+/// the session. Without it, one stalled host hangs the search that touched it
+/// — and, when it stalls during discovery, every later search and `?` with it,
+/// because discovery holds `plugin::INIT` until it returns.
+const HOST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One JSON-RPC request/response round trip against `command`: spawn, write the
 /// request, close stdin, reap, return the first response line (any line that
-/// parses). `None` when the host is missing or produced no parseable output.
+/// parses). `None` when the host is missing, stalled past [`HOST_TIMEOUT`], or
+/// produced no parseable output.
 async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
+    rpc_call_within(command, request, HOST_TIMEOUT).await
+}
+
+/// [`rpc_call`] with an explicit deadline, so the stall path is testable.
+async fn rpc_call_within(
+    command: &str,
+    request: &serde_json::Value,
+    limit: std::time::Duration,
+) -> Option<serde_json::Value> {
     let mut req_str = serde_json::to_string(request).ok()?;
     req_str.push('\n');
 
     let mut child = Command::new(command)
+        // The deadline drops `wait_with_output`'s future; without this the host
+        // would keep running (and keep holding whatever it is stuck on).
+        .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -126,7 +147,21 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
 
     // `wait_with_output` drains stdout/stderr and reaps the child in one step;
     // reading stdout then `wait()` separately can double-poll the join handle.
-    let output = child.wait_with_output().await.ok()?;
+    let output = match tokio::time::timeout(limit, child.wait_with_output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(err)) => {
+            // The core has no logging crate; stderr reaches the unit's journal.
+            eprintln!("qsflow-core: external host {command} failed: {err}");
+            return None;
+        }
+        Err(_) => {
+            eprintln!(
+                "qsflow-core: external host {command} overran {}ms and was killed",
+                limit.as_millis()
+            );
+            return None;
+        }
+    };
 
     let out = std::str::from_utf8(&output.stdout).unwrap_or_default();
     out.lines()
@@ -136,7 +171,9 @@ async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_js
 }
 
 /// Ask the host who it serves. Returns every plugin it describes via
-/// `list_plugins`; empty when the host is missing or does not self-describe.
+/// `list_plugins`; empty when the host is missing, stalled, or does not
+/// self-describe — and then its keyword is simply not registered, so a query
+/// for it falls through to the default providers instead of hanging.
 pub async fn discover(command: &str) -> Vec<HostMeta> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -144,6 +181,9 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
         "id": 1,
     });
     let Some(response) = rpc_call(command, &request).await else {
+        eprintln!(
+            "qsflow-core: external host {command} did not answer list_plugins; its plugins stay unregistered"
+        );
         return Vec::new();
     };
     let Some(list) = response.get("result").and_then(|r| r.as_array()) else {
@@ -368,5 +408,30 @@ mod tests {
             .await
             .unwrap();
         assert!(!owned, "-32601 means the row is not this host's to drop");
+    }
+
+    /// A host that never answers must cost the deadline, not the session: this
+    /// is what a `urlopen` without a timeout does when the network stalls, and
+    /// it used to hang the search that touched it — and, when it stalled during
+    /// discovery, every later search and `?` behind it.
+    #[tokio::test]
+    async fn a_stalled_host_is_given_up_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stall.sh");
+        std::fs::write(&path, "#!/bin/sh\ncat >/dev/null\nsleep 600\n").unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+
+        let request = serde_json::json!({"jsonrpc": "2.0", "method": "search", "id": 1});
+        let limit = std::time::Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        let reply = rpc_call_within(&path.display().to_string(), &request, limit).await;
+        assert!(reply.is_none(), "a stalled host has no answer");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(3),
+            "gave up on the deadline, not on the host: {:?}",
+            started.elapsed()
+        );
     }
 }

@@ -121,8 +121,32 @@ async fn do_reload() {
 async fn build_entries(config: &Config) -> Vec<Entry> {
     let mut map: PluginMap = crate::provider::plugin_map();
     let mut entries = Vec::new();
+
+    // Ask every distinct host for its identity once, all at the same time: they
+    // are separate processes, and a sequential walk made the cold start the sum
+    // of them — and, when one stalled, the whole registry waited it out while
+    // holding `INIT`, which blocks every search and `?` behind it.
+    let mut commands: Vec<String> = config
+        .plugins
+        .iter()
+        .filter(|p| p.enable && !map.contains_key(p.id.as_str()))
+        .filter_map(|p| p.command.clone())
+        .collect();
+    commands.sort();
+    commands.dedup();
+
     let mut discovered: HashMap<String, Vec<crate::provider::external::HostMeta>> =
         HashMap::default();
+    let mut hosts = tokio::task::JoinSet::new();
+    for command in commands {
+        hosts.spawn(async move {
+            let metas = crate::provider::external::discover(&command).await;
+            (command, metas)
+        });
+    }
+    while let Some(Ok((command, metas))) = hosts.join_next().await {
+        discovered.insert(command, metas);
+    }
 
     for p in &config.plugins {
         if !p.enable {
@@ -138,12 +162,6 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
         let Some(command) = &p.command else {
             continue; // unknown id without an external host -> skipped
         };
-        if !discovered.contains_key(command) {
-            discovered.insert(
-                command.clone(),
-                crate::provider::external::discover(command).await,
-            );
-        }
         let meta = discovered
             .get(command)
             .and_then(|hosts| hosts.iter().find(|m| m.id == p.id))

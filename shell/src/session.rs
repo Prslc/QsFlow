@@ -88,15 +88,27 @@ impl Action {
     }
 }
 
+/// The wire serialises an optional field the core has no value for as `null`
+/// — the `?` help list and a plugin's identity card both carry
+/// `on_click: null` — and a present `null` is not a `String`. Without this, one
+/// such field rejected the whole `Vec<Item>` and the shell silently kept the
+/// previous payload, so help and keyword mode appeared to do nothing.
+fn nullable<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// A row as it comes off the wire; `icon` is an absolute path the core resolved.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Item {
     pub title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     pub icon: String,
-    #[serde(default, rename = "on_click")]
+    #[serde(default, rename = "on_click", deserialize_with = "nullable")]
     pub on_click: String,
     /// Filled in from `on_click` as the payload is read.
     #[serde(skip)]
@@ -149,7 +161,9 @@ impl Session {
         let mut child = Command::new("qsflow-core")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            // Inherited so the core's warnings (a host that overran, a plugin
+            // that did not answer) land in the unit's journal.
+            .stderr(Stdio::inherit())
             .spawn()?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
@@ -331,5 +345,22 @@ mod tests {
     fn an_empty_scheme_does_nothing() {
         assert_eq!(Action::parse(""), Action::None);
         assert_eq!(Action::parse("").request(), None);
+    }
+
+    #[test]
+    fn a_null_optional_field_does_not_drop_the_payload() {
+        // The `?` help list and a plugin's identity card carry `on_click: null`
+        // (and a host may leave `summary`/`icon` null): the row must survive as
+        // an empty string, not reject the whole `Vec<Item>`.
+        let items: Vec<Item> = serde_json::from_value(serde_json::json!([
+            {"title": "Youdao Translation", "summary": "Translate text", "on_click": null, "icon": null},
+            {"title": "Todo", "summary": null, "icon": "/x.svg"},
+        ]))
+        .expect("null optional fields are empty, not fatal");
+        assert_eq!(items[0].on_click, "");
+        assert_eq!(items[0].icon, "");
+        assert_eq!(items[0].action, Action::None);
+        assert_eq!(items[1].summary, "");
+        assert_eq!(items[1].on_click, "");
     }
 }
