@@ -199,6 +199,14 @@ export component LauncherWindow inherits Window {
         background: transparent;
 
         panel := Rectangle {
+            // Explicit, and load-bearing: `opacity` lowers to an `Opacity`
+            // element, which the compiler treats as a single-cell box layout
+            // with `alignment: center`. Left implicit, the panel was centred
+            // against this rectangle's *animated* height -- `(card.height -
+            // content-h) / 2` in the generated code -- so the whole card,
+            // search field included, slid down from above the top edge for
+            // the length of the reveal.
+            y: 0;
             width: parent.width;
             height: root.content-h;
             border-radius: 16px;
