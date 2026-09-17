@@ -73,7 +73,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
             }
         };
 
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
         let firefox_icon = find_icon_path("firefox");
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt.query_map([query.as_str(), &pattern], move |row| {

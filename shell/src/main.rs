@@ -1,4 +1,4 @@
-//! `qsflow-shell` — the QsFlow launcher front end.
+//! `qsflow-shell` — the `QsFlow` launcher front end.
 //!
 //! With no arguments it runs the shell (resident when `QSFLOW_RESIDENT=1`); any
 //! other argument is an IPC verb sent to a running instance.

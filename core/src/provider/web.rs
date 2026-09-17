@@ -34,10 +34,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    let url = format!(
-        "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
-        query
-    );
+    let url = format!("https://suggestqueries.google.com/complete/search?client=firefox&q={query}");
     let response = reqwest::get(&url)
         .await
         .context("Failed to fetch suggestions")?;
@@ -50,9 +47,9 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let icon = find_icon_path("google").unwrap_or_default();
 
     let mut results = vec![ResultItem {
-        title: format!("Search: {}", query),
+        title: format!("Search: {query}"),
         summary: Some("Search on Google".to_string()),
-        on_click: Some(format!("https://www.google.com/search?q={}", query)),
+        on_click: Some(format!("https://www.google.com/search?q={query}")),
         icon: Some(icon.clone()),
     }];
 
@@ -67,7 +64,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                 .map(|phrase| ResultItem {
                     title: phrase.to_string(),
                     summary: Some("Search on Google".to_string()),
-                    on_click: Some(format!("https://www.google.com/search?q={}", phrase)),
+                    on_click: Some(format!("https://www.google.com/search?q={phrase}")),
                     icon: Some(icon.clone()),
                 }),
         );

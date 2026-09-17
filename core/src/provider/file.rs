@@ -89,9 +89,8 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
 }
 
 fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultItem> {
-    let home = match get_home() {
-        Ok(h) => h,
-        Err(_) => return vec![],
+    let Ok(home) = get_home() else {
+        return vec![];
     };
 
     let roots = [
@@ -119,7 +118,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                     && name != "__pycache__"
             });
 
-        for entry in walker.filter_map(|e| e.ok()) {
+        for entry in walker.filter_map(Result::ok) {
             let ft = entry.file_type();
             let is_dir = ft.is_dir();
             if !is_dir && !ft.is_file() {
@@ -137,7 +136,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
             let file_url = gio::File::for_path(&path).uri().to_string();
 
             let (title, icon) = if is_dir {
-                (format!("{}/", name), "folder")
+                (format!("{name}/"), "folder")
             } else {
                 let icon = file_icon(&name);
                 (name.into_owned(), icon)
@@ -147,7 +146,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                 title,
                 summary: Some(path),
                 on_click: Some(file_url),
-                icon: find_icon_path(icon).or_else(|| Some("".to_string())),
+                icon: find_icon_path(icon).or_else(|| Some(String::new())),
             });
 
             if results.len() >= 50 {

@@ -175,7 +175,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
 fn tokenize(s: &str) -> Vec<String> {
     s.split([' ', '-', '_'])
         .filter(|w| !w.is_empty())
-        .map(|w| w.to_string())
+        .map(str::to_owned)
         .collect()
 }
 
@@ -222,7 +222,7 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
     if query_lower.chars().count() >= 3 {
         let fs = fuzzy_score(field_lower, query_lower);
         if fs > 0.0 {
-            return (fs * W_FUZZY as f64) as u32;
+            return (fs * f64::from(W_FUZZY)) as u32;
         }
     }
     0
@@ -285,7 +285,7 @@ fn levenshtein(a: &[char], b: &[char]) -> usize {
 }
 
 /// Full app relevance. Name at full weight, comment at 0.5x, each keyword at
-/// 0.3x, GenericName prefix/contains, then the desktop id (`.desktop`
+/// 0.3x, `GenericName` prefix/contains, then the desktop id (`.desktop`
 /// stripped) — first non-zero tier wins. All string inputs must already be
 /// lowercased.
 fn score_app(
@@ -376,7 +376,7 @@ fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
 }
 
 /// Locate the `.desktop` file by id through the XDG data dirs and read the
-/// `GenericName`/`Keywords`/`Actions` keys. gio-rs binds no GDesktopAppInfo, so
+/// `GenericName`/`Keywords`/`Actions` keys. gio-rs binds no `GDesktopAppInfo`, so
 /// this is the only way to reach them. Only the preferred file is read: a user
 /// override replaces the packaged entry whole (which is also what keeps an
 /// action row from naming a group the launched file does not define).
@@ -395,14 +395,14 @@ mod tests {
     fn meta(generic: Option<&str>, keywords: &[&str]) -> DesktopMeta {
         DesktopMeta {
             generic: generic.map(String::from),
-            keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            keywords: keywords.iter().map(ToString::to_string).collect(),
             actions: Vec::new(),
         }
     }
 
     fn s(name: &str, comment: Option<&str>, m: Option<&DesktopMeta>, id: &str, q: &str) -> u32 {
         let name_lower = name.to_lowercase();
-        let comment_lower = comment.map(|c| c.to_lowercase());
+        let comment_lower = comment.map(str::to_lowercase);
         let query_lower = q.trim().to_lowercase();
         let query_words = tokenize(&query_lower);
         score_app(

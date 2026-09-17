@@ -10,8 +10,8 @@ use std::cell::{Cell, RefCell};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use i_slint_core::InternalToken;
 use i_slint_core::window::{InputMethodRequest, WindowAdapterInternal};
@@ -47,7 +47,7 @@ impl Adapter {
         })
     }
 
-    pub fn window(&self) -> &Window {
+    pub const fn window(&self) -> &Window {
         &self.window
     }
 
@@ -128,7 +128,7 @@ pub struct QsPlatform {
 }
 
 impl QsPlatform {
-    pub fn new(adapter: Rc<Adapter>) -> Self {
+    pub const fn new(adapter: Rc<Adapter>) -> Self {
         Self { adapter }
     }
 }
@@ -167,9 +167,7 @@ static CLIPBOARD: Mutex<ClipboardCache> = Mutex::new(ClipboardCache {
 static READING: AtomicBool = AtomicBool::new(false);
 
 fn cache() -> std::sync::MutexGuard<'static, ClipboardCache> {
-    CLIPBOARD
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    CLIPBOARD.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Starts a worker-thread read if one is not already running. `wl-paste` waits
@@ -229,15 +227,12 @@ fn read_clipboard() -> Option<String> {
     });
     // `wl-paste` waits on the selection owner; a wedged owner must not freeze
     // the launcher, so the read is bounded and the child killed on expiry.
-    match rx.recv_timeout(std::time::Duration::from_millis(400)) {
-        Ok(text) => {
-            let _ = child.wait();
-            Some(text)
-        }
-        Err(_) => {
-            let _ = child.kill();
-            None
-        }
+    if let Ok(text) = rx.recv_timeout(std::time::Duration::from_millis(400)) {
+        let _ = child.wait();
+        Some(text)
+    } else {
+        let _ = child.kill();
+        None
     }
 }
 
@@ -293,11 +288,11 @@ mod tests {
         assert_eq!(
             {
                 if cache.known {
-                    cache.text.clone()
+                    cache.text
                 } else {
                     cache.known = true;
                     cache.text = Some("cold read".to_owned());
-                    cache.text.clone()
+                    cache.text
                 }
             },
             Some("cold read".to_owned())

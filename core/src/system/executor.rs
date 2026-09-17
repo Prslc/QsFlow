@@ -12,7 +12,7 @@ pub fn execute_command(cmd: &str) {
 
     process::Command::new("sh")
         .arg("-c")
-        .arg(format!("setsid {} >/dev/null 2>&1 &", clean_cmd))
+        .arg(format!("setsid {clean_cmd} >/dev/null 2>&1 &"))
         .spawn()
         .ok();
 }
@@ -35,7 +35,7 @@ pub fn execute_argv(argv: &[String]) {
         .ok();
 }
 
-/// Launch an application by desktop id via GLib's `GAppInfo` (`g_app_info_launch`)
+/// Launch an application by desktop id via `GLib`'s `GAppInfo` (`g_app_info_launch`)
 /// — no shell, no external `gio` binary. Re-fetches the registered `GAppInfo`
 /// so Exec quoting, field codes, env and `DBusActivatable` single-instance are
 /// all honoured. Falls back silently (no-op) if the id is not found.

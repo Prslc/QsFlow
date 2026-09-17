@@ -35,13 +35,12 @@ impl Plugin for Clipboard {
 }
 
 fn do_search(query: &str) -> Vec<ResultItem> {
-    let output = match Command::new("cliphist").arg("list").output() {
-        Ok(o) => o,
-        Err(_) => return vec![],
+    let Ok(output) = Command::new("cliphist").arg("list").output() else {
+        return vec![];
     };
     let text = String::from_utf8_lossy(&output.stdout);
     let mut results = parse_entries(query, &text);
-    let icon = find_icon_path("clipboard").or_else(|| Some("".to_string()));
+    let icon = find_icon_path("clipboard").or_else(|| Some(String::new()));
     for r in &mut results {
         r.icon = icon.clone();
     }
@@ -72,8 +71,8 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
         results.push(ResultItem {
             title: preview,
             summary: None,
-            on_click: Some(format!("run:sh -c 'cliphist decode {} | wl-copy'", id)),
-            icon: Some("".to_string()),
+            on_click: Some(format!("run:sh -c 'cliphist decode {id} | wl-copy'")),
+            icon: Some(String::new()),
         });
 
         if results.len() >= 50 {
@@ -108,7 +107,7 @@ mod tests {
     #[test]
     fn truncate_long_preview() {
         let long = "a".repeat(200);
-        let raw = format!("1\ttext/plain\t{}", long);
+        let raw = format!("1\ttext/plain\t{long}");
         let entries = parse_entries("", &raw);
         assert!(entries[0].title.len() <= 83); // 80 chars max + "…"
         assert!(entries[0].title.ends_with('…'));

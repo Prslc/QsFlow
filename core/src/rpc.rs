@@ -40,7 +40,7 @@ fn forget_key(params: Option<&Value>) -> Result<String, ()> {
         Some(Value::Object(map)) => map
             .get("on_click")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(str::to_owned)
             .ok_or(()),
         _ => Err(()),
     }
@@ -71,7 +71,7 @@ fn run_cmd(params: Option<&Value>) -> Result<String, ()> {
         Some(Value::Object(map)) => map
             .get("cmd")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(str::to_owned)
             .ok_or(()),
         _ => Err(()),
     }
@@ -115,14 +115,11 @@ pub async fn handle(
 
     match method {
         "search" => {
-            let text = match search_text(params.as_ref()) {
-                Ok(t) => t,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(text) = search_text(params.as_ref()) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             // Await inline (request/response), unlike the streaming text-search
             // path: a JSON-RPC client gets its correlated response even for a
@@ -148,14 +145,11 @@ pub async fn handle(
             }
         }
         "select" => {
-            let payload = match select_payload(params.as_ref()) {
-                Ok(p) => p,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(payload) = select_payload(params.as_ref()) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             let _ = crate::system::usage::record(&payload);
             if has_id {
@@ -163,14 +157,11 @@ pub async fn handle(
             }
         }
         "forget" => {
-            let key = match forget_key(params.as_ref()) {
-                Ok(k) => k,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(key) = forget_key(params.as_ref()) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             let removed = crate::system::usage::forget(&key).unwrap_or(false);
             // The provider walk waits on external hosts (a wedged one holds it
@@ -189,14 +180,11 @@ pub async fn handle(
         // a client that speaks only JSON-RPC can drive the launcher without
         // string command lines.
         "launch" => {
-            let desktop_id = match string_param(params.as_ref(), "desktop_id") {
-                Ok(value) => value,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(desktop_id) = string_param(params.as_ref(), "desktop_id") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             crate::system::executor::launch_app(&desktop_id);
             if has_id {
@@ -204,23 +192,17 @@ pub async fn handle(
             }
         }
         "action" => {
-            let desktop_id = match string_param(params.as_ref(), "desktop_id") {
-                Ok(value) => value,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(desktop_id) = string_param(params.as_ref(), "desktop_id") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
-            let action_id = match string_param(params.as_ref(), "action_id") {
-                Ok(value) => value,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(action_id) = string_param(params.as_ref(), "action_id") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             crate::system::desktop_action::launch(&desktop_id, &action_id);
             if has_id {
@@ -228,14 +210,11 @@ pub async fn handle(
             }
         }
         "open" => {
-            let uri = match string_param(params.as_ref(), "uri") {
-                Ok(value) => value,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(uri) = string_param(params.as_ref(), "uri") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             crate::system::executor::open_uri(&uri);
             if has_id {
@@ -243,14 +222,11 @@ pub async fn handle(
             }
         }
         "copy" => {
-            let payload = match copy_payload(params.as_ref()) {
-                Ok(value) => value,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(payload) = copy_payload(params.as_ref()) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             crate::system::executor::copy_json(&payload);
             if has_id {
@@ -258,14 +234,11 @@ pub async fn handle(
             }
         }
         "run" => {
-            let cmd = match run_cmd(params.as_ref()) {
-                Ok(c) => c,
-                Err(()) => {
-                    if has_id {
-                        respond(tx, id, Err(INVALID_PARAMS)).await;
-                    }
-                    return true;
+            let Ok(cmd) = run_cmd(params.as_ref()) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
+                return true;
             };
             crate::system::executor::execute_command(&cmd);
             if has_id {
@@ -275,16 +248,14 @@ pub async fn handle(
         "resolve_icon" => {
             // Resolve any icon spec (absolute path, theme name, or the
             // `papirus:<name>` scheme) to the absolute path the UI renders.
-            let name = match params {
-                Some(Value::Object(map)) => match map.get("name") {
-                    Some(Value::String(s)) if !s.is_empty() => s.clone(),
-                    _ => {
-                        if has_id {
-                            respond(tx, id, Err(INVALID_PARAMS)).await;
-                        }
-                        return true;
-                    }
-                },
+            let Some(Value::Object(map)) = params else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            };
+            let name = match map.get("name") {
+                Some(Value::String(s)) if !s.is_empty() => s.clone(),
                 _ => {
                     if has_id {
                         respond(tx, id, Err(INVALID_PARAMS)).await;

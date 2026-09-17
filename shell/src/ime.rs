@@ -42,7 +42,7 @@ impl Pending {
         self.commit = Some(text);
     }
 
-    pub fn delete(&mut self, before: u32, after: u32) {
+    pub const fn delete(&mut self, before: u32, after: u32) {
         self.delete = Some((before, after));
     }
 

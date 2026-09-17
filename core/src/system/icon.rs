@@ -60,7 +60,7 @@ fn find_papirus(spec: &str) -> Option<String> {
 
     let mut bases = vec!["/usr/share/icons".to_string()];
     if let Ok(home) = std::env::var("HOME") {
-        bases.push(format!("{}/.local/share/icons", home));
+        bases.push(format!("{home}/.local/share/icons"));
     }
 
     // Cartesian scan in base × size × category order; first existing file

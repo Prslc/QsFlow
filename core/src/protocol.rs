@@ -41,7 +41,7 @@ impl<'a> Request<'a> {
 }
 
 /// Serialize `payload` onto the stdout stream owned by [`spawn_writer`].
-pub(crate) async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
+pub async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
     if let Ok(json) = serde_json::to_string(payload) {
         let _ = tx.send(json).await;
     }

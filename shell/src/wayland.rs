@@ -88,7 +88,7 @@ pub struct Shell {
     app: App,
     session: Session,
 
-    qh: QueueHandle<Shell>,
+    qh: QueueHandle<Self>,
     registry_state: RegistryState,
     seat_state: SeatState,
     output_state: OutputState,
@@ -312,7 +312,7 @@ fn wire_callbacks(ui: &LauncherWindow, intents: &Intents) {
     ui.on_activate(move |index| {
         queue
             .borrow_mut()
-            .push(Intent::Activate(index.max(0) as usize))
+            .push(Intent::Activate(index.max(0) as usize));
     });
     let queue = intents.clone();
     ui.on_forget(move || queue.borrow_mut().push(Intent::Forget));
@@ -538,7 +538,7 @@ impl Shell {
                         rect: if rect.2 > 0 && rect.3 > 0 {
                             rect
                         } else {
-                            self.ime_state.as_ref().map(|old| old.rect).unwrap_or(rect)
+                            self.ime_state.as_ref().map_or(rect, |old| old.rect)
                         },
                         text: properties.text.to_string(),
                         cursor,
@@ -706,8 +706,8 @@ impl Shell {
 
     fn apply_size(&mut self) {
         let scale = self.effective_scale();
-        self.width = (self.logical_w as f64 * scale).round() as u32;
-        self.height = (self.logical_h as f64 * scale).round() as u32;
+        self.width = (f64::from(self.logical_w) * scale).round() as u32;
+        self.height = (f64::from(self.logical_h) * scale).round() as u32;
         self.adapter
             .window()
             .dispatch_event(WindowEvent::ScaleFactorChanged {
@@ -731,7 +731,7 @@ impl Shell {
     /// back, so the surface's own buffer scale stays 1; otherwise the integer
     /// scale is what says how big a logical pixel is.
     fn sync_surface_scale(&self) {
-        let Some(surface) = self.layer.as_ref().map(|layer| layer.wl_surface()) else {
+        let Some(surface) = self.layer.as_ref().map(WaylandSurface::wl_surface) else {
             return;
         };
         if self.ratio.is_some() {
@@ -766,7 +766,7 @@ impl Shell {
         if scale_120 == 0 {
             return;
         }
-        let ratio = scale_120 as f64 / 120.0;
+        let ratio = f64::from(scale_120) / 120.0;
         if self.ratio == Some(ratio) {
             return;
         }
@@ -860,9 +860,9 @@ impl Shell {
     /// high-resolution pair is counted when it is present.
     fn scroll(&mut self, vertical: smithay_client_toolkit::seat::pointer::AxisScroll) {
         let pixels = if vertical.value120 != 0 {
-            vertical.value120 as f64 * 0.5
+            f64::from(vertical.value120) * 0.5
         } else if vertical.discrete != 0 {
-            vertical.discrete as f64 * 60.0
+            f64::from(vertical.discrete) * 60.0
         } else {
             vertical.absolute
         };
@@ -885,9 +885,9 @@ fn blur_rects(x: i32, y: i32, width: i32, height: i32, radius: i32) -> Vec<(i32,
     let mut dy = 0;
     while dy < radius {
         let band = 2.min(radius - dy);
-        let falloff = (radius - dy) as f64;
-        let inset = (radius as f64
-            - (radius as f64 * radius as f64 - falloff * falloff)
+        let falloff = f64::from(radius - dy);
+        let inset = (f64::from(radius)
+            - (f64::from(radius) * f64::from(radius) - falloff * falloff)
                 .max(0.0)
                 .sqrt())
         .round() as i32;
@@ -910,7 +910,7 @@ struct ImeState {
 }
 
 /// Linux input event codes (`BTN_LEFT` …) as Slint's pointer buttons.
-fn pointer_button(button: u32) -> PointerEventButton {
+const fn pointer_button(button: u32) -> PointerEventButton {
     match button {
         0x110 => PointerEventButton::Left,
         0x111 => PointerEventButton::Right,
@@ -947,7 +947,7 @@ fn send_ime_state(ime: &ZwpTextInputV3, state: &ImeState) {
 
 /// The keys that only exist as encoded modifier events, which Slint tracks
 /// itself and which must therefore keep flowing during a composition.
-fn is_modifier(keysym: Keysym) -> bool {
+const fn is_modifier(keysym: Keysym) -> bool {
     matches!(
         slint_key(keysym),
         Some(
@@ -965,7 +965,7 @@ fn is_modifier(keysym: Keysym) -> bool {
 }
 
 /// Slint's `Key` codes for the keys that are not plain text.
-fn slint_key(keysym: Keysym) -> Option<Key> {
+const fn slint_key(keysym: Keysym) -> Option<Key> {
     let key = match keysym {
         Keysym::BackSpace => Key::Backspace,
         Keysym::Tab => Key::Tab,
@@ -1043,13 +1043,13 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         new_factor: i32,
     ) {
-        if self.layer.as_ref().map(|layer| layer.wl_surface()) != Some(surface) {
+        if self.layer.as_ref().map(WaylandSurface::wl_surface) != Some(surface) {
             return;
         }
         // The integer scale is kept even when a fractional ratio is in use: it
         // is the fallback for a compositor that offers the fractional global
         // without the viewporter. `apply_size` picks which one sizes the buffer.
-        let scale = new_factor.max(1) as f64;
+        let scale = f64::from(new_factor.max(1));
         if (self.scale - scale).abs() < f64::EPSILON {
             return;
         }
@@ -1109,7 +1109,7 @@ impl OutputHandler for Shell {
 
 impl LayerShellHandler for Shell {
     fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, layer: &LayerSurface) {
-        if self.layer.as_ref().map(|own| own.wl_surface()) == Some(layer.wl_surface()) {
+        if self.layer.as_ref().map(WaylandSurface::wl_surface) == Some(layer.wl_surface()) {
             self.dismiss();
         }
     }
@@ -1124,7 +1124,7 @@ impl LayerShellHandler for Shell {
     ) {
         // A configure queued for a surface that is already gone must not unlock
         // a present for the next show.
-        if self.layer.as_ref().map(|own| own.wl_surface()) != Some(layer.wl_surface()) {
+        if self.layer.as_ref().map(WaylandSurface::wl_surface) != Some(layer.wl_surface()) {
             return;
         }
         let (width, height) = configure.new_size;
@@ -1228,7 +1228,7 @@ impl KeyboardHandler for Shell {
         _: &[u32],
         _: &[Keysym],
     ) {
-        if self.layer.as_ref().map(|layer| layer.wl_surface()) == Some(surface) {
+        if self.layer.as_ref().map(WaylandSurface::wl_surface) == Some(surface) {
             self.ui.invoke_focus_input();
             self.enable_ime();
         }
@@ -1242,7 +1242,7 @@ impl KeyboardHandler for Shell {
         surface: &wl_surface::WlSurface,
         _: u32,
     ) {
-        if self.layer.as_ref().map(|layer| layer.wl_surface()) == Some(surface) {
+        if self.layer.as_ref().map(WaylandSurface::wl_surface) == Some(surface) {
             // Nothing to do: the surface is going away or focus moved on.
         }
     }
@@ -1303,7 +1303,7 @@ impl PointerHandler for Shell {
         events: &[PointerEvent],
     ) {
         for event in events {
-            if self.layer.as_ref().map(|layer| layer.wl_surface()) != Some(&event.surface) {
+            if self.layer.as_ref().map(WaylandSurface::wl_surface) != Some(&event.surface) {
                 continue;
             }
             match event.kind {

@@ -267,10 +267,10 @@ fn read_loop(stdout: ChildStdout, tx: EventSender) {
                     payload: value.to_string(),
                 });
             }
-        } else if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+        } else if let Some(id) = value.get("id").and_then(serde_json::Value::as_u64) {
             let forgotten = value
                 .pointer("/result/forgotten")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             let _ = tx.send(Event::Forgotten { id, forgotten });
         }

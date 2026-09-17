@@ -94,7 +94,7 @@ fn do_search(expr: &str) -> Vec<ResultItem> {
             let formatted = if value.fract() == 0.0 {
                 format!("{}", value as i64)
             } else {
-                format!("{:.10}", value)
+                format!("{value:.10}")
                     .trim_end_matches('0')
                     .trim_end_matches('.')
                     .to_string()

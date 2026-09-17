@@ -16,12 +16,11 @@ fn candidates(id: &str) -> Vec<PathBuf> {
     if let Some(data) = dirs::data_dir() {
         roots.push(data);
     }
-    match std::env::var("XDG_DATA_DIRS") {
-        Ok(list) => roots.extend(list.split(':').filter(|s| !s.is_empty()).map(PathBuf::from)),
-        Err(_) => {
-            roots.push(PathBuf::from("/usr/local/share"));
-            roots.push(PathBuf::from("/usr/share"));
-        }
+    if let Ok(list) = std::env::var("XDG_DATA_DIRS") {
+        roots.extend(list.split(':').filter(|s| !s.is_empty()).map(PathBuf::from));
+    } else {
+        roots.push(PathBuf::from("/usr/local/share"));
+        roots.push(PathBuf::from("/usr/share"));
     }
     let names: Vec<String> = if id.ends_with(".desktop") {
         vec![id.to_owned()]

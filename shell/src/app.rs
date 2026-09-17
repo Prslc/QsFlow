@@ -206,7 +206,7 @@ impl App {
     pub fn publish(&mut self, ui: &LauncherWindow) {
         let end = (self.first_row + VISIBLE_ROWS).min(self.items.len());
         for index in self.first_row..end {
-            let missing = self.icons.get(index).is_none_or(|icon| icon.is_none());
+            let missing = self.icons.get(index).is_none_or(Option::is_none);
             if missing {
                 self.ensure_icon(index);
                 let row = self.row(index);
@@ -240,7 +240,7 @@ impl App {
             icon: self
                 .icons
                 .get(index)
-                .and_then(|icon| icon.clone())
+                .and_then(Clone::clone)
                 .unwrap_or_default(),
             on_click: item.on_click.clone().into(),
         }

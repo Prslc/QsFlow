@@ -8,7 +8,7 @@ pub fn get_home() -> Result<PathBuf> {
 }
 
 /// Flatpak apps live in `<installation>/exports/share`, which only reaches
-/// `XDG_DATA_DIRS` from a login shell's profile script. Runs before GLib caches
+/// `XDG_DATA_DIRS` from a login shell's profile script. Runs before `GLib` caches
 /// the dirs.
 pub fn ensure_flatpak_data_dirs() {
     let home = env::var("HOME").unwrap_or_default();

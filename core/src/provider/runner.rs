@@ -71,7 +71,7 @@ fn scan_path() -> Vec<(String, String)> {
         let dir_str = match raw_dir.strip_prefix("~/") {
             Some(rest) => home
                 .as_ref()
-                .map(|h| format!("{}/{}", h, rest))
+                .map(|h| format!("{h}/{rest}"))
                 .unwrap_or_default(),
             None => raw_dir.to_string(),
         };
@@ -122,14 +122,14 @@ fn do_search(input: &str) -> Vec<ResultItem> {
             let run_cmd = if args.is_empty() {
                 full_path.clone()
             } else {
-                format!("{} {}", full_path, args)
+                format!("{full_path} {args}")
             };
             results.push((
                 score,
                 ResultItem {
                     title: name.clone(),
                     summary: Some(run_cmd.clone()),
-                    on_click: Some(format!("run:{}", run_cmd)),
+                    on_click: Some(format!("run:{run_cmd}")),
                     icon: find_icon_path(name).or_else(|| Some(String::new())),
                 },
             ));
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn splits_command_and_args() {
-        assert_eq!(split_command("htop"), ("htop".into(), "".into()));
+        assert_eq!(split_command("htop"), ("htop".into(), String::new()));
         assert_eq!(split_command("htop -c"), ("htop".into(), "-c".into()));
         assert_eq!(
             split_command("nvim  main.rs"),
@@ -155,7 +155,7 @@ mod tests {
             split_command("  git pull --rebase"),
             ("git".into(), "pull --rebase".into())
         );
-        assert_eq!(split_command(""), ("".into(), "".into()));
-        assert_eq!(split_command("   "), ("".into(), "".into()));
+        assert_eq!(split_command(""), (String::new(), String::new()));
+        assert_eq!(split_command("   "), (String::new(), String::new()));
     }
 }

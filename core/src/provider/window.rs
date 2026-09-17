@@ -40,7 +40,7 @@ struct WindowInfo {
     workspace_id: Option<u64>,
 }
 
-/// List niri's windows via `niri msg -j windows` and fuzzy-match title/app_id
+/// List niri's windows via `niri msg -j windows` and fuzzy-match `title/app_id`
 /// against the query. `on_click` focuses the window by id through `niri msg
 /// action focus-window` (runs detached after the launcher exits).
 fn do_search(query: &str) -> Vec<ResultItem> {
@@ -96,7 +96,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                 label.clone()
             };
             let summary = w.app_id.as_ref().map(|a| match w.workspace_id {
-                Some(ws) => format!("{} · workspace {}", a, ws),
+                Some(ws) => format!("{a} · workspace {ws}"),
                 None => a.clone(),
             });
             results.push((
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn parses_niri_window_json() {
-        let json = r##"[{"id":5,"title":"kitty","app_id":"kitty","workspace_id":1,"is_focused":false,"layout":{}}]"##;
+        let json = r#"[{"id":5,"title":"kitty","app_id":"kitty","workspace_id":1,"is_focused":false,"layout":{}}]"#;
         let windows: Vec<WindowInfo> = serde_json::from_str(json).unwrap();
         assert_eq!(windows.len(), 1);
         let w = &windows[0];
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn tolerates_missing_optional_fields() {
-        let json = r##"[{"id":2,"title":"foo"}]"##;
+        let json = r#"[{"id":2,"title":"foo"}]"#;
         let windows: Vec<WindowInfo> = serde_json::from_str(json).unwrap();
         assert_eq!(windows[0].app_id, None);
         assert_eq!(windows[0].workspace_id, None);

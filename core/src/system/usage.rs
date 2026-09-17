@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, PoisonError};
 
 use crate::system::fs::get_home;
 
@@ -35,7 +35,7 @@ static DB: LazyLock<Mutex<Connection>> =
 
 /// Run `f` on the shared connection, surviving lock poisoning.
 fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-    let guard = DB.lock().unwrap_or_else(|poison| poison.into_inner());
+    let guard = DB.lock().unwrap_or_else(PoisonError::into_inner);
     f(&guard)
 }
 
@@ -47,7 +47,7 @@ fn migrate(conn: &Connection) -> Result<()> {
         let mut stmt = conn.prepare("PRAGMA table_info(usage)")?;
         let names: Vec<String> = stmt
             .query_map([], |r| r.get::<_, String>(1))?
-            .filter_map(|r| r.ok())
+            .filter_map(Result::ok)
             .collect();
         names.iter().any(|n| n == "on_click")
     };
@@ -58,7 +58,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     let rows: Vec<(String, i64, String, String)> = {
         let mut stmt = conn.prepare("SELECT key, count, last_used_at, item_json FROM usage")?;
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-            .filter_map(|r| r.ok())
+            .filter_map(Result::ok)
             .collect()
     };
 
@@ -210,7 +210,7 @@ fn get_top_with(conn: &Connection, limit: i32) -> Result<Vec<serde_json::Value>>
         Ok(serde_json::from_str(&json).unwrap_or_default())
     })?;
 
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    Ok(rows.filter_map(Result::ok).collect())
 }
 
 #[cfg(test)]
@@ -224,7 +224,7 @@ mod tests {
         conn
     }
 
-    /// Legacy layout: key = on_click, no on_click column.
+    /// Legacy layout: key = `on_click`, no `on_click` column.
     fn legacy_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(

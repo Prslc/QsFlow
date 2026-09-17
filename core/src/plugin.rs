@@ -29,7 +29,7 @@ struct PluginEntry {
     command: Option<String>,
 }
 
-fn default_enable() -> bool {
+const fn default_enable() -> bool {
     true
 }
 
@@ -327,8 +327,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
 
     let (keyword, query) = input
         .split_once(' ')
-        .map(|(k, q)| (k.trim(), q.trim()))
-        .unwrap_or(("", input));
+        .map_or(("", input), |(k, q)| (k.trim(), q.trim()));
 
     if !keyword.is_empty()
         && query.is_empty()
