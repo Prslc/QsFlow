@@ -18,6 +18,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | item object | `null` (records usage; `copy:` actions never recorded) |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `launch` | `{"desktop_id"}` | `null` (launches through GLib's `GAppInfo`) |
+| `open` | `{"uri"}` | `null` (opens with the default handler) |
+| `copy` | `{"text"}` | `null` (writes the Wayland clipboard) |
 | `resolve_icon` | `{"name"}` | absolute path for an icon spec |
 | `list_plugins` | — | plugin metadata; see [schema](#plugin-metadata-list_plugins) |
 | `theme` | — | theme colors |

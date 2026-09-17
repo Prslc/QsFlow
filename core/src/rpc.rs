@@ -46,6 +46,24 @@ fn forget_key(params: &Option<Value>) -> Result<String, ()> {
     }
 }
 
+fn string_param(params: &Option<Value>, key: &str) -> Result<String, ()> {
+    match params {
+        Some(Value::Object(map)) => {
+            map.get(key).and_then(|v| v.as_str()).map(str::to_owned).ok_or(())
+        }
+        _ => Err(()),
+    }
+}
+
+/// The `copy` method's params are the item's own `{"text": …}` object, the same
+/// shape the `copy:` row scheme carries.
+fn copy_payload(params: &Option<Value>) -> Result<String, ()> {
+    match params {
+        Some(obj @ Value::Object(_)) => Ok(obj.to_string()),
+        _ => Err(()),
+    }
+}
+
 fn run_cmd(params: &Option<Value>) -> Result<String, ()> {
     match params {
         Some(Value::Object(map)) => map
@@ -149,6 +167,54 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
             };
             let _ = crate::system::usage::forget(&key);
             crate::plugin::forget_row(&key).await;
+            if has_id {
+                respond(tx, id, Ok(Value::Null)).await;
+            }
+        }
+        // `launch`, `copy` and `open` mirror the text verbs of the same name, so
+        // a client that speaks only JSON-RPC can drive the launcher without
+        // string command lines.
+        "launch" => {
+            let desktop_id = match string_param(&params, "desktop_id") {
+                Ok(value) => value,
+                Err(()) => {
+                    if has_id {
+                        respond(tx, id, Err(INVALID_PARAMS)).await;
+                    }
+                    return true;
+                }
+            };
+            crate::system::executor::launch_app(&desktop_id);
+            if has_id {
+                respond(tx, id, Ok(Value::Null)).await;
+            }
+        }
+        "open" => {
+            let uri = match string_param(&params, "uri") {
+                Ok(value) => value,
+                Err(()) => {
+                    if has_id {
+                        respond(tx, id, Err(INVALID_PARAMS)).await;
+                    }
+                    return true;
+                }
+            };
+            crate::system::executor::open_uri(&uri);
+            if has_id {
+                respond(tx, id, Ok(Value::Null)).await;
+            }
+        }
+        "copy" => {
+            let payload = match copy_payload(&params) {
+                Ok(value) => value,
+                Err(()) => {
+                    if has_id {
+                        respond(tx, id, Err(INVALID_PARAMS)).await;
+                    }
+                    return true;
+                }
+            };
+            crate::system::executor::copy_json(&payload);
             if has_id {
                 respond(tx, id, Ok(Value::Null)).await;
             }

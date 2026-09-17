@@ -477,7 +477,7 @@ impl Shell {
             "on_click": item.on_click,
             "icon": item.icon,
         });
-        self.session.send(&format!("select {record}\n"));
+        self.session.select(&record);
         self.session.action(&item.action);
         // The launcher stays up for a beat so the launch does not race the
         // dismiss; a keyboard dismissal is instant.

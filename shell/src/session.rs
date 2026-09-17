@@ -56,17 +56,31 @@ impl Action {
         }
     }
 
-    /// The one line this action turns into; `None` when there is nothing to do.
-    pub fn line(&self) -> Option<String> {
-        let line = match self {
-            Self::Launch(id) => format!("launch {id}\n"),
-            Self::Run(command) => format!("run {command}\n"),
-            Self::Copy(argument) => format!("copy {argument}\n"),
-            Self::Desktop(action) => format!("action {action}\n"),
-            Self::Open(uri) => format!("open {uri}\n"),
+    /// The one message this action turns into; `None` when there is nothing to
+    /// do. Search stays on the text protocol — it is a stream — while the
+    /// commands go to the JSON-RPC methods that mirror the text verbs.
+    pub fn request(&self) -> Option<String> {
+        let (method, params) = match self {
+            Self::Launch(id) => ("launch", serde_json::json!({ "desktop_id": id })),
+            Self::Run(command) => ("run", serde_json::json!({ "cmd": command })),
+            Self::Copy(argument) => (
+                "copy",
+                match serde_json::from_str(argument) {
+                    Ok(value @ serde_json::Value::Object(_)) => value,
+                    // Whatever a malformed `copy:` argument held is still text.
+                    _ => serde_json::json!({ "text": argument }),
+                },
+            ),
+            Self::Open(uri) => ("open", serde_json::json!({ "uri": uri })),
+            // No core on this branch owns desktop actions; a core that does
+            // takes the text verb.
+            Self::Desktop(action) => return Some(format!("action {action}\n")),
             Self::None => return None,
         };
-        Some(line)
+        Some(format!(
+            "{}\n",
+            serde_json::json!({ "jsonrpc": "2.0", "method": method, "params": params })
+        ))
     }
 }
 
@@ -158,11 +172,19 @@ impl Session {
         self.send(&line);
     }
 
-    /// Exactly one verb per row, or nothing at all.
+    /// Exactly one request per row, or nothing at all.
     pub fn action(&mut self, action: &Action) {
-        if let Some(line) = action.line() {
-            self.send(&line);
+        if let Some(request) = action.request() {
+            self.send(&request);
         }
+    }
+
+    /// Records a row's usage through the method that mirrors the text verb.
+    pub fn select(&mut self, record: &serde_json::Value) {
+        self.send(&format!(
+            "{}\n",
+            serde_json::json!({ "jsonrpc": "2.0", "method": "select", "params": record })
+        ));
     }
 
     /// `forget` goes through JSON-RPC because only the answer says whether a row
@@ -242,33 +264,68 @@ fn read_loop(stdout: ChildStdout, tx: EventSender) {
 mod tests {
     use super::*;
 
+    fn request_of(on_click: &str) -> Option<serde_json::Value> {
+        let line = Action::parse(on_click).request()?;
+        Some(serde_json::from_str(line.trim_end()).expect("a request is one JSON object"))
+    }
+
     #[test]
-    fn every_scheme_parses_and_round_trips_to_one_line() {
-        for (on_click, line) in [
-            ("launch:firefox", "launch firefox\n"),
-            ("run:btop --utf", "run btop --utf\n"),
-            (r#"copy:{"text":"x"}"#, "copy {\"text\":\"x\"}\n"),
+    fn every_scheme_becomes_one_json_rpc_request() {
+        for (on_click, method, key, value) in [
+            ("launch:firefox", "launch", "desktop_id", "firefox"),
+            ("run:btop --utf", "run", "cmd", "btop --utf"),
             (
-                "action:app.desktop:new-window",
-                "action app.desktop:new-window\n",
+                "https://example.com/a b",
+                "open",
+                "uri",
+                "https://example.com/a b",
             ),
-            ("https://example.com/a b", "open https://example.com/a b\n"),
-            ("file:///tmp/a%20b", "open file:///tmp/a%20b\n"),
-            ("mailto:me@example.com", "open mailto:me@example.com\n"),
+            ("file:///tmp/a%20b", "open", "uri", "file:///tmp/a%20b"),
+            (
+                "mailto:me@example.com",
+                "open",
+                "uri",
+                "mailto:me@example.com",
+            ),
             // A bare command is still run, not opened.
-            ("kitty -e htop", "run kitty -e htop\n"),
+            ("kitty -e htop", "run", "cmd", "kitty -e htop"),
         ] {
-            assert_eq!(
-                Action::parse(on_click).line().as_deref(),
-                Some(line),
-                "{on_click}"
+            let request = request_of(on_click).expect(on_click);
+            assert_eq!(request["jsonrpc"], "2.0", "{on_click}");
+            assert_eq!(request["method"], method, "{on_click}");
+            assert_eq!(request["params"][key], value, "{on_click}");
+            assert!(
+                request.get("id").is_none(),
+                "a command needs no reply: {on_click}"
             );
         }
+
+        let request = request_of(r#"copy:{"text":"hi"}"#).expect("copy");
+        assert_eq!(request["method"], "copy");
+        assert_eq!(request["params"]["text"], "hi");
+    }
+
+    #[test]
+    fn a_malformed_copy_argument_is_still_text() {
+        let request = request_of("copy:not json").expect("copy");
+        assert_eq!(request["method"], "copy");
+        assert_eq!(request["params"]["text"], "not json");
+    }
+
+    #[test]
+    fn a_desktop_action_keeps_the_text_verb() {
+        assert_eq!(
+            Action::parse("action:app.desktop:new-window")
+                .request()
+                .as_deref(),
+            Some("action app.desktop:new-window\n"),
+            "no core on this branch owns desktop actions"
+        );
     }
 
     #[test]
     fn an_empty_scheme_does_nothing() {
         assert_eq!(Action::parse(""), Action::None);
-        assert_eq!(Action::parse("").line(), None);
+        assert_eq!(Action::parse("").request(), None);
     }
 }

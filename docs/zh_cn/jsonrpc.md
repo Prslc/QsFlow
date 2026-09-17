@@ -16,6 +16,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | 结果项对象 | `null`（记录使用） |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `launch` | `{"desktop_id"}` | `null`（经 GLib 的 `GAppInfo` 启动） |
+| `open` | `{"uri"}` | `null`（用默认处理器打开） |
+| `copy` | `{"text"}` | `null`（写入 Wayland 剪贴板） |
 | `resolve_icon` | `{"name"}` | 图标规范对应的绝对路径 |
 | `list_plugins` | — | 插件元数据；见 [schema](#插件元数据list_plugins) |
 | `theme` | — | 主题颜色 |
