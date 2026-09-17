@@ -1,6 +1,6 @@
 <div align="center">
 
-# QsFlow (QuickShell)
+# QsFlow
 
 <img src="images/application_default.png" alt="App Icon" width="150" height="150"><br>
 
