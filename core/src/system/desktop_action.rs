@@ -1,10 +1,12 @@
 //! Desktop actions: the `[Desktop Action <id>]` groups of a `.desktop` file.
 //!
-//! gio binds no desktop-action launcher, so the lookup and the `Exec=` parse
-//! live here. The command itself goes through the same detached runner as every
-//! other row, so nothing here spawns a process itself.
+//! gio binds no desktop-action launcher, so the entry is read here and its argv
+//! is handed to the detached runner with no shell in between.
 
-use std::path::PathBuf;
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
+
+use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
 
 /// Every path a desktop id may live at, in XDG precedence order: the user's own
 /// data dir first, then `$XDG_DATA_DIRS` (which `fs::ensure_flatpak_data_dirs`
@@ -28,7 +30,11 @@ fn candidates(id: &str) -> Vec<PathBuf> {
     };
     roots
         .into_iter()
-        .flat_map(|root| names.iter().map(move |name| root.join("applications").join(name)))
+        .flat_map(|root| {
+            names
+                .iter()
+                .map(move |name| root.join("applications").join(name))
+        })
         .collect()
 }
 
@@ -37,55 +43,91 @@ pub fn find(id: &str) -> Option<PathBuf> {
     candidates(id).into_iter().find(|path| path.is_file())
 }
 
-/// The `Exec=` line of `[Desktop Action <action_id>]`, with its field codes
-/// removed: an action row carries no file or URI to substitute, and the codes
-/// that would name one (`%f`, `%u`, `%F`, `%U`) are meaningless here.
-pub fn action_exec(contents: &str, action_id: &str) -> Option<String> {
-    let wanted = format!("[Desktop Action {action_id}]");
-    let mut in_group = false;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            in_group = line == wanted;
-            continue;
+/// What this entry's field codes stand for. `%i` names the action group's own
+/// `Icon=` when it has one, as the spec's action groups allow.
+struct Codes<'a> {
+    name: Option<Cow<'a, str>>,
+    icon: Option<&'a str>,
+    path: String,
+}
+
+impl<'a> Codes<'a> {
+    fn of(entry: &'a DesktopEntry, action_id: &str, path: &Path, locales: &[String]) -> Self {
+        Self {
+            name: entry.name(locales),
+            icon: entry
+                .action_entry(action_id, "Icon")
+                .or_else(|| entry.icon()),
+            path: path.display().to_string(),
         }
-        if !in_group {
-            continue;
+    }
+
+    /// One argument of the parsed `Exec=`, expanded into zero, one or two
+    /// arguments of the argv. `%i` is the only code that becomes two.
+    fn push(&self, arg: &str, argv: &mut Vec<String>) {
+        if arg == "%i" {
+            if let Some(icon) = self.icon {
+                argv.push("--icon".to_owned());
+                argv.push(icon.to_owned());
+            }
+            return;
         }
-        if let Some(value) = line.strip_prefix("Exec=") {
-            let exec = expand_field_codes(value);
-            if !exec.is_empty() {
-                return Some(exec);
+        let mut out = String::with_capacity(arg.len());
+        let mut chars = arg.chars();
+        while let Some(c) = chars.next() {
+            if c != '%' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('%') => out.push('%'),
+                Some('c') => out.push_str(self.name.as_deref().unwrap_or("")),
+                Some('k') => out.push_str(&self.path),
+                // `%f`/`%u`/`%F`/`%U` stand for a file or URI this row does not
+                // carry, `%i` was handled above, and anything else is unknown:
+                // all of them drop out.
+                Some(_) | None => {}
             }
         }
-    }
-    None
-}
-
-fn expand_field_codes(exec: &str) -> String {
-    let mut stripped = String::with_capacity(exec.len());
-    let mut chars = exec.chars();
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            stripped.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('%') => stripped.push('%'),
-            // `%i` stands for `--icon <Icon>`; the rest stand for paths.
-            Some(_) | None => {}
+        // An argument that was nothing but field codes is gone, not empty.
+        if !out.is_empty() {
+            argv.push(out);
         }
     }
-    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Runs one action of one desktop entry. Returns the command it ran.
-pub fn launch(desktop_id: &str, action_id: &str) -> Option<String> {
+/// The argv of one `Exec=`, with its field codes expanded. The split is
+/// `g_shell_parse_argv` — the same function gio parses `Exec=` with on the
+/// `launch:` path — because the spec's argument quoting is not the shell's:
+/// `Exec=foo "a;b"` is two arguments with a literal semicolon, and nothing in
+/// the line is ever syntax.
+fn expand(exec: &str, entry: &DesktopEntry, action_id: &str, path: &Path) -> Vec<String> {
+    let Ok(parsed) = gio::glib::shell_parse_argv(exec) else {
+        return Vec::new();
+    };
+    let locales = get_languages_from_env();
+    let codes = Codes::of(entry, action_id, path, &locales);
+    let mut argv = Vec::with_capacity(parsed.len());
+    for arg in parsed {
+        codes.push(&arg.to_string_lossy(), &mut argv);
+    }
+    argv
+}
+
+/// The argv of `[Desktop Action <action_id>]`, or `None` when the entry carries
+/// no such group or its `Exec=` expands to nothing.
+pub fn action_argv(desktop_id: &str, action_id: &str) -> Option<Vec<String>> {
     let path = find(desktop_id)?;
-    let contents = std::fs::read_to_string(path).ok()?;
-    let exec = action_exec(&contents, action_id)?;
-    crate::system::executor::execute_command(&exec);
-    Some(exec)
+    let entry = DesktopEntry::from_path(&path, None::<&[String]>).ok()?;
+    let argv = expand(entry.action_exec(action_id)?, &entry, action_id, &path);
+    (!argv.is_empty()).then_some(argv)
+}
+
+/// Runs one action of one desktop entry, returning the argv it ran.
+pub fn launch(desktop_id: &str, action_id: &str) -> Option<Vec<String>> {
+    let argv = action_argv(desktop_id, action_id)?;
+    crate::system::executor::execute_argv(&argv);
+    Some(argv)
 }
 
 #[cfg(test)]
@@ -95,8 +137,9 @@ mod tests {
     const ENTRY: &str = "\
 [Desktop Entry]
 Name=Nautilus
+Icon=org.gnome.Nautilus
 Exec=nautilus --new-window
-Actions=new-window;tab;
+Actions=new-window;tab;icon;
 
 [Desktop Action new-window]
 Name=New Window
@@ -104,27 +147,57 @@ Exec=nautilus --new-window %U
 
 [Desktop Action tab]
 Name=New Tab
-Exec=nautilus --tab
+Exec=nautilus --tab \"a b;c\"
+
+[Desktop Action icon]
+Name=Icon
+Exec=nautilus %i --profile \"100%% sure\"
 ";
 
+    fn argv(action_id: &str) -> Vec<String> {
+        let path = Path::new("/usr/share/applications/org.gnome.Nautilus.desktop");
+        let entry = DesktopEntry::from_str(path, ENTRY, None::<&[String]>).unwrap();
+        expand(
+            entry.action_exec(action_id).unwrap_or(""),
+            &entry,
+            action_id,
+            path,
+        )
+    }
+
     #[test]
-    fn an_action_takes_its_own_exec_and_loses_the_field_codes() {
+    fn an_action_takes_its_own_exec_and_loses_the_path_codes() {
         assert_eq!(
-            action_exec(ENTRY, "new-window").as_deref(),
-            Some("nautilus --new-window"),
-            "%U names a path the row does not carry"
+            argv("new-window"),
+            ["nautilus", "--new-window"],
+            "%U names a URI the row does not carry"
         );
-        assert_eq!(action_exec(ENTRY, "tab").as_deref(), Some("nautilus --tab"));
+        assert_eq!(argv("tab"), ["nautilus", "--tab", "a b;c"]);
     }
 
     #[test]
     fn the_plain_entry_is_not_an_action() {
-        assert_eq!(action_exec(ENTRY, "").as_deref(), None);
-        assert_eq!(action_exec(ENTRY, "does-not-exist"), None);
+        assert!(argv("").is_empty());
+        assert!(argv("does-not-exist").is_empty());
     }
 
     #[test]
-    fn a_doubled_percent_stays() {
-        assert_eq!(expand_field_codes("sh -c 'echo 100%%'"), "sh -c 'echo 100%'");
+    fn a_quoted_argument_is_one_argument_and_a_percent_stays_literal() {
+        assert_eq!(
+            argv("icon"),
+            [
+                "nautilus",
+                "--icon",
+                "org.gnome.Nautilus",
+                "--profile",
+                "100% sure"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_semicolon_is_not_a_command_separator() {
+        // The whole point of the argv runner: `;` is an argument, not syntax.
+        assert_eq!(argv("tab")[2], "a b;c");
     }
 }

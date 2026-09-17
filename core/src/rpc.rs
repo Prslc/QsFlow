@@ -48,9 +48,11 @@ fn forget_key(params: &Option<Value>) -> Result<String, ()> {
 
 fn string_param(params: &Option<Value>, key: &str) -> Result<String, ()> {
     match params {
-        Some(Value::Object(map)) => {
-            map.get(key).and_then(|v| v.as_str()).map(str::to_owned).ok_or(())
-        }
+        Some(Value::Object(map)) => map
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .ok_or(()),
         _ => Err(()),
     }
 }

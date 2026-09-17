@@ -17,6 +17,24 @@ pub fn execute_command(cmd: &str) {
         .ok();
 }
 
+/// Run an argv detached from the backend — no shell, because a `.desktop` file's
+/// `Exec=` already *is* argv: putting it through `sh -c` would make a `;` or a
+/// `$` inside one argument syntax again.
+pub fn execute_argv(argv: &[String]) {
+    let Some((program, args)) = argv.split_first() else {
+        return;
+    };
+
+    process::Command::new("setsid")
+        .arg(program)
+        .args(args)
+        .stdin(process::Stdio::null())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .ok();
+}
+
 /// Launch an application by desktop id via GLib's `GAppInfo` (`g_app_info_launch`)
 /// — no shell, no external `gio` binary. Re-fetches the registered `GAppInfo`
 /// so Exec quoting, field codes, env and `DBusActivatable` single-instance are
