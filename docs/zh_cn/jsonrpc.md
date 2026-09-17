@@ -14,7 +14,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `search` | `{"text"}` | 结果项数组 |
 | `top` | — | 最常用项 |
 | `select` | 结果项对象 | `null`（记录使用） |
-| `forget` | `{"on_click"}` | `null` |
+| `forget` | `{"on_click"}` | `{"forgotten": bool}` |
 | `run` | `{"cmd"}` | `null` |
 | `action` | `{"desktop_id","action_id"}` | `null`（运行 desktop 文件里的一个 `[Desktop Action …]` 组） |
 | `launch` | `{"desktop_id"}` | `null`（经 GLib 的 `GAppInfo` 启动） |
@@ -32,8 +32,11 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 `forget` 把一行从使用历史中移除。当 `on_click` 是 `run:` shell 命令、且其首个
 token 是某个已注册外部主机的 `command`（绝对路径；配置用裸名时按 PATH 解析），
 core 还会向该主机转发一条 `forget` 请求，让主机删除自己的数据——例如 todo 插件
-据此删除对应待办。未实现 `forget` 方法的主机保持「仅 usage」语义；转发失败静默
-忽略，响应仍为 `null`。
+据此删除对应待办。返回值说明是否真的删掉了东西：删除了一条历史行、**或**拥有该行
+的主机无错误地应答时为 `true`，否则为 `false`。内置提供者没有可删的数据；未实现
+`forget` 方法的主机会回 `-32601`，这算「不是我的行」——UI 会把这类行留在列表里，
+而不是声称完成了一次没人做过的删除。主机遍历在自己的任务里跑，慢的或卡住的主机
+不会占住 stdin 循环，它的回复只是晚一点到，仍带着自己的 `id`。
 
 无 `id` 的请求是通知（仅副作用，不返回响应）。未知方法返回 `-32601`；畸形请求
 `-32600`；参数错误 `-32602`。

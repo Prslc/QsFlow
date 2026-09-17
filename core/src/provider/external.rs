@@ -95,7 +95,7 @@ impl Plugin for External {
         Box::pin(async move { query_default(&command, &plugin, &icon).await })
     }
 
-    fn forget(&self, on_click: &str) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    fn forget(&self, on_click: &str) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>> {
         let command = self.command.clone();
         let on_click = on_click.to_string();
         Box::pin(async move { forget_external(&command, &on_click).await })
@@ -258,16 +258,17 @@ fn resolve_command(command: &str) -> String {
 /// Relay a row's removal to the host that owns it: when `on_click` is a
 /// `run:` shell command whose first token is this host's `command` (as
 /// configured or resolved on PATH), ask the host to `forget` the row — it
-/// may delete plugin data (e.g. a todo item). Host failures are silent:
-/// usage history was already removed, and a host without a `forget` method
-/// simply has no data to drop.
-async fn forget_external(command: &str, on_click: &str) -> Result<()> {
+/// may delete plugin data (e.g. a todo item). `true` means this host owned the
+/// row and acknowledged the relay; a host without a `forget` method answers
+/// `-32601`, which is an error object and therefore "not mine". Host failures
+/// are silent: usage history was already removed either way.
+async fn forget_external(command: &str, on_click: &str) -> Result<bool> {
     let Some(argv0) = run_argv0(on_click) else {
-        return Ok(());
+        return Ok(false);
     };
     let resolved = resolve_command(command);
     if argv0 != command && argv0 != resolved {
-        return Ok(());
+        return Ok(false);
     }
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -275,8 +276,8 @@ async fn forget_external(command: &str, on_click: &str) -> Result<()> {
         "params": { "on_click": on_click },
         "id": 1,
     });
-    let _ = rpc_call(command, &request).await;
-    Ok(())
+    let response = rpc_call(command, &request).await;
+    Ok(response.is_some_and(|reply| reply.get("error").is_none()))
 }
 /// Resolve one result icon to what the UI can render (`file://` + path):
 /// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,
@@ -320,5 +321,52 @@ mod tests {
         let resolved = resolve_item_icon("papirus:folder-open", None).unwrap();
         assert!(resolved.contains("/Papirus/"));
         assert!(resolved.ends_with(".svg"));
+    }
+
+    /// A host that answers the way a plugin framework does: it consumes the
+    /// request and prints one response line.
+    fn host(dir: &tempfile::TempDir, reply: &str) -> String {
+        use std::io::Write;
+        let path = dir.path().join("host.sh");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(file, "#!/bin/sh").unwrap();
+        writeln!(file, "cat >/dev/null").unwrap();
+        writeln!(file, "printf '%s\\n' '{reply}'").unwrap();
+        drop(file);
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path.display().to_string()
+    }
+
+    #[tokio::test]
+    async fn a_row_another_command_owns_is_left_alone() {
+        // No host is contacted: the on_click's command is not this one.
+        let owned = forget_external("/usr/bin/definitely-not-this", "run:/bin/other del 1")
+            .await
+            .unwrap();
+        assert!(!owned);
+    }
+
+    #[tokio::test]
+    async fn a_host_that_answers_owns_the_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let command = host(&dir, r#"{"jsonrpc":"2.0","result":null,"id":1}"#);
+        let owned = forget_external(&command, &format!("run:{command} del 1"))
+            .await
+            .unwrap();
+        assert!(owned, "the host dropped its own data, so the row may leave");
+    }
+
+    #[tokio::test]
+    async fn a_host_without_a_forget_method_disowns_the_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let reply =
+            r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":1}"#;
+        let command = host(&dir, reply);
+        let owned = forget_external(&command, &format!("run:{command} del 1"))
+            .await
+            .unwrap();
+        assert!(!owned, "-32601 means the row is not this host's to drop");
     }
 }

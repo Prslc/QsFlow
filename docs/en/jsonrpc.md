@@ -16,7 +16,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `search` | `{"text"}` | array of result items |
 | `top` | — | most-used items |
 | `select` | item object | `null` (records usage; `copy:` actions never recorded) |
-| `forget` | `{"on_click"}` | `null` |
+| `forget` | `{"on_click"}` | `{"forgotten": bool}` |
 | `run` | `{"cmd"}` | `null` |
 | `action` | `{"desktop_id","action_id"}` | `null` (runs one `[Desktop Action …]` group of a desktop file) |
 | `launch` | `{"desktop_id"}` | `null` (launches through GLib's `GAppInfo`) |
@@ -36,8 +36,13 @@ default view.
 command whose first token is a registered external host's `command` (absolute
 path, or PATH-resolved when the config uses a bare name), the core also relays
 a `forget` request to that host so it can delete its own data — e.g. the todo
-plugin removes the todo. Hosts without a `forget` method keep usage-only
-semantics; relay failures are silent and the response is still `null`.
+plugin removes the todo. The answer says whether anything was really dropped:
+`true` when a history row was deleted **or** a host that owns the row answered
+without an error, `false` otherwise. A built-in provider has nothing to forget,
+and a host without a `forget` method answers `-32601`, which counts as "not
+mine" — the UI keeps such a row in the list rather than claiming a deletion
+nobody made. The host walk runs in a task of its own, so a slow or wedged host
+cannot hold the stdin loop; its reply simply lands later, carrying its `id`.
 
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params

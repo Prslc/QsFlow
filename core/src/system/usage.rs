@@ -111,7 +111,8 @@ pub fn record(item_json: &str) -> Result<()> {
     with_db(|conn| record_with(conn, item_json))
 }
 
-pub fn forget(on_click: &str) -> Result<()> {
+/// Drop one history entry, reporting whether a row was really there.
+pub fn forget(on_click: &str) -> Result<bool> {
     with_db(|conn| forget_with(conn, on_click))
 }
 
@@ -172,8 +173,9 @@ fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
 
 /// Drop one history entry. Callers pass the row's `on_click`; resolve it to
 /// the title-keyed entry first so a merged row (same title, several actions)
-/// is removed whole instead of leaving its siblings behind as ghosts.
-fn forget_with(conn: &Connection, on_click: &str) -> Result<()> {
+/// is removed whole instead of leaving its siblings behind as ghosts. `true`
+/// when a row was actually deleted (`forget`'s answer rides on this).
+fn forget_with(conn: &Connection, on_click: &str) -> Result<bool> {
     let title: Option<String> = conn
         .query_row(
             "SELECT key FROM usage WHERE on_click = ?1 LIMIT 1",
@@ -181,12 +183,12 @@ fn forget_with(conn: &Connection, on_click: &str) -> Result<()> {
             |r| r.get(0),
         )
         .ok();
-    match title {
+    let deleted = match title {
         Some(t) => conn.execute("DELETE FROM usage WHERE key = ?1", [t])?,
         // legacy keyed-by-action rows that never went through migrate
         None => conn.execute("DELETE FROM usage WHERE key = ?1", [on_click])?,
     };
-    Ok(())
+    Ok(deleted > 0)
 }
 
 /// Drop `copy:` rows recorded before the `is_ephemeral` guard existed. Runs at
@@ -255,8 +257,12 @@ mod tests {
         record_with(&conn, r#"{"title":"A","on_click":"run:a"}"#).unwrap();
         assert_eq!(get_top_with(&conn, 10).unwrap().len(), 1);
 
-        forget_with(&conn, "run:a").unwrap();
+        assert!(forget_with(&conn, "run:a").unwrap(), "a row was there");
         assert!(get_top_with(&conn, 10).unwrap().is_empty());
+        assert!(
+            !forget_with(&conn, "run:a").unwrap(),
+            "nothing left to drop, so `forget` answers false"
+        );
     }
 
     #[test]

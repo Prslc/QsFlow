@@ -87,12 +87,16 @@ pub async fn serve() -> Result<()> {
 
     let mut reader = BufReader::new(io::stdin()).lines();
     let mut search: Option<JoinHandle<()>> = None;
+    // A `forget` walks the external hosts, which waits on them, so it runs in a
+    // task; the handles are kept so a one-shot client still gets its reply
+    // before this process returns.
+    let mut forgets: Vec<JoinHandle<()>> = Vec::new();
 
     while let Some(line) = reader.next_line().await? {
         let input = line.trim_start();
 
         // JSON-RPC 2.0 requests — independent of the text protocol
-        if rpc::handle(input, &tx).await {
+        if rpc::handle(input, &tx, &mut forgets).await {
             continue;
         }
 
@@ -103,7 +107,11 @@ pub async fn serve() -> Result<()> {
             }
             Request::Forget(key) => {
                 let _ = system::usage::forget(key);
-                plugin::forget_row(key).await;
+                forgets.retain(|handle| !handle.is_finished());
+                let key = key.to_string();
+                forgets.push(tokio::spawn(async move {
+                    plugin::forget_row(&key).await;
+                }));
             }
             Request::Run(cmd) => system::executor::execute_command(cmd),
             Request::Copy(payload) => system::executor::copy_json(payload),
@@ -111,6 +119,10 @@ pub async fn serve() -> Result<()> {
             Request::Launch(id) => system::executor::launch_app(id),
             Request::Search(query) => start_search(&tx, &mut search, query),
         }
+    }
+
+    for handle in forgets {
+        let _ = handle.await;
     }
 
     Ok(())

@@ -63,12 +63,14 @@ pub trait Plugin: Send + Sync {
     /// Drop a result row's data (best effort, invoked by `forget`). Usage
     /// history is handled by the caller; external hosts that own the row —
     /// its `on_click` is a `run:` command invoking their `command` — relay a
-    /// core → host `forget` so they can delete their own data. Default: no-op.
+    /// core → host `forget` so they can delete their own data. `true` means
+    /// this provider owned the row and dropped it, which is what lets the UI
+    /// take it out of the list; the default has nothing to forget.
     fn forget(
         &self,
         _on_click: &str,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
-        Box::pin(async { Ok(()) })
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<bool>> + Send + '_>> {
+        Box::pin(async { Ok(false) })
     }
 }
 
@@ -268,13 +270,17 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
 
 /// Drop a result row's data across the registry (best effort). Called by the
 /// `forget` paths after usage history is removed; only external hosts that
-/// own the `on_click` act on it (see `Plugin::forget`).
-pub async fn forget_row(on_click: &str) {
+/// own the `on_click` act on it (see `Plugin::forget`). `true` when one of them
+/// owned the row and dropped it, so `forget` can answer truthfully instead of
+/// the UI claiming a deletion nobody made.
+pub async fn forget_row(on_click: &str) -> bool {
     ensure_loaded().await;
     let reg = REGISTRY.read().await;
+    let mut owned = false;
     for entry in reg.iter() {
-        let _ = entry.plugin.forget(on_click).await;
+        owned |= entry.plugin.forget(on_click).await.unwrap_or(false);
     }
+    owned
 }
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {

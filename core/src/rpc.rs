@@ -79,8 +79,13 @@ fn run_cmd(params: &Option<Value>) -> Result<String, ()> {
 
 /// Handle a line as a JSON-RPC 2.0 request. Returns `true` if `line` was a
 /// JSON-RPC request (valid or not); `false` if it should fall through to the
-/// legacy text protocol.
-pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
+/// legacy text protocol. `forgets` collects the tasks a `forget` spawns, so the
+/// caller can wait for their replies before the process exits.
+pub async fn handle(
+    line: &str,
+    tx: &mpsc::Sender<String>,
+    forgets: &mut Vec<tokio::task::JoinHandle<()>>,
+) -> bool {
     // JSON-RPC requests are always objects; skip the JSON parse on the hot
     // text-search path where most lines are plain queries.
     if !line.starts_with('{') {
@@ -167,11 +172,18 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
                     return true;
                 }
             };
-            let _ = crate::system::usage::forget(&key);
-            crate::plugin::forget_row(&key).await;
-            if has_id {
-                respond(tx, id, Ok(Value::Null)).await;
-            }
+            let removed = crate::system::usage::forget(&key).unwrap_or(false);
+            // The provider walk waits on external hosts (a wedged one holds it
+            // for the request timeout), so it must not hold the read loop: the
+            // reply carries the id and may land out of order.
+            let tx = tx.clone();
+            forgets.retain(|handle| !handle.is_finished());
+            forgets.push(tokio::spawn(async move {
+                let owned = crate::plugin::forget_row(&key).await;
+                if has_id {
+                    respond(&tx, id, Ok(json!({ "forgotten": removed || owned }))).await;
+                }
+            }));
         }
         // `launch`, `copy` and `open` mirror the text verbs of the same name, so
         // a client that speaks only JSON-RPC can drive the launcher without
@@ -336,7 +348,11 @@ mod tests {
 
     async fn run(line: &str) -> (bool, Vec<String>) {
         let (tx, mut rx) = mpsc::channel::<String>(32);
-        let handled = handle(line, &tx).await;
+        let mut forgets = Vec::new();
+        let handled = handle(line, &tx, &mut forgets).await;
+        for handle in forgets {
+            let _ = handle.await;
+        }
         let mut msgs = Vec::new();
         while let Ok(m) = rx.try_recv() {
             msgs.push(m);
