@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::LazyLock;
-use std::{env, fs, path::Path};
 
 use anyhow::Result;
+use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
 use gio::prelude::*;
 
 use crate::models::ResultItem;
@@ -337,86 +337,55 @@ fn score_app(
     score
 }
 
-/// Read `[Desktop Entry]` keys and `[Desktop Action <id>]` groups. Plain
-/// (unlocalised) keys only — the `[xx]` variants follow later and would win.
-fn parse_meta(content: &str) -> DesktopMeta {
-    let mut generic: Option<String> = None;
-    let mut keywords: Vec<String> = Vec::new();
-    let mut actions: Vec<DesktopAction> = Vec::new();
-    let mut in_entry = false;
-    let mut action: Option<DesktopAction> = None;
+/// Read `[Desktop Entry]`'s `GenericName`/`Keywords` and the `[Desktop Action …]`
+/// groups its `Actions=` key declares. Values are localised through the file's
+/// own `Key[locale]=` entries, so an action row is titled in the user's language.
+fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
+    let generic = entry
+        .generic_name(locales)
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
 
-    for line in content.lines() {
-        let line = line.trim();
-        if let Some(id) = line
-            .strip_prefix("[Desktop Action ")
-            .and_then(|rest| rest.strip_suffix(']'))
-        {
-            if let Some(prev) = action.replace(DesktopAction {
+    let keywords = entry
+        .keywords(locales)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|word| word.trim().to_string())
+        .filter(|word| !word.is_empty())
+        .collect();
+
+    let actions = entry
+        .actions()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|id| {
+            let name = entry.action_name(id, locales)?.trim().to_string();
+            (!name.is_empty()).then(|| DesktopAction {
                 id: id.to_string(),
-                name: String::new(),
-                name_lower: String::new(),
-            }) {
-                actions.push(prev);
-            }
-            in_entry = false;
-        } else if line.starts_with('[') {
-            if let Some(prev) = action.take() {
-                actions.push(prev);
-            }
-            in_entry = line == "[Desktop Entry]";
-        } else if in_entry {
-            if let Some(v) = line.strip_prefix("GenericName=") {
-                if generic.is_none() {
-                    let v = v.trim();
-                    if !v.is_empty() {
-                        generic = Some(v.to_string());
-                    }
-                }
-            } else if let Some(v) = line.strip_prefix("Keywords=") {
-                let kw = v.split(';').filter(|s| !s.trim().is_empty());
-                keywords.extend(kw.map(|s| s.trim().to_string()));
-            }
-        } else if let Some(a) = action.as_mut()
-            && let Some(v) = line.strip_prefix("Name=")
-            && a.name.is_empty()
-        {
-            a.name = v.trim().to_string();
-            a.name_lower = a.name.to_lowercase();
-        }
-    }
-    actions.extend(action);
+                name_lower: name.to_lowercase(),
+                name,
+            })
+        })
+        .collect();
 
     DesktopMeta {
         generic,
         keywords,
-        actions: actions.into_iter().filter(|a| !a.name.is_empty()).collect(),
+        actions,
     }
 }
 
 /// Locate the `.desktop` file by id through the XDG data dirs and read the
-/// plain `GenericName`/`Keywords` keys. gio-rs does not bind GDesktopAppInfo,
-/// so this is the only way to reach them.
+/// `GenericName`/`Keywords`/`Actions` keys. gio-rs binds no GDesktopAppInfo, so
+/// this is the only way to reach them. Only the preferred file is read: a user
+/// override replaces the packaged entry whole (which is also what keeps an
+/// action row from naming a group the launched file does not define).
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
-    let mut bases: Vec<String> = env::var("XDG_DATA_DIRS")
-        .map(|s| s.split(':').map(String::from).collect())
-        .unwrap_or_else(|_| vec!["/usr/local/share/".into(), "/usr/share/".into()]);
-    if let Ok(home) = env::var("HOME") {
-        bases.push(format!("{home}/.local/share"));
-    }
+    let path = crate::system::desktop_action::find(id)?;
+    let locales = get_languages_from_env();
+    let entry = DesktopEntry::from_path(&path, Some(&locales)).ok()?;
 
-    for base in bases {
-        let file = Path::new(&base).join("applications").join(id);
-        let Ok(content) = fs::read_to_string(&file) else {
-            continue;
-        };
-
-        let meta = parse_meta(&content);
-        if meta.generic.is_some() || !meta.keywords.is_empty() || !meta.actions.is_empty() {
-            return Some(meta);
-        }
-    }
-    None
+    Some(parse_meta(&entry, &locales))
 }
 
 #[cfg(test)]
@@ -576,9 +545,17 @@ mod tests {
         assert_eq!(action_score("open vm manager", "zzz"), 0);
     }
 
+    /// `parse_meta` against a `.desktop` body, with the locales pinned so the
+    /// result cannot depend on the test runner's `$LANG`.
+    fn meta_of(content: &str, locales: &[&str]) -> DesktopMeta {
+        let locales: Vec<String> = locales.iter().map(|l| (*l).to_string()).collect();
+        let entry = DesktopEntry::from_str("app.desktop", content, Some(&locales)).unwrap();
+        parse_meta(&entry, &locales)
+    }
+
     #[test]
     fn parse_meta_reads_action_groups() {
-        let meta = parse_meta(
+        let meta = meta_of(
             "[Desktop Entry]\n\
              GenericName=Virtualization Software\n\
              Keywords=virtualization;\n\
@@ -592,14 +569,31 @@ mod tests {
              \n\
              [Desktop Action Broken]\n\
              Name[de]=Nur auf Deutsch\n",
+            &["en"],
         );
         assert_eq!(meta.generic.as_deref(), Some("Virtualization Software"));
         assert_eq!(meta.keywords, ["virtualization"]);
-        // localised-only names are not entries of their own
+        // an undeclared group is not a row, and neither is a localised-only name
         assert_eq!(meta.actions.len(), 1);
         assert_eq!(meta.actions[0].id, "Manager");
         assert_eq!(meta.actions[0].name, "Open VM Manager");
         assert_eq!(meta.actions[0].name_lower, "open vm manager");
+    }
+
+    #[test]
+    fn a_localised_action_name_wins_in_its_locale() {
+        let entry = "[Desktop Entry]\n\
+                     Name=VirtualBox\n\
+                     Actions=Manager;\n\
+                     [Desktop Action Manager]\n\
+                     Name=Open VM Manager\n\
+                     Name[de]=VM Manager oeffnen\n";
+
+        assert_eq!(
+            meta_of(entry, &["de_DE"]).actions[0].name,
+            "VM Manager oeffnen"
+        );
+        assert_eq!(meta_of(entry, &["en"]).actions[0].name, "Open VM Manager");
     }
 
     #[test]
