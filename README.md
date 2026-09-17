@@ -183,7 +183,7 @@ full protocol spec and the result-item (schema) contract are in
 ## Credit
 
 - **[Wox](https://github.com/wox-launcher/wox)** — the launcher concept is inspired by this project.
-- **[Slint](https://slint.dev)** — declarative UI toolkit; the launcher's card, list and animations are `.slint` code rendered by Slint's software renderer.
+- **[Slint](https://github.com/slint-ui/slint)** — declarative UI toolkit; the launcher's card, list and animations are `.slint` code rendered by Slint's software renderer.
 - **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland client plumbing for the layer-shell overlay.
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
