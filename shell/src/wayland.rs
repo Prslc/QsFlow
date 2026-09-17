@@ -441,6 +441,9 @@ impl Shell {
         self.visible = false;
         self.configured = false;
         self.frame_pending = false;
+        // A forget in flight outlives the surface; its answer must not remove a
+        // row from the next show's list.
+        self.app.pending_forget = None;
         self.ui.set_shown(false);
         // Dropping the layer surface destroys it; there is no hide verb.
         self.disable_ime();

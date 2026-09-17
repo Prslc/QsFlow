@@ -28,27 +28,47 @@ component ResultRow inherits Rectangle {
 
     callback activate();
 
-    border-radius: 8px;
-    background: selected ? accent.with-alpha(0.15)
-        : touch.has-hover ? accent.with-alpha(0.08)
-        : transparent;
-    animate background { duration: 120ms; easing: ease-out-quart; }
+    background: transparent;
+
+    // The QML insets the row's rounded rect by 1px; that inset is also what
+    // puts the accent bar at x=4.
+    bg := Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        border-radius: 8px;
+        background: selected ? accent.with-alpha(0.15)
+            : touch.has-hover ? accent.with-alpha(0.08)
+            : transparent;
+        animate background { duration: 120ms; easing: ease-out-quad; }
+
+        // Accent bar marking the selected row; its radius stays concentric with
+        // the row's (8 at the outer edge, 1.5 at a 3px inset).
+        Rectangle {
+            x: 3px;
+            y: (parent.height - self.height) / 2;
+            width: 3px;
+            height: parent.height * 0.45;
+            border-radius: 1.5px;
+            background: accent;
+            opacity: selected ? 1.0 : 0.0;
+            animate opacity { duration: 120ms; easing: ease-out-quad; }
+        }
+    }
 
     touch := TouchArea {
         clicked => { root.activate(); }
     }
 
-    // Accent bar marking the selected row; its radius stays concentric with the
-    // row's (8 at the outer edge, 1.5 at a 3px inset).
-    Rectangle {
-        x: 3px;
-        y: (parent.height - self.height) / 2;
-        width: 3px;
-        height: parent.height * 0.45;
-        border-radius: 1.5px;
-        background: accent;
-        opacity: selected ? 1.0 : 0.0;
-        animate opacity { duration: 120ms; easing: ease-out-quart; }
+    // QML fades an icon in when it becomes ready. The decode is synchronous
+    // here, so a one-shot timer flips the row after its first frame and the
+    // opacity transition plays instead of the icon popping in.
+    property <bool> icon-revealed: false;
+    icon-timer := Timer {
+        interval: 1ms;
+        running: !root.icon-revealed;
+        triggered => { root.icon-revealed = true; }
     }
 
     Image {
@@ -58,6 +78,8 @@ component ResultRow inherits Rectangle {
         height: 30px;
         source: entry.icon;
         image-fit: contain;
+        opacity: root.icon-revealed && entry.icon.width > 0 ? 1.0 : 0.0;
+        animate opacity { duration: 100ms; easing: ease-out-quad; }
     }
 
     VerticalLayout {
@@ -85,7 +107,7 @@ component ResultRow inherits Rectangle {
     }
 
     Text {
-        x: parent.width - self.width - 14px;
+        x: parent.width - self.width - 10px;
         y: (parent.height - self.height) / 2;
         text: "↵";
         color: accent.with-alpha(0.55);
@@ -106,12 +128,18 @@ export component LauncherWindow inherits Window {
     out property <bool> composing: input.preedit-text != "";
     in property <bool> reduce-motion: false;
 
-    // Entrance: `shown` flips on open and `progress` follows its binding, so
-    // Slint owns the animation instead of the host pushing frames.
+    // Entrance: `shown` flips on open and the two progress values follow their
+    // bindings, so Slint owns the animation instead of the host pushing frames.
+    // The dim eases in over 200ms while the card takes 240ms (the QML).
     in property <bool> shown: false;
     property <float> progress: shown ? 1.0 : 0.0;
     animate progress {
         duration: reduce-motion ? 0ms : 240ms;
+        easing: ease-out-quint;
+    }
+    property <float> dim-progress: shown ? 1.0 : 0.0;
+    animate dim-progress {
+        duration: reduce-motion ? 0ms : 200ms;
         easing: ease-out-quint;
     }
 
@@ -169,7 +197,7 @@ export component LauncherWindow inherits Window {
         width: parent.width;
         height: parent.height;
         background: black;
-        opacity: 0.30 * root.progress;
+        opacity: 0.30 * root.dim-progress;
     }
 
     // Anywhere outside the card dismisses. The card's own TouchArea below
@@ -188,7 +216,7 @@ export component LauncherWindow inherits Window {
         height: root.card-h;
         animate height {
             duration: root.reduce-motion ? 0ms : 150ms;
-            easing: ease-out-quart;
+            easing: ease-out-quad;
         }
         // A plain rectangular clip; the software renderer ignores `clip`
         // combined with `border-radius`. The rounded paint and the layout live
@@ -336,6 +364,11 @@ export component LauncherWindow inherits Window {
                             font-size: 11px;
                             font-weight: 700;
                         }
+
+                        // Hover only (the QML chip has just a tooltip); the
+                        // touch also swallows a click so it cannot reach the
+                        // backdrop.
+                        chip-hover := TouchArea { }
                     }
 
                     clear := Rectangle {
@@ -344,9 +377,9 @@ export component LauncherWindow inherits Window {
                         width: 26px;
                         height: 26px;
                         border-radius: 13px;
-                        // The disc is visible at rest, as it was before the port.
-                        background: root.theme.fg.with-alpha(clear-touch.has-hover ? 0.18 : 0.10);
-                        animate background { duration: 120ms; easing: ease-out-quart; }
+                        // The QML paints no disc at rest, only on hover.
+                        background: clear-touch.has-hover ? root.theme.fg.with-alpha(0.12) : transparent;
+                        animate background { duration: 120ms; easing: ease-out-quad; }
                         visible: input.text != "";
 
                         // A glyph's ink is not its line box, so the ✕ is drawn
@@ -366,6 +399,7 @@ export component LauncherWindow inherits Window {
                             clicked => {
                                 root.query = "";
                                 root.search("");
+                                input.focus();
                             }
                         }
                     }
@@ -417,6 +451,31 @@ export component LauncherWindow inherits Window {
                 }
         }
         }
+        }
+    }
+
+    // The QML chip's tooltip ("Keyword mode — results scoped to this prefix").
+    // Slint has no tooltip element, so it is a floating label under the chip,
+    // declared after the card so it draws on top of it.
+    tooltip := Rectangle {
+        visible: chip-hover.has-hover && root.keyword != "";
+        x: chip.absolute-position.x + chip.width - self.width;
+        y: chip.absolute-position.y + chip.height + 6px;
+        width: tooltip-label.preferred-width + 16px;
+        height: 24px;
+        border-radius: 6px;
+        background: root.theme.bg.with-alpha(0.95);
+        border-width: 1px;
+        border-color: white.with-alpha(0.15);
+
+        tooltip-label := Text {
+            width: parent.width;
+            height: parent.height;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: "Keyword mode — results scoped to this prefix";
+            color: root.theme.fg;
+            font-size: 11px;
         }
     }
 }

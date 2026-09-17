@@ -93,6 +93,9 @@ impl App {
             return false;
         }
         self.last_payload = payload;
+        // A forget that was still in flight belongs to the payload it was
+        // issued against; its answer must not remove a row from a new list.
+        self.pending_forget = None;
         let old_len = self.items.len();
         self.items = items;
         let new_len = self.items.len();
@@ -328,6 +331,26 @@ mod tests {
         app.selected = 1;
         app.contain();
         assert_eq!(app.first_row, 0);
+    }
+
+    #[test]
+    fn a_new_payload_drops_a_forget_that_was_still_in_flight() {
+        let mut app = App::new();
+        let rows = |count: usize| {
+            (0..count)
+                .map(|i| Item {
+                    title: format!("row {i}"),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(app.set_payload(rows(3), "first".into()));
+        app.pending_forget = Some((7, 1));
+        assert!(app.set_payload(rows(2), "second".into()));
+        assert_eq!(
+            app.pending_forget, None,
+            "the reply belongs to the list it was issued against"
+        );
     }
 
     #[test]
