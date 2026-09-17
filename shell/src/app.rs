@@ -51,7 +51,10 @@ impl App {
     }
 
     /// An identical payload is dropped so a re-send cannot reset the cursor; a
-    /// genuinely different one starts from the top row.
+    /// genuinely different one starts from the top row. Rows are patched in
+    /// place rather than replaced: a model reset recreates every row element,
+    /// which restarts its selection and reflow animations — a visible jump on
+    /// each keystroke.
     pub fn apply_results(
         &mut self,
         ui: &LauncherWindow,
@@ -62,12 +65,34 @@ impl App {
             return false;
         }
         self.last_payload = payload;
+        let old_len = self.items.len();
         self.items = items;
-        self.icons = vec![None; self.items.len()];
+        let new_len = self.items.len();
+        self.icons = vec![None; new_len];
         self.selected = 0;
         self.first_row = 0;
-        self.model.set_vec(self.blank_rows());
-        self.publish(ui);
+        // Icons for the rows the window shows right away, so the first frame
+        // after a payload already carries them instead of popping in later.
+        self.warm_visible();
+
+        let common = old_len.min(new_len);
+        for index in 0..common {
+            let row = self.row(index);
+            self.model.set_row_data(index, row);
+        }
+        if new_len < old_len {
+            // `VecModel::remove` drops one row at a time, so the tail goes last.
+            for index in (new_len..old_len).rev() {
+                self.model.remove(index);
+            }
+        } else {
+            for index in old_len..new_len {
+                let row = self.row(index);
+                self.model.push(row);
+            }
+        }
+        ui.set_selected(0);
+        ui.set_first_row(0);
         true
     }
 
@@ -139,38 +164,50 @@ impl App {
         self.publish(ui);
     }
 
-    /// Hands the visible rows to the UI, decoding any icon the window now needs.
+    /// Decodes the icons the visible window needs and hands those rows to the
+    /// UI. Only rows that actually gained an icon are written back, so a scroll
+    /// does not notify the model about rows that did not change.
     pub fn publish(&mut self, ui: &LauncherWindow) {
         let end = (self.first_row + VISIBLE_ROWS).min(self.items.len());
         for index in self.first_row..end {
-            if self.icons[index].is_none() {
-                self.icons[index] = Some(load_icon(&self.items[index].icon));
+            let missing = self.icons.get(index).is_none_or(|icon| icon.is_none());
+            if missing {
+                self.ensure_icon(index);
+                let row = self.row(index);
+                self.model.set_row_data(index, row);
             }
-            let item = &self.items[index];
-            self.model.set_row_data(
-                index,
-                ResultItem {
-                    title: item.title.clone().into(),
-                    summary: item.summary.clone().into(),
-                    icon: self.icons[index].clone().unwrap_or_default(),
-                    on_click: item.on_click.clone().into(),
-                },
-            );
         }
         ui.set_selected(self.selected as i32);
         ui.set_first_row(self.first_row as i32);
     }
 
-    fn blank_rows(&self) -> Vec<ResultItem> {
-        self.items
-            .iter()
-            .map(|item| ResultItem {
-                title: item.title.clone().into(),
-                summary: item.summary.clone().into(),
-                icon: Image::default(),
-                on_click: item.on_click.clone().into(),
-            })
-            .collect()
+    /// The icons of the rows inside the current window, decoded before they are
+    /// put into the model.
+    fn warm_visible(&mut self) {
+        let end = (self.first_row + VISIBLE_ROWS).min(self.items.len());
+        for index in self.first_row..end {
+            self.ensure_icon(index);
+        }
+    }
+
+    fn ensure_icon(&mut self, index: usize) {
+        if index < self.icons.len() && self.icons[index].is_none() {
+            self.icons[index] = Some(load_icon(&self.items[index].icon));
+        }
+    }
+
+    fn row(&self, index: usize) -> ResultItem {
+        let item = &self.items[index];
+        ResultItem {
+            title: item.title.clone().into(),
+            summary: item.summary.clone().into(),
+            icon: self
+                .icons
+                .get(index)
+                .and_then(|icon| icon.clone())
+                .unwrap_or_default(),
+            on_click: item.on_click.clone().into(),
+        }
     }
 }
 
