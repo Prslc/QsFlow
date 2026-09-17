@@ -10,7 +10,9 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。后端基于 Rust 异步实现，前端使用 [Quickshell](https://github.com/outfoxxed/quickshell) 的 QML 构建。
+QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。后端为 Rust 异步实现（`qsflow-core`），前端是 Rust 覆盖层（`qsflow-shell`），界面用
+[Slint](https://slint.dev) 声明式编写：壳自己持有 `wlr-layer-shell` 表面，把 Slint
+软件渲染器产出的帧通过 `wl_shm` 交给混成器，因此不需要 GPU 栈，也不需要 QML 运行时。
 
 ## 截图
 
@@ -38,8 +40,8 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 ## 环境要求
 
 - 支持 `wlr-layer-shell` 协议的 **Wayland** 混成器
-- **[Quickshell](https://github.com/outfoxxed/quickshell)**
-- Rust 工具链（用于编译后端）
+- Rust 工具链（前后端都是 Rust，Slint 以普通 crate 引入）
+- 覆盖中日文输入的字体（如 Source Han Sans）
 - Firefox（可选，用于书签和历史搜索）
 - [cliphist](https://github.com/sentriz/cliphist)（可选，用于剪贴板历史）
 
@@ -47,18 +49,16 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ```bash
 git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow/core
-cargo build --release
-ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
-# qsflow 是 quickshell 的软链：进程在 ps/top 里显示自己的名字
-# （纯表面 —— IPC 按 -p 配置路径路由，与二进制名无关）
-ln -s "$(command -v quickshell)" ~/.local/bin/qsflow
+cd QsFlow/core && cargo build --release
+cd ../shell && cargo build --release
+ln -s "$(pwd)/../core/target/release/qsflow-core" ~/.local/bin/qsflow-core
+ln -s "$(pwd)/target/release/qsflow-shell" ~/.local/bin/qsflow-shell
 ```
 
 然后在混成器配置中绑定快捷键（如 `Alt+Space`）来启动：
 
 ```bash
-qsflow -p /path/to/QsFlow/ui/MainShell.qml
+qsflow-shell
 ```
 
 启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
@@ -66,20 +66,19 @@ qsflow -p /path/to/QsFlow/ui/MainShell.qml
 
 ## 常驻模式（可选 —— 零冷启动）
 
-默认每次按热键都会重新拉起 QML 壳与 Rust 内核，首次按键需付 ~300ms 冷启动
-（主要是 QML/Qt 初始化，不是核心）。要让启动器即刻弹出，让一个常驻的壳+内核
-保持存活，通过 Quickshell 的 IPC 切换窗口：
+默认每次按热键都会重新拉起壳与 Rust 内核。要让启动器即刻弹出，让一个常驻的
+壳+内核保持存活，通过 unix socket（`$XDG_RUNTIME_DIR/qsflow-shell.sock`）切换表面：
 
 ```ini
 # ~/.config/systemd/user/qsflow-launcher.service
 [Unit]
-Description=QsFlow launcher (resident quickshell + core)
+Description=QsFlow launcher (resident qsflow-shell + core)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=qsflow -p /abs/path/to/QsFlow/ui/MainShell.qml
+ExecStart=/home/you/.local/bin/qsflow-shell
 Restart=on-failure
 RestartSec=2
 # qsflow-core 与 qsflow 软链都在 ~/.local/bin；由下面的 PATH（该目录须保持第一）解析
@@ -96,12 +95,12 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now qsflow-launcher
 # niri 热键 —— 切换而非重新拉起：
-#   Alt+Space { spawn-sh "quickshell ipc --path $HOME/Project/QsFlow/ui/MainShell.qml call launcher toggle"; }
+#   Alt+Space { spawn-sh "qsflow-shell toggle"; }
 ```
 
-`MainShell.qml` 暴露了一个 `IpcHandler`（`target: "launcher"`），带
-`open` / `close` / `toggle`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、关闭即隐藏）；
-不带该变量时，直接 `qsflow -p ui/MainShell.qml` 保持旧行为——启动即弹出、关闭即退出，
+动词为 `open` / `close` / `toggle` / `status`，都发给常驻实例持有的这个 socket；
+`status` 打印 `visible` 或 `hidden`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、
+关闭即隐藏）；不带该变量时，直接 `qsflow-shell` 保持旧行为——启动即弹出、关闭即退出，
 因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
 qsflow-launcher` 并还原绑定的启动方式。
 
@@ -161,7 +160,8 @@ keyword = "s"
 ## 致谢
 
 - **[Wox](https://github.com/wox-launcher/wox)** — 本启动器的设计灵感来源。
-- **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick Shell 框架，负责 Wayland 悬浮面板渲染。
+- **[Slint](https://slint.dev)** — 声明式 UI 工具包：卡片的布局、列表与动画都是 `.slint` 代码，由 Slint 软件渲染器绘制。
+- **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — 覆盖层所需的 Wayland 客户端管线。
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — 高质量 SVG 图标主题。
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — SQLite 绑定，用于读取 Firefox 数据库和使用历史。

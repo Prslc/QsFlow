@@ -1,0 +1,361 @@
+// QsFlow's launcher overlay, written in Slint. The host feeds data in (theme,
+// results, query state) and receives intent out (search, activate, forget,
+// dismiss); every pixel — the dim backdrop, the card, the field, the five-row
+// result window and the footer — is laid out and painted by Slint.
+
+export struct ResultItem {
+    title: string,
+    summary: string,
+    icon: image,
+    on-click: string,
+}
+
+export struct Theme {
+    primary: color,
+    on-primary: color,
+    bg: color,
+    fg: color,
+    container: color,
+}
+
+// One uniform row type: every row is 64px tall, with or without icon/summary,
+// and the icon box stays reserved so titles align.
+component ResultRow inherits Rectangle {
+    in property <ResultItem> entry;
+    in property <bool> selected;
+    in property <color> fg;
+    in property <color> accent;
+
+    callback activate();
+
+    border-radius: 8px;
+    background: selected ? accent.with-alpha(0.15)
+        : touch.has-hover ? accent.with-alpha(0.08)
+        : transparent;
+    animate background { duration: 120ms; easing: ease-out-quart; }
+
+    touch := TouchArea {
+        clicked => { root.activate(); }
+    }
+
+    // Accent bar marking the selected row; its radius stays concentric with the
+    // row's (8 at the outer edge, 1.5 at a 3px inset).
+    Rectangle {
+        x: 3px;
+        y: (parent.height - self.height) / 2;
+        width: 3px;
+        height: parent.height * 0.45;
+        border-radius: 1.5px;
+        background: accent;
+        opacity: selected ? 1.0 : 0.0;
+        animate opacity { duration: 120ms; easing: ease-out-quart; }
+    }
+
+    Image {
+        x: 10px;
+        y: (parent.height - self.height) / 2;
+        width: 30px;
+        height: 30px;
+        source: entry.icon;
+        image-fit: contain;
+    }
+
+    VerticalLayout {
+        x: 52px;
+        width: parent.width - 52px - 26px;
+        height: parent.height;
+        alignment: center;
+        spacing: 2px;
+
+        Text {
+            text: entry.title;
+            color: fg;
+            font-size: 14px;
+            font-weight: 700;
+            overflow: elide;
+        }
+
+        Text {
+            text: entry.summary;
+            color: fg.with-alpha(0.7);
+            font-size: 12px;
+            overflow: elide;
+            visible: entry.summary != "";
+        }
+    }
+
+    Text {
+        x: parent.width - self.width - 14px;
+        y: (parent.height - self.height) / 2;
+        text: "↵";
+        color: accent.with-alpha(0.55);
+        font-size: 13px;
+        visible: selected;
+    }
+}
+
+export component LauncherWindow inherits Window {
+    in property <Theme> theme;
+    in-out property <[ResultItem]> results: [];
+    in-out property <int> selected: 0;
+    in property <int> first-row: 0;
+    in-out property <string> query;
+    in property <string> keyword: "";
+    in property <bool> reduce-motion: false;
+
+    // Entrance: `shown` flips on open and `progress` follows its binding, so
+    // Slint owns the animation instead of the host pushing frames.
+    in property <bool> shown: false;
+    property <float> progress: shown ? 1.0 : 0.0;
+    animate progress {
+        duration: reduce-motion ? 0ms : 240ms;
+        easing: ease-out-quint;
+    }
+
+    callback search(string);
+    callback activate(int);
+    callback forget();
+    callback dismiss();
+    callback move-by(int);
+
+    background: transparent;
+    default-font-family: "Source Han Sans CN";
+    default-font-size: 14px;
+    forward-focus: input;
+
+    /// The host asks for keyboard focus after the surface is mapped: Slint has
+    /// no focus API reachable from Rust, only these `.slint` functions.
+    public function focus-input() {
+        input.focus();
+    }
+
+    // Card math from the QML shell: fixed top at 0.28H (results extend the card
+    // downward, so the field never moves), width min(max(560, 0.38W), 760).
+    property <int> visible-rows: min(results.length, 5);
+    property <length> list-h: visible-rows * 64px;
+    property <length> card-h: min(
+        14px + 52px + 10px + 28px + 14px + (results.length > 0 ? 10px + list-h : 0px),
+        480px,
+    );
+    property <length> card-w: min(max(560px, self.width * 0.38), 760px);
+
+    property <length> chip-w: chip-label.preferred-width + 16px;
+    property <length> toolbar-w: keyword != "" ? chip-w + 6px + 26px : 26px;
+
+    dim := Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: black;
+        opacity: 0.30 * root.progress;
+    }
+
+    // Anywhere outside the card dismisses. The card's own TouchArea below
+    // swallows presses inside it so they never reach this one.
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.dismiss(); }
+    }
+
+    card := Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height * 0.28;
+        width: root.card-w;
+        height: root.card-h;
+        animate height {
+            duration: root.reduce-motion ? 0ms : 150ms;
+            easing: ease-out-quart;
+        }
+        border-radius: 16px;
+        background: root.theme.container.with-alpha(0.72);
+        border-width: 1px;
+        border-color: white.with-alpha(0.35);
+        opacity: root.progress;
+
+        // Swallow presses on the card's padding.
+        TouchArea {
+            clicked => { }
+        }
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            field := Rectangle {
+                height: 52px;
+                border-radius: 9px;
+                background: root.theme.fg.with-alpha(0.08);
+
+                // Magnifier, stroked rather than an asset: a circle and a handle
+                // in the same 22px box the QML canvas drew.
+                Path {
+                    x: 14px;
+                    y: (parent.height - self.height) / 2;
+                    width: 22px;
+                    height: 22px;
+                    commands: "M 2.8 9 A 6.2 6.2 0 1 1 15.2 9 A 6.2 6.2 0 1 1 2.8 9 M 13.8 13.8 L 19 19";
+                    fill: transparent;
+                    stroke: root.theme.fg.with-alpha(0.55);
+                    stroke-width: 2px;
+                }
+
+                Text {
+                    x: 48px;
+                    y: (parent.height - self.height) / 2;
+                    text: "Search apps, files, web...";
+                    color: root.theme.fg.with-alpha(0.55);
+                    font-size: 18px;
+                    // A live IME composition is drawn by the field itself, so
+                    // the placeholder must not show through it.
+                    visible: input.text == "" && input.preedit-text == "";
+                }
+
+                input := TextInput {
+                    x: 48px;
+                    y: 0;
+                    width: parent.width - 48px - 8px - root.toolbar-w;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text <=> root.query;
+                    color: root.theme.fg;
+                    font-size: 18px;
+                    single-line: true;
+                    selection-background-color: root.theme.primary.with-alpha(0.35);
+                    selection-foreground-color: root.theme.fg;
+
+                    edited => { root.search(root.query); }
+                    accepted => { root.activate(root.selected); }
+
+                    // Shell-level keys, ahead of the widget's own editing
+                    // handling: navigation and deletion are the launcher's,
+                    // while Home/End and the caret keys stay the field's.
+                    key-pressed(event) => {
+                        if (event.text == Key.Escape) {
+                            root.dismiss();
+                            return accept;
+                        }
+                        if (event.text == Key.UpArrow) {
+                            root.move-by(-1);
+                            return accept;
+                        }
+                        if (event.text == Key.DownArrow) {
+                            root.move-by(1);
+                            return accept;
+                        }
+                        if (event.text == Key.PageUp) {
+                            root.move-by(-5);
+                            return accept;
+                        }
+                        if (event.text == Key.PageDown) {
+                            root.move-by(5);
+                            return accept;
+                        }
+                        if (event.text == Key.Delete) {
+                            root.forget();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                }
+
+                // Keyword-prefix chip and the ✕ clear button, right-aligned in
+                // the field.
+                HorizontalLayout {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: end;
+                    padding-right: 8px;
+                    spacing: 6px;
+
+                    chip := Rectangle {
+                        width: root.chip-w;
+                        height: 24px;
+                        border-radius: 6px;
+                        background: root.theme.primary.with-alpha(0.16);
+                        visible: root.keyword != "";
+
+                        chip-label := Text {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            text: root.keyword;
+                            color: root.theme.primary;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                    }
+
+                    clear := Rectangle {
+                        width: 26px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: clear-touch.has-hover ? root.theme.fg.with-alpha(0.12) : transparent;
+                        animate background { duration: 120ms; easing: ease-out-quart; }
+                        visible: input.text != "";
+
+                        Text {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            text: "✕";
+                            color: root.theme.fg.with-alpha(0.55);
+                            font-size: 12px;
+                        }
+
+                        clear-touch := TouchArea {
+                            clicked => {
+                                root.query = "";
+                                root.search("");
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fixed five-row window over the full payload; `first-row` is the
+            // host's containment window (ListView.Contain in the QML).
+            list := Flickable {
+                height: root.list-h;
+                visible: root.results.length > 0;
+                interactive: false;
+                content-width: self.width;
+                content-height: root.results.length * 64px;
+                // The content moves up as the window walks down the payload.
+                content-y: -root.first-row * 64px;
+
+                for data[i] in root.results : ResultRow {
+                    y: i * 64px;
+                    width: list.width;
+                    height: 64px;
+                    entry: data;
+                    selected: i == root.selected;
+                    fg: root.theme.fg;
+                    accent: root.theme.primary;
+                    activate => { root.activate(i); }
+                }
+            }
+
+            footer := Rectangle {
+                height: 28px;
+
+                Text {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    text: root.results.length == 0
+                        ? "Type ? for help  ·  prefixes: b h f d c s g tr r w"
+                        : "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close";
+                    color: root.theme.fg.with-alpha(0.5);
+                    font-size: 11px;
+                }
+
+                Text {
+                    x: parent.width - self.width;
+                    y: (parent.height - self.height) / 2;
+                    text: root.results.length == 0 ? "" : root.results.length + " results";
+                    color: root.theme.fg.with-alpha(0.45);
+                    font-size: 11px;
+                }
+            }
+        }
+    }
+}

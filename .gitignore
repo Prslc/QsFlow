@@ -1,5 +1,7 @@
-core/target
+target/
 run
 bin/
 core/bin
+.cargo-home/
+.run/
 AGENTS.md

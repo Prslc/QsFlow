@@ -12,8 +12,11 @@ English | [Chinese](docs/README_CN.md)
 
 QsFlow is a Wayland-native application launcher and quick-search tool for Linux.
 Type to search installed apps, Firefox bookmarks, web suggestions, and
-inline math — all from a single floating overlay. Built with a Rust backend and a
-QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
+inline math — all from a single floating overlay. Built as a Rust backend
+(`qsflow-core`) plus a Rust overlay shell (`qsflow-shell`) whose interface is
+written in [Slint](https://slint.dev); the shell owns a `wlr-layer-shell`
+surface and presents Slint's software-rendered frames through `wl_shm`, so the
+frontend needs no GPU stack and no QML runtime.
 
 ## Screenshots
 
@@ -44,8 +47,8 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 ## Requirements
 
 - **Wayland** compositor with `wlr-layer-shell` support
-- **[Quickshell](https://github.com/outfoxxed/quickshell)**
-- Rust toolchain (to build the core backend)
+- Rust toolchain (both parts are Rust; Slint ships as ordinary crates)
+- A font with CJK coverage for Chinese/Japanese queries (e.g. Source Han Sans)
 - Firefox (optional, for bookmarks / history)
 - [cliphist](https://github.com/sentriz/cliphist) (optional, for clipboard history)
 
@@ -53,45 +56,43 @@ QML frontend powered by [Quickshell](https://github.com/outfoxxed/quickshell).
 
 ```bash
 git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow/core
-cargo build --release
-ln -s "$(pwd)/target/release/qsflow-core" ~/.local/bin/qsflow-core
-# qsflow is a symlink to quickshell: the process shows its own name in ps/top
-# (cosmetic — IPC is keyed by the -p config path, not the binary name)
-ln -s "$(command -v quickshell)" ~/.local/bin/qsflow
+cd QsFlow/core && cargo build --release
+cd ../shell && cargo build --release
+ln -s "$(pwd)/../core/target/release/qsflow-core" ~/.local/bin/qsflow-core
+ln -s "$(pwd)/target/release/qsflow-shell" ~/.local/bin/qsflow-shell
 ```
 
 Bind a hotkey (e.g. Alt+Space) to launch the shell:
 
 ```bash
-qsflow -p /path/to/QsFlow/ui/MainShell.qml
+qsflow-shell
 ```
 
 The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
 In the default spawn-per-hotkey flow, `Esc` / clicking outside quits it; in
-resident mode (below) the hotkey toggles the window and dismiss hides it.
+resident mode (below) the hotkey toggles the surface and dismiss hides it.
 
 ## Resident mode (optional — zero cold-start)
 
-By default each hotkey press re-spawns the QML shell and its Rust core, so the
-first keystroke pays a ~300ms cold start (mostly QML/Qt init, not the core). To
-pop the launcher up instantly, keep one resident shell + core alive and toggle
-the window via Quickshell's IPC:
+By default each hotkey press re-spawns the shell and its Rust core. To pop the
+launcher up instantly, keep one resident shell + core alive and toggle the
+surface over a unix socket (`$XDG_RUNTIME_DIR/qsflow-shell.sock`):
 
 ```ini
 # ~/.config/systemd/user/qsflow-launcher.service
 [Unit]
-Description=QsFlow launcher (resident quickshell + core)
+Description=QsFlow launcher (resident qsflow-shell + core)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=qsflow -p /abs/path/to/QsFlow/ui/MainShell.qml
-Restart=on-failure
+ExecStart=/home/you/.local/bin/qsflow-shell
+# the shell exits 0 on a core crash, which is a *clean* exit — never "on-failure"
+Restart=always
 RestartSec=2
-# qsflow-core and the qsflow symlink both live in ~/.local/bin; the PATH below
-# (that dir MUST stay first) resolves them
+# qsflow-core and the qsflow-shell symlink both live in ~/.local/bin; the PATH
+# below (that dir MUST stay first) resolves the core
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY come from the graphical session (imported by the
 # compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
@@ -107,15 +108,16 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now qsflow-launcher
 # niri hotkey — toggle instead of spawn:
-#   Alt+Space { spawn-sh "quickshell ipc --path $HOME/Project/QsFlow/ui/MainShell.qml call launcher toggle"; }
+#   Alt+Space { spawn-sh "qsflow-shell toggle"; }
 ```
 
-`MainShell.qml` exposes an `IpcHandler` (`target: "launcher"`) with
-`open` / `close` / `toggle`. `QSFLOW_RESIDENT=1` selects resident mode (start
-hidden, dismiss hides); without it a plain `qsflow -p ui/MainShell.qml` keeps
-the old behaviour — shows on launch and quits on dismiss, so the manual/dev path
-is independent of the systemd service. To revert, `systemctl --user disable
---now qsflow-launcher` and restore the spawn-per-hotkey binding.
+The verbs are `open` / `close` / `toggle` / `status`, spoken to the socket the
+resident instance owns; `status` prints `visible` or `hidden`.
+`QSFLOW_RESIDENT=1` selects resident mode (start hidden, dismiss hides); without
+it a plain `qsflow-shell` shows on launch and quits on dismiss, so the manual/dev
+path is independent of the systemd service. To revert,
+`systemctl --user disable --now qsflow-launcher` and restore the
+spawn-per-hotkey binding.
 
 
 ## Usage
@@ -181,7 +183,8 @@ full protocol spec and the result-item (schema) contract are in
 ## Credit
 
 - **[Wox](https://github.com/wox-launcher/wox)** — the launcher concept is inspired by this project.
-- **[Quickshell](https://github.com/outfoxxed/quickshell)** — QtQuick shell toolkit that powers the Wayland overlay.
+- **[Slint](https://slint.dev)** — declarative UI toolkit; the launcher's card, list and animations are `.slint` code rendered by Slint's software renderer.
+- **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland client plumbing for the layer-shell overlay.
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
 - **[rusqlite](https://github.com/rusqlite/rusqlite)** — Firefox profile and usage database access.
