@@ -11,6 +11,13 @@ use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 
+/// The plugin's identity icon, shared by the identity card and every row: rows
+/// are `$PATH` executables, not applications, so a per-name theme lookup pulled
+/// in arbitrary marks (`python`, `git` ship a logo) and — for the thousands of
+/// binaries with no theme entry — the generic application default, which the
+/// row then showed instead of a command affordance.
+const ICON: &str = "utilities-terminal";
+
 pub struct Runner;
 
 impl Plugin for Runner {
@@ -18,7 +25,7 @@ impl Plugin for Runner {
         &Meta {
             id: "runner",
             name: "Run Command",
-            icon: "utilities-terminal",
+            icon: ICON,
             ready: "Run an executable on PATH",
             keyword: "r",
         }
@@ -119,6 +126,9 @@ fn do_search(input: &str) -> Vec<ResultItem> {
     let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
     let pattern = nucleo::Utf32String::from(cmd.to_lowercase());
 
+    // resolved once: the spec is the same for every row
+    let icon = find_icon_path(ICON).or_else(|| Some(String::new()));
+
     let mut results: Vec<(u16, ResultItem)> = Vec::new();
 
     for (name_utf32, name, full_path) in path_binaries() {
@@ -137,7 +147,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
                     title: name.clone(),
                     summary: Some(run_cmd.clone()),
                     on_click: Some(format!("run:{}", run_cmd)),
-                    icon: find_icon_path(name).or_else(|| Some(String::new())),
+                    icon: icon.clone(),
                 },
             ));
         }
