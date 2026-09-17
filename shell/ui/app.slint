@@ -182,10 +182,11 @@ export component LauncherWindow inherits Window {
         y: root.height * 0.28;
         width: root.card-w;
         height: root.card-h;
-        animate height {
-            duration: root.reduce-motion ? 0ms : 150ms;
-            easing: ease-out-quart;
-        }
+        // Deliberately not animated: a Slint layout inside a parent whose
+        // height is mid-animation gets squeezed, which moved the search field
+        // and the whole list on every payload change. Snapping the card to its
+        // new height keeps the field and the rows still; smoothing it again
+        // needs the clip to animate while the layout stays at its target size.
         border-radius: 16px;
         background: root.theme.container.with-alpha(0.72);
         border-width: 1px;
