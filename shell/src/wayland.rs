@@ -468,7 +468,7 @@ impl Shell {
         let Some(item) = self.app.selected_item().cloned() else {
             return;
         };
-        if item.on_click.is_empty() {
+        if item.action == crate::session::Action::None {
             return;
         }
         let record = serde_json::json!({
@@ -478,16 +478,10 @@ impl Shell {
             "icon": item.icon,
         });
         self.session.send(&format!("select {record}\n"));
-        self.run_command(&item.on_click);
+        self.session.action(&item.action);
         // The launcher stays up for a beat so the launch does not race the
         // dismiss; a keyboard dismissal is instant.
         self.dismiss_at = Some(Instant::now() + Duration::from_millis(150));
-    }
-
-    /// Exactly one verb per row, chosen by the `on_click` scheme.
-    fn run_command(&mut self, target: &str) {
-        let line = command_line(target);
-        self.session.send(&line);
     }
 
     fn forget_current(&mut self) {
@@ -983,28 +977,6 @@ fn key_text(keysym: Keysym) -> slint::SharedString {
     // Release events carry no UTF-8 in the protocol, so the text is derived
     // from the keysym for both directions of the same key.
     xkbcommon::xkb::keysym_to_utf8(keysym).into()
-}
-
-/// The one line a row's `on_click` turns into.
-fn command_line(target: &str) -> String {
-    if let Some(rest) = target.strip_prefix("launch:") {
-        format!("launch {rest}\n")
-    } else if let Some(rest) = target.strip_prefix("run:") {
-        format!("run {rest}\n")
-    } else if let Some(rest) = target.strip_prefix("copy:") {
-        format!("copy {rest}\n")
-    } else if let Some(rest) = target.strip_prefix("action:") {
-        format!("action {rest}\n")
-    } else if target.starts_with("http")
-        || target.starts_with("file:")
-        || target.starts_with("mailto:")
-    {
-        // The core opens URIs through GLib, which honours the portal and the
-        // .desktop `Terminal=` key that `xdg-open` drops.
-        format!("open {target}\n")
-    } else {
-        format!("run {target}\n")
-    }
 }
 
 /// The QML's keyword chip: a one-to-three letter first word followed by a space.
@@ -1507,34 +1479,6 @@ smithay_client_toolkit::delegate_dispatch2!(Shell);
 mod tests {
     use super::*;
     use crate::app::{App, whole_rows};
-
-    #[test]
-    fn a_row_turns_into_exactly_one_verb() {
-        assert_eq!(command_line("launch:firefox"), "launch firefox\n");
-        assert_eq!(command_line("run:btop --utf"), "run btop --utf\n");
-        assert_eq!(
-            command_line("copy:{\"text\":\"x\"}"),
-            "copy {\"text\":\"x\"}\n"
-        );
-        assert_eq!(
-            command_line("action:app.desktop:new-window"),
-            "action app.desktop:new-window\n"
-        );
-        assert_eq!(
-            command_line("https://example.com/a b"),
-            "open https://example.com/a b\n"
-        );
-        assert_eq!(
-            command_line("file:///tmp/a%20b"),
-            "open file:///tmp/a%20b\n"
-        );
-        assert_eq!(
-            command_line("mailto:me@example.com"),
-            "open mailto:me@example.com\n"
-        );
-        // A bare command is still run, not opened.
-        assert_eq!(command_line("kitty -e htop"), "run kitty -e htop\n");
-    }
 
     #[test]
     fn the_keyword_chip_needs_a_space_after_a_short_word() {

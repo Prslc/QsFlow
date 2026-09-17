@@ -9,6 +9,67 @@ use serde::Deserialize;
 /// The event loop's inbound side for core traffic.
 pub type EventSender = calloop::channel::Sender<Event>;
 
+/// What activating a row does.
+///
+/// The wire carries one string (`on_click`), which is a documented contract
+/// with out-of-process JSON-RPC hosts, so it stays a string on the wire; it is
+/// parsed once here, at the boundary, and nothing downstream matches prefixes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Action {
+    /// `launch:<desktop-id>`
+    Launch(String),
+    /// `run:<shell command>`, and the fallback for a bare command.
+    Run(String),
+    /// `copy:{"text": …}` — the JSON argument, forwarded as it arrived.
+    Copy(String),
+    /// `action:<desktop-id>:<action-id>`
+    Desktop(String),
+    /// A bare URL / `file:` / `mailto:` URI.
+    Open(String),
+    /// A row that does nothing.
+    #[default]
+    None,
+}
+
+impl Action {
+    pub fn parse(on_click: &str) -> Self {
+        if on_click.is_empty() {
+            return Self::None;
+        }
+        if let Some(rest) = on_click.strip_prefix("launch:") {
+            Self::Launch(rest.to_owned())
+        } else if let Some(rest) = on_click.strip_prefix("run:") {
+            Self::Run(rest.to_owned())
+        } else if let Some(rest) = on_click.strip_prefix("copy:") {
+            Self::Copy(rest.to_owned())
+        } else if let Some(rest) = on_click.strip_prefix("action:") {
+            Self::Desktop(rest.to_owned())
+        } else if on_click.starts_with("http")
+            || on_click.starts_with("file:")
+            || on_click.starts_with("mailto:")
+        {
+            // The core opens URIs through GLib, which honours the portal and the
+            // `.desktop` `Terminal=` key that `xdg-open` drops.
+            Self::Open(on_click.to_owned())
+        } else {
+            Self::Run(on_click.to_owned())
+        }
+    }
+
+    /// The one line this action turns into; `None` when there is nothing to do.
+    pub fn line(&self) -> Option<String> {
+        let line = match self {
+            Self::Launch(id) => format!("launch {id}\n"),
+            Self::Run(command) => format!("run {command}\n"),
+            Self::Copy(argument) => format!("copy {argument}\n"),
+            Self::Desktop(action) => format!("action {action}\n"),
+            Self::Open(uri) => format!("open {uri}\n"),
+            Self::None => return None,
+        };
+        Some(line)
+    }
+}
+
 /// A row as it comes off the wire; `icon` is an absolute path the core resolved.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Item {
@@ -19,6 +80,9 @@ pub struct Item {
     pub icon: String,
     #[serde(default, rename = "on_click")]
     pub on_click: String,
+    /// Filled in from `on_click` as the payload is read.
+    #[serde(skip)]
+    pub action: Action,
 }
 
 /// The theme fields, still as hex strings: a field the wire omits keeps the
@@ -94,6 +158,13 @@ impl Session {
         self.send(&line);
     }
 
+    /// Exactly one verb per row, or nothing at all.
+    pub fn action(&mut self, action: &Action) {
+        if let Some(line) = action.line() {
+            self.send(&line);
+        }
+    }
+
     /// `forget` goes through JSON-RPC because only the answer says whether a row
     /// was really dropped (a built-in provider's forget is a no-op).
     pub fn forget(&mut self, on_click: &str) -> u64 {
@@ -137,8 +208,13 @@ fn read_loop(stdout: ChildStdout, tx: EventSender) {
                     }
                 }
                 "results" => {
-                    if let Ok(items) = serde_json::from_value(value["data"].clone()) {
+                    if let Ok(mut items) =
+                        serde_json::from_value::<Vec<Item>>(value["data"].clone())
+                    {
                         let payload = value["data"].to_string();
+                        for item in &mut items {
+                            item.action = Action::parse(&item.on_click);
+                        }
                         let _ = tx.send(Event::Results { items, payload });
                     }
                 }
@@ -160,4 +236,39 @@ fn read_loop(stdout: ChildStdout, tx: EventSender) {
         }
     }
     let _ = tx.send(Event::CoreExited);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_scheme_parses_and_round_trips_to_one_line() {
+        for (on_click, line) in [
+            ("launch:firefox", "launch firefox\n"),
+            ("run:btop --utf", "run btop --utf\n"),
+            (r#"copy:{"text":"x"}"#, "copy {\"text\":\"x\"}\n"),
+            (
+                "action:app.desktop:new-window",
+                "action app.desktop:new-window\n",
+            ),
+            ("https://example.com/a b", "open https://example.com/a b\n"),
+            ("file:///tmp/a%20b", "open file:///tmp/a%20b\n"),
+            ("mailto:me@example.com", "open mailto:me@example.com\n"),
+            // A bare command is still run, not opened.
+            ("kitty -e htop", "run kitty -e htop\n"),
+        ] {
+            assert_eq!(
+                Action::parse(on_click).line().as_deref(),
+                Some(line),
+                "{on_click}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_scheme_does_nothing() {
+        assert_eq!(Action::parse(""), Action::None);
+        assert_eq!(Action::parse("").line(), None);
+    }
 }
