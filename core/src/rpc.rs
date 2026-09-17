@@ -189,6 +189,30 @@ pub async fn handle(line: &str, tx: &mpsc::Sender<String>) -> bool {
                 respond(tx, id, Ok(Value::Null)).await;
             }
         }
+        "action" => {
+            let desktop_id = match string_param(&params, "desktop_id") {
+                Ok(value) => value,
+                Err(()) => {
+                    if has_id {
+                        respond(tx, id, Err(INVALID_PARAMS)).await;
+                    }
+                    return true;
+                }
+            };
+            let action_id = match string_param(&params, "action_id") {
+                Ok(value) => value,
+                Err(()) => {
+                    if has_id {
+                        respond(tx, id, Err(INVALID_PARAMS)).await;
+                    }
+                    return true;
+                }
+            };
+            crate::system::desktop_action::launch(&desktop_id, &action_id);
+            if has_id {
+                respond(tx, id, Ok(Value::Null)).await;
+            }
+        }
         "open" => {
             let uri = match string_param(&params, "uri") {
                 Ok(value) => value,

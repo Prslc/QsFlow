@@ -1,3 +1,4 @@
+pub mod desktop_action;
 pub mod executor;
 pub mod fs;
 pub mod icon;

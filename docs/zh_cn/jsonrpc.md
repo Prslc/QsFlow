@@ -16,6 +16,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | 结果项对象 | `null`（记录使用） |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `action` | `{"desktop_id","action_id"}` | `null`（运行 desktop 文件里的一个 `[Desktop Action …]` 组） |
 | `launch` | `{"desktop_id"}` | `null`（经 GLib 的 `GAppInfo` 启动） |
 | `open` | `{"uri"}` | `null`（用默认处理器打开） |
 | `copy` | `{"text"}` | `null`（写入 Wayland 剪贴板） |

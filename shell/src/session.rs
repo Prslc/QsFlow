@@ -72,9 +72,13 @@ impl Action {
                 },
             ),
             Self::Open(uri) => ("open", serde_json::json!({ "uri": uri })),
-            // No core on this branch owns desktop actions; a core that does
-            // takes the text verb.
-            Self::Desktop(action) => return Some(format!("action {action}\n")),
+            Self::Desktop(action) => {
+                let (desktop_id, action_id) = action.split_once(':')?;
+                (
+                    "action",
+                    serde_json::json!({ "desktop_id": desktop_id, "action_id": action_id }),
+                )
+            }
             Self::None => return None,
         };
         Some(format!(
@@ -313,14 +317,14 @@ mod tests {
     }
 
     #[test]
-    fn a_desktop_action_keeps_the_text_verb() {
+    fn a_desktop_action_names_its_entry_and_group() {
+        let request = request_of("action:org.gnome.Nautilus.desktop:new-window").expect("action");
+        assert_eq!(request["method"], "action");
         assert_eq!(
-            Action::parse("action:app.desktop:new-window")
-                .request()
-                .as_deref(),
-            Some("action app.desktop:new-window\n"),
-            "no core on this branch owns desktop actions"
+            request["params"]["desktop_id"],
+            "org.gnome.Nautilus.desktop"
         );
+        assert_eq!(request["params"]["action_id"], "new-window");
     }
 
     #[test]

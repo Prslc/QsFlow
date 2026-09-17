@@ -18,6 +18,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `select` | item object | `null` (records usage; `copy:` actions never recorded) |
 | `forget` | `{"on_click"}` | `null` |
 | `run` | `{"cmd"}` | `null` |
+| `action` | `{"desktop_id","action_id"}` | `null` (runs one `[Desktop Action …]` group of a desktop file) |
 | `launch` | `{"desktop_id"}` | `null` (launches through GLib's `GAppInfo`) |
 | `open` | `{"uri"}` | `null` (opens with the default handler) |
 | `copy` | `{"text"}` | `null` (writes the Wayland clipboard) |
