@@ -429,6 +429,9 @@ impl Shell {
         layer.commit();
         self.layer = Some(layer);
         self.session.search("");
+        // The clipboard can change while the launcher is hidden; read it now so
+        // the first Ctrl+V of this show answers without blocking.
+        crate::platform::refresh_clipboard();
     }
 
     fn dismiss(&mut self) {

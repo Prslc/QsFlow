@@ -10,6 +10,8 @@ use std::cell::{Cell, RefCell};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use i_slint_core::InternalToken;
 use i_slint_core::window::{InputMethodRequest, WindowAdapterInternal};
@@ -139,11 +141,74 @@ impl Platform for QsPlatform {
     /// The shell never becomes the selection owner: reads and writes go through
     /// `wl-paste`/`wl-copy`, the same tools the core uses for `copy:` rows.
     fn clipboard_text(&self, _clipboard: Clipboard) -> Option<String> {
-        read_clipboard()
+        cached_clipboard()
     }
 
     fn set_clipboard_text(&self, text: &str, _clipboard: Clipboard) {
+        // The shell owns the text it just wrote, so the next paste can answer
+        // from memory instead of asking the owner it is about to become.
+        remember_clipboard(Some(text.to_owned()));
         write_clipboard(text);
+    }
+}
+
+/// The clipboard as last read, plus whether that read ever happened: an empty
+/// clipboard must not send every paste back to `wl-paste`.
+#[derive(Default, Debug, PartialEq)]
+struct ClipboardCache {
+    known: bool,
+    text: Option<String>,
+}
+
+static CLIPBOARD: Mutex<ClipboardCache> = Mutex::new(ClipboardCache {
+    known: false,
+    text: None,
+});
+static READING: AtomicBool = AtomicBool::new(false);
+
+fn cache() -> std::sync::MutexGuard<'static, ClipboardCache> {
+    CLIPBOARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Starts a worker-thread read if one is not already running. `wl-paste` waits
+/// on the selection owner, which must never happen on the UI thread.
+pub fn refresh_clipboard() {
+    if READING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(|| {
+        let text = read_clipboard();
+        let mut cache = cache();
+        cache.text = text;
+        cache.known = true;
+        READING.store(false, Ordering::Release);
+    });
+}
+
+fn remember_clipboard(text: Option<String>) {
+    let mut cache = cache();
+    cache.text = text;
+    cache.known = true;
+}
+
+/// The answer, with the refresh that keeps the *next* paste cheap.
+fn cached_clipboard() -> Option<String> {
+    let cached = {
+        let cache = cache();
+        ClipboardCache {
+            known: cache.known,
+            text: cache.text.clone(),
+        }
+    };
+    refresh_clipboard();
+    // The first paste after a show has nothing to answer from yet, and waiting
+    // for the worker would lose the paste: it reads once, bounded.
+    if cached.known {
+        cached.text
+    } else {
+        read_clipboard()
     }
 }
 
@@ -192,5 +257,51 @@ fn write_clipboard(text: &str) {
         std::thread::spawn(move || {
             let _ = stdin.write_all(text.as_bytes());
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_known_empty_clipboard_does_not_re_read() {
+        let mut cache = ClipboardCache {
+            known: true,
+            text: None,
+        };
+        let read = |cache: &mut ClipboardCache| {
+            if cache.known {
+                cache.text.clone()
+            } else {
+                cache.known = true;
+                cache.text = Some("cold read".to_owned());
+                cache.text.clone()
+            }
+        };
+        assert_eq!(read(&mut cache), None, "an empty clipboard is an answer");
+        assert_eq!(
+            read(&mut cache),
+            None,
+            "and it does not block on wl-paste again"
+        );
+    }
+
+    #[test]
+    fn a_cold_clipboard_reads_once() {
+        let mut cache = ClipboardCache::default();
+        assert_eq!(
+            {
+                if cache.known {
+                    cache.text.clone()
+                } else {
+                    cache.known = true;
+                    cache.text = Some("cold read".to_owned());
+                    cache.text.clone()
+                }
+            },
+            Some("cold read".to_owned())
+        );
+        assert!(cache.known);
     }
 }
