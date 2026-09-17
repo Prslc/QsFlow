@@ -95,6 +95,7 @@ impl WindowAdapter for Adapter {
 
     fn set_size(&self, size: WindowSize) {
         let factor = self.window.scale_factor();
+        log::debug!("window set_size {size:?} at scale factor {factor}");
         self.size.set(size.to_physical(factor));
         let logical = size.to_logical(factor);
         self.window

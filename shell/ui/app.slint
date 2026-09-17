@@ -112,6 +112,15 @@ export component LauncherWindow inherits Window {
         easing: ease-out-quint;
     }
 
+    /// The card's rectangle, which is what the compositor's background blur is
+    /// asked to cover; the host reads it every frame.
+    out property <length> card-x: card.x;
+    out property <length> card-y: card.y;
+    out property <length> card-width: card.width;
+    out property <length> card-height: card.height;
+    out property <float> card-opacity: root.progress;
+    out property <length> card-radius: 16px;
+
     callback search(string);
     callback activate(int);
     callback forget();
@@ -129,14 +138,25 @@ export component LauncherWindow inherits Window {
         input.focus();
     }
 
+    /// Slint only re-sends the input method's cursor rectangle from a focus
+    /// change or a text change, so the host re-runs focus once the first frame
+    /// has laid the item tree out; before that the rectangle is all zeros and
+    /// the input method parks its candidates in the corner of the screen.
+    public function refocus-input() {
+        input.clear-focus();
+        input.focus();
+    }
+
     // Card math from the QML shell: fixed top at 0.28H (results extend the card
     // downward, so the field never moves), width min(max(560, 0.38W), 760).
     property <int> visible-rows: min(results.length, 5);
     property <length> list-h: visible-rows * 64px;
-    property <length> card-h: min(
-        14px + 52px + 10px + 28px + 14px + (results.length > 0 ? 10px + list-h : 0px),
-        480px,
-    );
+    // The card's height is animated; its contents are laid out at their final
+    // size straight away and clipped, so a growing payload is revealed by the
+    // card rather than squeezing the footer over the last row.
+    property <length> content-h: 14px + 52px + 10px + 28px + 14px
+        + (results.length > 0 ? 10px + list-h : 0px);
+    property <length> card-h: min(content-h, 480px);
     property <length> card-w: min(max(560px, self.width * 0.38), 760px);
 
     property <length> chip-w: chip-label.preferred-width + 16px;
@@ -177,99 +197,102 @@ export component LauncherWindow inherits Window {
             clicked => { }
         }
 
-        VerticalLayout {
-            padding: 14px;
-            spacing: 10px;
+        // A rectangular clip: the software renderer ignores `clip` combined
+        // with `border-radius`, and nothing is drawn near the rounded corners.
+        holder := Rectangle {
+            width: parent.width;
+            height: parent.height;
+            clip: true;
 
-            field := Rectangle {
-                height: 52px;
-                border-radius: 9px;
-                background: root.theme.fg.with-alpha(0.08);
-
-                // Magnifier, stroked rather than an asset: a circle and a handle
-                // in the same 22px box the QML canvas drew.
-                Path {
-                    x: 14px;
-                    y: (parent.height - self.height) / 2;
-                    width: 22px;
-                    height: 22px;
-                    commands: "M 2.8 9 A 6.2 6.2 0 1 1 15.2 9 A 6.2 6.2 0 1 1 2.8 9 M 13.8 13.8 L 19 19";
-                    fill: transparent;
-                    stroke: root.theme.fg.with-alpha(0.55);
-                    stroke-width: 2px;
-                }
-
-                Text {
-                    x: 48px;
-                    y: (parent.height - self.height) / 2;
-                    text: "Search apps, files, web...";
-                    color: root.theme.fg.with-alpha(0.55);
-                    font-size: 18px;
-                    // A live IME composition is drawn by the field itself, so
-                    // the placeholder must not show through it.
-                    visible: input.text == "" && input.preedit-text == "";
-                }
-
-                input := TextInput {
-                    x: 48px;
-                    y: 0;
-                    width: parent.width - 48px - 8px - root.toolbar-w;
-                    height: parent.height;
-                    vertical-alignment: center;
-                    text <=> root.query;
-                    color: root.theme.fg;
-                    font-size: 18px;
-                    single-line: true;
-                    selection-background-color: root.theme.primary.with-alpha(0.35);
-                    selection-foreground-color: root.theme.fg;
-
-                    edited => { root.search(root.query); }
-                    accepted => { root.activate(root.selected); }
-
-                    // Shell-level keys, ahead of the widget's own editing
-                    // handling: navigation and deletion are the launcher's,
-                    // while Home/End and the caret keys stay the field's.
-                    key-pressed(event) => {
-                        if (event.text == Key.Escape) {
-                            root.dismiss();
-                            return accept;
-                        }
-                        if (event.text == Key.UpArrow) {
-                            root.move-by(-1);
-                            return accept;
-                        }
-                        if (event.text == Key.DownArrow) {
-                            root.move-by(1);
-                            return accept;
-                        }
-                        if (event.text == Key.PageUp) {
-                            root.move-by(-5);
-                            return accept;
-                        }
-                        if (event.text == Key.PageDown) {
-                            root.move-by(5);
-                            return accept;
-                        }
-                        if (event.text == Key.Delete) {
-                            root.forget();
-                            return accept;
-                        }
-                        return reject;
-                    }
-                }
-
-                // Keyword-prefix chip and the ✕ clear button, right-aligned in
-                // the field.
-                HorizontalLayout {
-                    x: 0;
-                    y: 0;
+                VerticalLayout {
                     width: parent.width;
-                    height: parent.height;
-                    alignment: end;
-                    padding-right: 8px;
-                    spacing: 6px;
+                    height: root.content-h;
+                    padding: 14px;
+                    spacing: 10px;
 
+                field := Rectangle {
+                    height: 52px;
+                    border-radius: 9px;
+                    background: root.theme.fg.with-alpha(0.08);
+
+                    // Magnifier, stroked rather than an asset: a circle and a handle
+                    // in the same 22px box the QML canvas drew.
+                    Path {
+                        x: 14px;
+                        y: (parent.height - self.height) / 2;
+                        width: 22px;
+                        height: 22px;
+                        commands: "M 2.8 9 A 6.2 6.2 0 1 1 15.2 9 A 6.2 6.2 0 1 1 2.8 9 M 13.8 13.8 L 19 19";
+                        fill: transparent;
+                        stroke: root.theme.fg.with-alpha(0.55);
+                        stroke-width: 2px;
+                    }
+
+                    Text {
+                        x: 48px;
+                        y: (parent.height - self.height) / 2;
+                        text: "Search apps, files, web...";
+                        color: root.theme.fg.with-alpha(0.55);
+                        font-size: 18px;
+                        // A live IME composition is drawn by the field itself, so
+                        // the placeholder must not show through it.
+                        visible: input.text == "" && input.preedit-text == "";
+                    }
+
+                    input := TextInput {
+                        x: 48px;
+                        y: 0;
+                        width: parent.width - 48px - 8px - root.toolbar-w;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        text <=> root.query;
+                        color: root.theme.fg;
+                        font-size: 18px;
+                        single-line: true;
+                        selection-background-color: root.theme.primary.with-alpha(0.35);
+                        selection-foreground-color: root.theme.fg;
+
+                        edited => { root.search(root.query); }
+                        accepted => { root.activate(root.selected); }
+
+                        // Shell-level keys, ahead of the widget's own editing
+                        // handling: navigation and deletion are the launcher's,
+                        // while Home/End and the caret keys stay the field's.
+                        key-pressed(event) => {
+                            if (event.text == Key.Escape) {
+                                root.dismiss();
+                                return accept;
+                            }
+                            if (event.text == Key.UpArrow) {
+                                root.move-by(-1);
+                                return accept;
+                            }
+                            if (event.text == Key.DownArrow) {
+                                root.move-by(1);
+                                return accept;
+                            }
+                            if (event.text == Key.PageUp) {
+                                root.move-by(-5);
+                                return accept;
+                            }
+                            if (event.text == Key.PageDown) {
+                                root.move-by(5);
+                                return accept;
+                            }
+                            if (event.text == Key.Delete) {
+                                root.forget();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
+
+                    // The chip and the ✕ are positioned outright: inside a
+                    // HorizontalLayout the cross-axis placement belongs to the
+                    // layout, and it put the ✕ above the field's centre.
                     chip := Rectangle {
+                        x: clear.x - self.width - 6px;
+                        y: (parent.height - self.height) / 2;
                         width: root.chip-w;
                         height: 24px;
                         border-radius: 6px;
@@ -277,8 +300,10 @@ export component LauncherWindow inherits Window {
                         visible: root.keyword != "";
 
                         chip-label := Text {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
+                            width: parent.width;
+                            height: parent.height;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                             text: root.keyword;
                             color: root.theme.primary;
                             font-size: 11px;
@@ -287,19 +312,27 @@ export component LauncherWindow inherits Window {
                     }
 
                     clear := Rectangle {
+                        x: parent.width - self.width - 8px;
+                        y: (parent.height - self.height) / 2;
                         width: 26px;
                         height: 26px;
                         border-radius: 13px;
-                        background: clear-touch.has-hover ? root.theme.fg.with-alpha(0.12) : transparent;
+                        // The disc is visible at rest, as it was before the port.
+                        background: root.theme.fg.with-alpha(clear-touch.has-hover ? 0.18 : 0.10);
                         animate background { duration: 120ms; easing: ease-out-quart; }
                         visible: input.text != "";
 
-                        Text {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            text: "✕";
-                            color: root.theme.fg.with-alpha(0.55);
-                            font-size: 12px;
+                        // A glyph's ink is not its line box, so the ✕ is drawn
+                        // as two strokes inside the 26px disc.
+                        Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-width: 26;
+                            viewbox-height: 26;
+                            commands: "M 9.5 9.5 L 16.5 16.5 M 16.5 9.5 L 9.5 16.5";
+                            fill: transparent;
+                            stroke: root.theme.fg.with-alpha(0.55);
+                            stroke-width: 1.6px;
                         }
 
                         clear-touch := TouchArea {
@@ -310,52 +343,52 @@ export component LauncherWindow inherits Window {
                         }
                     }
                 }
-            }
 
-            // Fixed five-row window over the full payload; `first-row` is the
-            // host's containment window (ListView.Contain in the QML).
-            list := Flickable {
-                height: root.list-h;
-                visible: root.results.length > 0;
-                interactive: false;
-                content-width: self.width;
-                content-height: root.results.length * 64px;
-                // The content moves up as the window walks down the payload.
-                content-y: -root.first-row * 64px;
+                // Fixed five-row window over the full payload; `first-row` is the
+                // host's containment window (ListView.Contain in the QML).
+                list := Flickable {
+                    height: root.list-h;
+                    visible: root.results.length > 0;
+                    interactive: false;
+                    content-width: self.width;
+                    content-height: root.results.length * 64px;
+                    // The content moves up as the window walks down the payload.
+                    content-y: -root.first-row * 64px;
 
-                for data[i] in root.results : ResultRow {
-                    y: i * 64px;
-                    width: list.width;
-                    height: 64px;
-                    entry: data;
-                    selected: i == root.selected;
-                    fg: root.theme.fg;
-                    accent: root.theme.primary;
-                    activate => { root.activate(i); }
-                }
-            }
-
-            footer := Rectangle {
-                height: 28px;
-
-                Text {
-                    x: 0;
-                    y: (parent.height - self.height) / 2;
-                    text: root.results.length == 0
-                        ? "Type ? for help  ·  prefixes: b h f d c s g tr r w"
-                        : "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close";
-                    color: root.theme.fg.with-alpha(0.5);
-                    font-size: 11px;
+                    for data[i] in root.results : ResultRow {
+                        y: i * 64px;
+                        width: list.width;
+                        height: 64px;
+                        entry: data;
+                        selected: i == root.selected;
+                        fg: root.theme.fg;
+                        accent: root.theme.primary;
+                        activate => { root.activate(i); }
+                    }
                 }
 
-                Text {
-                    x: parent.width - self.width;
-                    y: (parent.height - self.height) / 2;
-                    text: root.results.length == 0 ? "" : root.results.length + " results";
-                    color: root.theme.fg.with-alpha(0.45);
-                    font-size: 11px;
+                footer := Rectangle {
+                    height: 28px;
+
+                    Text {
+                        x: 0;
+                        y: (parent.height - self.height) / 2;
+                        text: root.results.length == 0
+                            ? "Type ? for help  ·  prefixes: b h f d c s g tr r w"
+                            : "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close";
+                        color: root.theme.fg.with-alpha(0.5);
+                        font-size: 11px;
+                    }
+
+                    Text {
+                        x: parent.width - self.width;
+                        y: (parent.height - self.height) / 2;
+                        text: root.results.length == 0 ? "" : root.results.length + " results";
+                        color: root.theme.fg.with-alpha(0.45);
+                        font-size: 11px;
+                    }
                 }
-            }
+        }
         }
     }
 }

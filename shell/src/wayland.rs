@@ -16,7 +16,7 @@ use slint::LogicalPosition;
 use slint::platform::software_renderer::PremultipliedRgbaColor;
 use slint::platform::{Key, PointerEventButton, WindowEvent};
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState, FrameCallbackData},
+    compositor::{CompositorHandler, CompositorState, FrameCallbackData, Region},
     delegate_registry,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
@@ -40,9 +40,21 @@ use wayland_client::{
     globals::registry_queue_init,
     protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
 };
+use wayland_protocols::ext::background_effect::v1::client::{
+    ext_background_effect_manager_v1::{self, ExtBackgroundEffectManagerV1},
+    ext_background_effect_surface_v1::{self, ExtBackgroundEffectSurfaceV1},
+};
+use wayland_protocols::wp::fractional_scale::v1::client::{
+    wp_fractional_scale_manager_v1::{self, WpFractionalScaleManagerV1},
+    wp_fractional_scale_v1::{self, WpFractionalScaleV1},
+};
 use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3,
     zwp_text_input_v3::{self, ZwpTextInputV3},
+};
+use wayland_protocols::wp::viewporter::client::{
+    wp_viewport::{self, WpViewport},
+    wp_viewporter::{self, WpViewporter},
 };
 
 use crate::app::App;
@@ -91,6 +103,25 @@ pub struct Shell {
     pending: Pending,
     /// A composition is open, so the input method owns the keyboard.
     composing: bool,
+    /// The geometry last handed to the input method. The compositor only
+    /// associates it with a surface after `enter`, and `enter` can arrive after
+    /// the request that carried it, so it is kept for a re-send.
+    ime_state: Option<ImeState>,
+    /// Re-run focus after the first frame of a show, when the field is laid out.
+    refocus_after_frame: bool,
+
+    fractional_manager: Option<WpFractionalScaleManagerV1>,
+    viewporter: Option<WpViewporter>,
+    fscale: Option<WpFractionalScaleV1>,
+    viewport: Option<WpViewport>,
+    /// The output's exact ratio; with a viewport it replaces the integer buffer
+    /// scale, which would cost four times the pixels for 1.25x of detail.
+    ratio: Option<f64>,
+
+    blur_manager: Option<ExtBackgroundEffectManagerV1>,
+    blur: Option<ExtBackgroundEffectSurfaceV1>,
+    /// The 4px-quantized card rect the compositor was last given.
+    blur_rect: Option<(i32, i32, i32, i32)>,
 
     layer: Option<LayerSurface>,
     pool: Option<SlotPool>,
@@ -133,6 +164,19 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
 
     // Text input is optional: a compositor without the global keeps a plain
     // (Latin-only) field, which is what the QML shell did on such a session.
+    let fractional_manager: Option<WpFractionalScaleManagerV1> = globals
+        .bind(&qh, 1..=1, ())
+        .map_err(|err| log::warn!("no fractional scale: {err}"))
+        .ok();
+    let viewporter: Option<WpViewporter> = globals
+        .bind(&qh, 1..=1, ())
+        .map_err(|err| log::warn!("no viewporter: {err}"))
+        .ok();
+    let blur_manager: Option<ExtBackgroundEffectManagerV1> = globals
+        .bind(&qh, 1..=1, ())
+        .map_err(|err| log::warn!("no background effect: {err}"))
+        .ok();
+
     let ime_manager: Option<ZwpTextInputManagerV3> = globals
         .bind(&qh, 1..=1, ())
         .map_err(|err| log::warn!("no zwp_text_input_manager_v3: {err}"))
@@ -168,6 +212,16 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
         ime: None,
         pending: Pending::default(),
         composing: false,
+        ime_state: None,
+        refocus_after_frame: false,
+        fractional_manager,
+        viewporter,
+        fscale: None,
+        viewport: None,
+        ratio: None,
+        blur_manager,
+        blur: None,
+        blur_rect: None,
         layer: None,
         pool: None,
         keyboard: None,
@@ -343,9 +397,19 @@ impl Shell {
 
         let qh = self.qh.clone();
         let surface = self.compositor.create_surface(&qh);
+        // Both scaling objects must exist before the surface's first commit:
+        // the exact ratio arrives as an event on the fractional-scale one.
+        self.fscale = self
+            .fractional_manager
+            .as_ref()
+            .map(|manager| manager.get_fractional_scale(&surface, &qh, ()));
+        self.viewport = self
+            .viewporter
+            .as_ref()
+            .map(|viewporter| viewporter.get_viewport(&surface, &qh, ()));
         let layer = self.layer_shell.create_layer_surface(
             &qh,
-            surface,
+            surface.clone(),
             Layer::Overlay,
             Some("QsFlow"),
             None,
@@ -357,6 +421,11 @@ impl Shell {
         layer.set_exclusive_zone(-1);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.set_size(0, 0);
+        self.blur = self
+            .blur_manager
+            .as_ref()
+            .map(|manager| manager.get_background_effect(&surface, &qh, ()));
+        self.blur_rect = None;
         layer.commit();
         self.layer = Some(layer);
         self.session.search("");
@@ -372,6 +441,20 @@ impl Shell {
         self.ui.set_shown(false);
         // Dropping the layer surface destroys it; there is no hide verb.
         self.disable_ime();
+        // wayland-rs only drops a proxy from its map when the destructor is
+        // sent, so each per-surface object is torn down explicitly.
+        if let Some(viewport) = self.viewport.take() {
+            viewport.destroy();
+        }
+        if let Some(fscale) = self.fscale.take() {
+            fscale.destroy();
+        }
+        if let Some(blur) = self.blur.take() {
+            blur.destroy();
+        }
+        self.blur_rect = None;
+        // `ratio` is an output property, not a surface one: keeping it makes the
+        // next show allocate at the right size straight away.
         self.layer = None;
         self.pool = None;
         if !self.resident {
@@ -452,30 +535,58 @@ impl Shell {
                     ime.commit();
                 }
                 InputMethodRequest::Enable(properties) | InputMethodRequest::Update(properties) => {
-                    ime.set_content_type(
-                        zwp_text_input_v3::ContentHint::None,
-                        zwp_text_input_v3::ContentPurpose::Normal,
-                    );
-                    ime.enable();
-                    ime.set_cursor_rectangle(
+                    let rect = (
                         properties.cursor_rect_origin.x as i32,
                         properties.cursor_rect_origin.y as i32,
                         properties.cursor_rect_size.width as i32,
                         properties.cursor_rect_size.height as i32,
                     );
-                    ime.set_surrounding_text(
-                        properties.text.to_string(),
-                        properties.cursor_position as i32,
-                        properties
+                    let cursor = properties.cursor_position as i32;
+                    let state = ImeState {
+                        // A zero rectangle means the field is not laid out yet;
+                        // sending that parks the candidate window in the corner
+                        // of the screen, so the last good one is kept.
+                        rect: if rect.2 > 0 && rect.3 > 0 {
+                            rect
+                        } else {
+                            self.ime_state.as_ref().map(|old| old.rect).unwrap_or(rect)
+                        },
+                        text: properties.text.to_string(),
+                        cursor,
+                        anchor: properties
                             .anchor_position
-                            .unwrap_or(properties.cursor_position) as i32,
+                            .unwrap_or(properties.cursor_position)
+                            as i32,
+                    };
+                    log::debug!(
+                        "ime state {state:?} composing={} window={}x{} logical={}x{} sf={}",
+                        self.composing,
+                        self.width,
+                        self.height,
+                        self.logical_w,
+                        self.logical_h,
+                        self.adapter.window().scale_factor()
                     );
-                    ime.commit();
+                    self.send_ime_state(ime, &state);
+                    self.ime_state = Some(state);
                 }
                 _ => {}
             }
         }
         let _ = self.conn.flush();
+    }
+
+    /// `enable` + the caret rectangle + the surrounding text, committed as one
+    /// double-buffered batch.
+    fn send_ime_state(&self, ime: &ZwpTextInputV3, state: &ImeState) {
+        ime.set_content_type(
+            zwp_text_input_v3::ContentHint::None,
+            zwp_text_input_v3::ContentPurpose::Normal,
+        );
+        ime.enable();
+        ime.set_cursor_rectangle(state.rect.0, state.rect.1, state.rect.2, state.rect.3);
+        ime.set_surrounding_text(state.text.clone(), state.cursor, state.anchor);
+        ime.commit();
     }
 
     fn enable_ime(&mut self) {
@@ -524,6 +635,10 @@ impl Shell {
                 }
             };
         self.composing = !preedit.is_empty();
+        log::debug!(
+            "ime apply {event_type:?} preedit={preedit:?} composing={}",
+            self.composing
+        );
         let event = InternalKeyEvent {
             key_event,
             event_type,
@@ -594,6 +709,7 @@ impl Shell {
         // one requested afterwards waits for the next commit, which on an idle
         // launcher would be the next caret blink.
         surface.frame(qh, FrameCallbackData(surface.clone()));
+        self.sync_blur();
         if let Err(err) = buffer.attach_to(&surface) {
             log::error!("buffer attach failed: {err}");
             return;
@@ -603,6 +719,12 @@ impl Shell {
         }
         self.frame_pending = true;
         log::trace!("presented {}x{} (scale {})", width, height, self.scale);
+        // The item tree is laid out now, so a fresh focus change carries a real
+        // cursor rectangle for the input method.
+        if self.refocus_after_frame {
+            self.refocus_after_frame = false;
+            self.ui.invoke_refocus_input();
+        }
     }
 
     fn apply_size(&mut self) {
@@ -618,6 +740,68 @@ impl Shell {
             .window()
             .set_size(slint::PhysicalSize::new(self.width, self.height));
         self.adapter.window().request_redraw();
+    }
+
+    fn rebuild_pool(&mut self) {
+        let bytes = (self.width as usize) * (self.height as usize) * 4;
+        self.pool = match SlotPool::new(bytes, &self.shm) {
+            Ok(pool) => Some(pool),
+            Err(err) => {
+                log::error!("shared-memory pool failed: {err}");
+                None
+            }
+        };
+    }
+
+    /// A `wp_fractional_scale_v1` change: the buffer and the viewport have to be
+    /// rebuilt at the new ratio.
+    fn set_fractional_scale(&mut self, scale_120: u32) {
+        if scale_120 == 0 {
+            return;
+        }
+        let ratio = scale_120 as f64 / 120.0;
+        if self.ratio == Some(ratio) {
+            return;
+        }
+        log::debug!("fractional scale {ratio}");
+        self.ratio = Some(ratio);
+        if self.visible && self.logical_w > 0 {
+            self.apply_size();
+            self.rebuild_pool();
+        }
+    }
+
+    /// The compositor's blur is applied to the card's rounded rect, which is
+    /// passed as a middle band plus 2px scanline bands whose inset follows
+    /// `r - sqrt(r^2 - (r - dy)^2)`.
+    fn sync_blur(&mut self) {
+        let Some(effect) = self.blur.as_ref() else {
+            return;
+        };
+        let x = self.ui.get_card_x().round() as i32;
+        let y = self.ui.get_card_y().round() as i32;
+        let width = self.ui.get_card_width().round() as i32;
+        let height = self.ui.get_card_height().round() as i32;
+        let radius = self.ui.get_card_radius().round() as i32;
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        let snap = |value: i32| value.div_euclid(4) * 4;
+        let quantized = (snap(x), snap(y), snap(width), snap(height));
+        if self.blur_rect == Some(quantized) {
+            return;
+        }
+        log::debug!("blur region {:?} -> {:?}", (x, y, width, height), quantized);
+        self.blur_rect = Some(quantized);
+        let Ok(region) = Region::new(&self.compositor) else {
+            return;
+        };
+        for (rx, ry, rw, rh) in blur_rects(x, y, width, height, radius) {
+            if rw > 0 && rh > 0 {
+                region.add(rx, ry, rw, rh);
+            }
+        }
+        effect.set_blur_region(Some(region.wl_region()));
     }
 
     fn key(&mut self, event_type: KeyEventType, keysym: Keysym, repeat: bool) {
@@ -705,6 +889,41 @@ impl Shell {
             self.app.publish(&self.ui);
         }
     }
+}
+
+/// The card's rounded rect as a small set of rectangles: the input method and
+/// the compositor's region API both work in plain rectangles.
+fn blur_rects(x: i32, y: i32, width: i32, height: i32, radius: i32) -> Vec<(i32, i32, i32, i32)> {
+    let radius = radius.clamp(0, width / 2).clamp(0, height / 2);
+    if radius == 0 {
+        return vec![(x, y, width, height)];
+    }
+    let mut rects = Vec::new();
+    let mut dy = 0;
+    while dy < radius {
+        let band = 2.min(radius - dy);
+        let drop = (radius - dy) as f64;
+        let inset = (radius as f64
+            - (radius as f64 * radius as f64 - drop * drop)
+                .max(0.0)
+                .sqrt())
+        .round() as i32;
+        rects.push((x + inset, y + dy, width - 2 * inset, band));
+        rects.push((x + inset, y + height - dy - band, width - 2 * inset, band));
+        dy += band;
+    }
+    rects.push((x, y + radius, width, height - 2 * radius));
+    rects
+}
+
+/// What the input method needs to place its candidates: the caret rectangle and
+/// the surrounding text with the cursor in it.
+#[derive(Debug, Clone)]
+struct ImeState {
+    rect: (i32, i32, i32, i32),
+    text: String,
+    cursor: i32,
+    anchor: i32,
 }
 
 /// The keys that only exist as encoded modifier events, which Slint tracks
@@ -835,6 +1054,11 @@ impl CompositorHandler for Shell {
         if self.layer.as_ref().map(|layer| layer.wl_surface()) != Some(surface) {
             return;
         }
+        // With a viewport the buffer maps 1:1 onto the output and the surface's
+        // buffer scale stays 1, so the integer hint is ignored.
+        if self.viewport.is_some() {
+            return;
+        }
         let factor = new_factor.max(1);
         surface.set_buffer_scale(factor);
         let scale = factor as f64;
@@ -934,14 +1158,10 @@ impl LayerShellHandler for Shell {
         self.logical_w = logical_w;
         self.logical_h = logical_h;
         self.apply_size();
-        let bytes = (self.width as usize) * (self.height as usize) * 4;
-        self.pool = match SlotPool::new(bytes, &self.shm) {
-            Ok(pool) => Some(pool),
-            Err(err) => {
-                log::error!("shared-memory pool failed: {err}");
-                return;
-            }
-        };
+        self.rebuild_pool();
+        if self.pool.is_none() {
+            return;
+        }
         self.configured = true;
         self.frame_pending = false;
         log::debug!(
@@ -1150,17 +1370,33 @@ impl Dispatch<ZwpTextInputV3, ()> for Shell {
         _: &QueueHandle<Self>,
     ) {
         match event {
+            zwp_text_input_v3::Event::Enter { surface } => {
+                log::debug!("ime enter {surface:?}");
+                // The compositor drops geometry sent before `enter`, and a
+                // composition changes no text, so nothing else would ever send
+                // it again: without this the candidate window sits in the
+                // corner of the screen for the whole composition.
+                if let (Some(ime), Some(geometry)) = (state.ime.as_ref(), state.ime_state.as_ref())
+                {
+                    state.send_ime_state(ime, geometry);
+                }
+            }
+            zwp_text_input_v3::Event::Leave { surface } => {
+                log::debug!("ime leave {surface:?}");
+            }
             zwp_text_input_v3::Event::PreeditString {
                 text,
                 cursor_begin,
                 cursor_end,
             } => {
+                log::debug!("ime preedit {text:?} {cursor_begin}..{cursor_end}");
                 // The protocol allows a null string where it means "empty".
                 state
                     .pending
                     .preedit(text.unwrap_or_default(), cursor_begin, cursor_end);
             }
             zwp_text_input_v3::Event::CommitString { text } => {
+                log::debug!("ime commit {text:?}");
                 state.pending.commit(text.unwrap_or_default());
             }
             zwp_text_input_v3::Event::DeleteSurroundingText {
@@ -1173,6 +1409,82 @@ impl Dispatch<ZwpTextInputV3, ()> for Shell {
             zwp_text_input_v3::Event::Done { .. } => state.apply_ime(),
             _ => {}
         }
+    }
+}
+
+impl Dispatch<WpFractionalScaleManagerV1, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &WpFractionalScaleManagerV1,
+        _: wp_fractional_scale_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<WpFractionalScaleV1, ()> for Shell {
+    fn event(
+        state: &mut Self,
+        _: &WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            state.set_fractional_scale(scale);
+        }
+    }
+}
+
+impl Dispatch<WpViewporter, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &WpViewporter,
+        _: wp_viewporter::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<WpViewport, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &WpViewport,
+        _: wp_viewport::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<ExtBackgroundEffectManagerV1, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &ExtBackgroundEffectManagerV1,
+        event: ext_background_effect_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        log::debug!("background effect capabilities: {event:?}");
+    }
+}
+
+impl Dispatch<ExtBackgroundEffectSurfaceV1, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &ExtBackgroundEffectSurfaceV1,
+        _: ext_background_effect_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
     }
 }
 
