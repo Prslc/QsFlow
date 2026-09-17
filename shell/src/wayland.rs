@@ -486,24 +486,7 @@ impl Shell {
 
     /// Exactly one verb per row, chosen by the `on_click` scheme.
     fn run_command(&mut self, target: &str) {
-        let line = if let Some(rest) = target.strip_prefix("launch:") {
-            format!("launch {rest}\n")
-        } else if let Some(rest) = target.strip_prefix("run:") {
-            format!("run {rest}\n")
-        } else if let Some(rest) = target.strip_prefix("copy:") {
-            format!("copy {rest}\n")
-        } else if let Some(rest) = target.strip_prefix("action:") {
-            format!("action {rest}\n")
-        } else if target.starts_with("http")
-            || target.starts_with("file:")
-            || target.starts_with("mailto:")
-        {
-            // The core opens URIs through GLib, which honours the portal and
-            // the .desktop `Terminal=` key.
-            format!("open {target}\n")
-        } else {
-            format!("run {target}\n")
-        };
+        let line = command_line(target);
         self.session.send(&line);
     }
 
@@ -875,17 +858,9 @@ impl Shell {
         } else {
             vertical.absolute
         };
-        if pixels == 0.0 {
-            return;
-        }
-        if self.wheel.signum() != 0.0 && self.wheel.signum() != pixels.signum() {
-            self.wheel = 0.0;
-        }
-        self.wheel += pixels;
-        let rows = (self.wheel / ROW_H).trunc();
-        if rows != 0.0 {
-            self.wheel -= rows * ROW_H;
-            self.app.move_by(rows as i32);
+        let rows = crate::app::whole_rows(&mut self.wheel, pixels, ROW_H);
+        if rows != 0 {
+            self.app.move_by(rows);
             self.app.publish(&self.ui);
         }
     }
@@ -1008,6 +983,28 @@ fn key_text(keysym: Keysym) -> slint::SharedString {
     // Release events carry no UTF-8 in the protocol, so the text is derived
     // from the keysym for both directions of the same key.
     xkbcommon::xkb::keysym_to_utf8(keysym).into()
+}
+
+/// The one line a row's `on_click` turns into.
+fn command_line(target: &str) -> String {
+    if let Some(rest) = target.strip_prefix("launch:") {
+        format!("launch {rest}\n")
+    } else if let Some(rest) = target.strip_prefix("run:") {
+        format!("run {rest}\n")
+    } else if let Some(rest) = target.strip_prefix("copy:") {
+        format!("copy {rest}\n")
+    } else if let Some(rest) = target.strip_prefix("action:") {
+        format!("action {rest}\n")
+    } else if target.starts_with("http")
+        || target.starts_with("file:")
+        || target.starts_with("mailto:")
+    {
+        // The core opens URIs through GLib, which honours the portal and the
+        // .desktop `Terminal=` key that `xdg-open` drops.
+        format!("open {target}\n")
+    } else {
+        format!("run {target}\n")
+    }
 }
 
 /// The QML's keyword chip: a one-to-three letter first word followed by a space.
@@ -1505,3 +1502,125 @@ impl ProvidesRegistryState for Shell {
 delegate_registry!(Shell);
 
 smithay_client_toolkit::delegate_dispatch2!(Shell);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{App, whole_rows};
+
+    #[test]
+    fn a_row_turns_into_exactly_one_verb() {
+        assert_eq!(command_line("launch:firefox"), "launch firefox\n");
+        assert_eq!(command_line("run:btop --utf"), "run btop --utf\n");
+        assert_eq!(
+            command_line("copy:{\"text\":\"x\"}"),
+            "copy {\"text\":\"x\"}\n"
+        );
+        assert_eq!(
+            command_line("action:app.desktop:new-window"),
+            "action app.desktop:new-window\n"
+        );
+        assert_eq!(
+            command_line("https://example.com/a b"),
+            "open https://example.com/a b\n"
+        );
+        assert_eq!(
+            command_line("file:///tmp/a%20b"),
+            "open file:///tmp/a%20b\n"
+        );
+        assert_eq!(
+            command_line("mailto:me@example.com"),
+            "open mailto:me@example.com\n"
+        );
+        // A bare command is still run, not opened.
+        assert_eq!(command_line("kitty -e htop"), "run kitty -e htop\n");
+    }
+
+    #[test]
+    fn the_keyword_chip_needs_a_space_after_a_short_word() {
+        assert_eq!(keyword("b firefox"), "b");
+        assert_eq!(keyword("tr hello"), "tr");
+        assert_eq!(keyword("toolong x"), "", "four letters is not a prefix");
+        assert_eq!(keyword("fire fox"), "", "the first word is too long");
+        assert_eq!(keyword("b"), "", "no separator yet");
+        assert_eq!(keyword(""), "");
+    }
+
+    #[test]
+    fn one_notch_is_one_row_and_the_remainder_carries() {
+        let mut carry = 0.0;
+        assert_eq!(whole_rows(&mut carry, 64.0, 64.0), 1);
+        assert_eq!(whole_rows(&mut carry, 32.0, 64.0), 0);
+        assert_eq!(
+            whole_rows(&mut carry, 32.0, 64.0),
+            1,
+            "the two halves make a row"
+        );
+        assert_eq!(carry, 0.0);
+    }
+
+    #[test]
+    fn a_direction_change_drops_the_slack() {
+        let mut carry = 0.0;
+        assert_eq!(whole_rows(&mut carry, -40.0, 64.0), 0);
+        assert_eq!(
+            whole_rows(&mut carry, 64.0, 64.0),
+            1,
+            "the first notch back counts"
+        );
+    }
+
+    #[test]
+    fn an_identical_payload_keeps_the_cursor_and_a_new_one_goes_to_the_top() {
+        let mut app = App::new();
+        let rows = |count: usize| {
+            (0..count)
+                .map(|i| crate::session::Item {
+                    title: format!("row {i}"),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(app.set_payload(rows(9), "payload-a".into()));
+        app.select(6);
+        app.contain();
+        assert_eq!((app.selected, app.first_row), (6, 2));
+
+        assert!(
+            !app.set_payload(rows(9), "payload-a".into()),
+            "a re-send is dropped"
+        );
+        assert_eq!(
+            (app.selected, app.first_row),
+            (6, 2),
+            "and keeps the cursor"
+        );
+
+        assert!(app.set_payload(rows(4), "payload-b".into()));
+        assert_eq!(
+            (app.selected, app.first_row),
+            (0, 0),
+            "a new payload starts at the top"
+        );
+    }
+
+    #[test]
+    fn a_forget_removes_the_row_and_keeps_the_selection_in_range() {
+        let mut app = App::new();
+        let rows = (0..3)
+            .map(|i| crate::session::Item {
+                title: format!("row {i}"),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        app.set_payload(rows, "p".into());
+        app.select(2);
+        assert!(app.remove_row_state(2));
+        assert_eq!(app.items.len(), 2);
+        assert_eq!(app.selected, 1, "the selection follows the shorter list");
+        assert!(
+            !app.remove_row_state(5),
+            "an index outside the list is refused"
+        );
+    }
+}

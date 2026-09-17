@@ -11,6 +11,24 @@ use crate::{LauncherWindow, ResultItem, Theme};
 
 pub const VISIBLE_ROWS: usize = 5;
 
+/// Whole rows from accumulated scroll pixels, carrying the remainder so a
+/// trackpad stays smooth. A direction change drops the slack, otherwise the
+/// first notch back would be swallowed by the previous direction's remainder.
+pub fn whole_rows(carry: &mut f64, pixels: f64, row_h: f64) -> i32 {
+    if pixels == 0.0 || row_h <= 0.0 {
+        return 0;
+    }
+    if carry.signum() != 0.0 && carry.signum() != pixels.signum() {
+        *carry = 0.0;
+    }
+    *carry += pixels;
+    let rows = (*carry / row_h).trunc();
+    if rows != 0.0 {
+        *carry -= rows * row_h;
+    }
+    rows as i32
+}
+
 /// QML-era fallbacks: a field the backend did not carry keeps its old colour
 /// instead of turning transparent.
 const FALLBACK: Theme = Theme {
@@ -61,6 +79,16 @@ impl App {
         items: Vec<Item>,
         payload: String,
     ) -> bool {
+        if !self.set_payload(items, payload) {
+            return false;
+        }
+        self.publish(ui);
+        true
+    }
+
+    /// [`Self::apply_results`] without the widget writes, so the decision is
+    /// testable on its own. Returns false for an identical payload.
+    pub fn set_payload(&mut self, items: Vec<Item>, payload: String) -> bool {
         if payload == self.last_payload && !self.items.is_empty() {
             return false;
         }
@@ -91,8 +119,6 @@ impl App {
                 self.model.push(row);
             }
         }
-        ui.set_selected(0);
-        ui.set_first_row(0);
         true
     }
 
@@ -152,8 +178,15 @@ impl App {
 
     /// Drops a row locally; only the core's `{"forgotten":true}` may call this.
     pub fn remove_row(&mut self, ui: &LauncherWindow, index: usize) {
+        if self.remove_row_state(index) {
+            self.publish(ui);
+        }
+    }
+
+    /// [`Self::remove_row`] without the widget writes.
+    pub fn remove_row_state(&mut self, index: usize) -> bool {
         if index >= self.items.len() {
-            return;
+            return false;
         }
         self.items.remove(index);
         if index < self.icons.len() {
@@ -161,7 +194,7 @@ impl App {
         }
         self.model.remove(index);
         self.contain();
-        self.publish(ui);
+        true
     }
 
     /// Decodes the icons the visible window needs and hands those rows to the
