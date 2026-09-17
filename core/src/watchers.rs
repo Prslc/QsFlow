@@ -79,7 +79,10 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
         .join(".config/qsflow/plugins.toml");
     let handle = tokio::runtime::Handle::current();
     let watch_path = path.clone();
-    let mut last_reload = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    let now = std::time::Instant::now();
+    let mut last_reload = now
+        .checked_sub(std::time::Duration::from_secs(1))
+        .unwrap_or(now);
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };

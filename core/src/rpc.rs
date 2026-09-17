@@ -17,7 +17,7 @@ async fn respond(tx: &mpsc::Sender<String>, id: Value, result: Result<Value, (i6
     crate::protocol::emit(tx, &payload).await;
 }
 
-fn search_text(params: &Option<Value>) -> Result<String, ()> {
+fn search_text(params: Option<&Value>) -> Result<String, ()> {
     match params {
         None | Some(Value::Null) => Ok(String::new()),
         Some(Value::Object(map)) => match map.get("text") {
@@ -28,14 +28,14 @@ fn search_text(params: &Option<Value>) -> Result<String, ()> {
     }
 }
 
-fn select_payload(params: &Option<Value>) -> Result<String, ()> {
+fn select_payload(params: Option<&Value>) -> Result<String, ()> {
     match params {
         Some(obj @ Value::Object(_)) => Ok(obj.to_string()),
         _ => Err(()),
     }
 }
 
-fn forget_key(params: &Option<Value>) -> Result<String, ()> {
+fn forget_key(params: Option<&Value>) -> Result<String, ()> {
     match params {
         Some(Value::Object(map)) => map
             .get("on_click")
@@ -46,7 +46,7 @@ fn forget_key(params: &Option<Value>) -> Result<String, ()> {
     }
 }
 
-fn string_param(params: &Option<Value>, key: &str) -> Result<String, ()> {
+fn string_param(params: Option<&Value>, key: &str) -> Result<String, ()> {
     match params {
         Some(Value::Object(map)) => map
             .get(key)
@@ -59,14 +59,14 @@ fn string_param(params: &Option<Value>, key: &str) -> Result<String, ()> {
 
 /// The `copy` method's params are the item's own `{"text": …}` object, the same
 /// shape the `copy:` row scheme carries.
-fn copy_payload(params: &Option<Value>) -> Result<String, ()> {
+fn copy_payload(params: Option<&Value>) -> Result<String, ()> {
     match params {
         Some(obj @ Value::Object(_)) => Ok(obj.to_string()),
         _ => Err(()),
     }
 }
 
-fn run_cmd(params: &Option<Value>) -> Result<String, ()> {
+fn run_cmd(params: Option<&Value>) -> Result<String, ()> {
     match params {
         Some(Value::Object(map)) => map
             .get("cmd")
@@ -115,7 +115,7 @@ pub async fn handle(
 
     match method {
         "search" => {
-            let text = match search_text(&params) {
+            let text = match search_text(params.as_ref()) {
                 Ok(t) => t,
                 Err(()) => {
                     if has_id {
@@ -148,7 +148,7 @@ pub async fn handle(
             }
         }
         "select" => {
-            let payload = match select_payload(&params) {
+            let payload = match select_payload(params.as_ref()) {
                 Ok(p) => p,
                 Err(()) => {
                     if has_id {
@@ -163,7 +163,7 @@ pub async fn handle(
             }
         }
         "forget" => {
-            let key = match forget_key(&params) {
+            let key = match forget_key(params.as_ref()) {
                 Ok(k) => k,
                 Err(()) => {
                     if has_id {
@@ -189,7 +189,7 @@ pub async fn handle(
         // a client that speaks only JSON-RPC can drive the launcher without
         // string command lines.
         "launch" => {
-            let desktop_id = match string_param(&params, "desktop_id") {
+            let desktop_id = match string_param(params.as_ref(), "desktop_id") {
                 Ok(value) => value,
                 Err(()) => {
                     if has_id {
@@ -204,7 +204,7 @@ pub async fn handle(
             }
         }
         "action" => {
-            let desktop_id = match string_param(&params, "desktop_id") {
+            let desktop_id = match string_param(params.as_ref(), "desktop_id") {
                 Ok(value) => value,
                 Err(()) => {
                     if has_id {
@@ -213,7 +213,7 @@ pub async fn handle(
                     return true;
                 }
             };
-            let action_id = match string_param(&params, "action_id") {
+            let action_id = match string_param(params.as_ref(), "action_id") {
                 Ok(value) => value,
                 Err(()) => {
                     if has_id {
@@ -228,7 +228,7 @@ pub async fn handle(
             }
         }
         "open" => {
-            let uri = match string_param(&params, "uri") {
+            let uri = match string_param(params.as_ref(), "uri") {
                 Ok(value) => value,
                 Err(()) => {
                     if has_id {
@@ -243,7 +243,7 @@ pub async fn handle(
             }
         }
         "copy" => {
-            let payload = match copy_payload(&params) {
+            let payload = match copy_payload(params.as_ref()) {
                 Ok(value) => value,
                 Err(()) => {
                     if has_id {
@@ -258,7 +258,7 @@ pub async fn handle(
             }
         }
         "run" => {
-            let cmd = match run_cmd(&params) {
+            let cmd = match run_cmd(params.as_ref()) {
                 Ok(c) => c,
                 Err(()) => {
                     if has_id {
@@ -469,44 +469,44 @@ mod tests {
     #[test]
     fn search_text_accepts_text_object() {
         let p: Value = serde_json::from_str(r#"{"text":"firefox"}"#).unwrap();
-        assert_eq!(search_text(&Some(p)).unwrap(), "firefox");
+        assert_eq!(search_text(Some(&p)).unwrap(), "firefox");
     }
 
     #[test]
     fn search_text_absent_or_null_means_empty() {
-        assert_eq!(search_text(&None).unwrap(), "");
-        assert_eq!(search_text(&Some(Value::Null)).unwrap(), "");
+        assert_eq!(search_text(None).unwrap(), "");
+        assert_eq!(search_text(Some(&Value::Null)).unwrap(), "");
     }
 
     #[test]
     fn search_text_rejects_non_text_params() {
         // bare string and the old `query` alias are no longer accepted
-        assert!(search_text(&Some(Value::String("firefox".into()))).is_err());
+        assert!(search_text(Some(&Value::String("firefox".into()))).is_err());
         let empty: Value = serde_json::from_str("{}").unwrap();
         let query: Value = serde_json::from_str(r#"{"query":"x"}"#).unwrap();
         let num: Value = serde_json::from_str(r#"{"text":42}"#).unwrap();
-        assert!(search_text(&Some(empty)).is_err());
-        assert!(search_text(&Some(query)).is_err());
-        assert!(search_text(&Some(num)).is_err());
+        assert!(search_text(Some(&empty)).is_err());
+        assert!(search_text(Some(&query)).is_err());
+        assert!(search_text(Some(&num)).is_err());
     }
     #[test]
     fn select_payload_accepts_item_object() {
         let p: Value = serde_json::from_str(r#"{"title":"x","on_click":"run:ls"}"#).unwrap();
-        assert!(select_payload(&Some(p)).unwrap().contains("run:ls"));
-        assert!(select_payload(&Some(Value::String("run:ls".into()))).is_err());
+        assert!(select_payload(Some(&p)).unwrap().contains("run:ls"));
+        assert!(select_payload(Some(&Value::String("run:ls".into()))).is_err());
     }
 
     #[test]
     fn forget_key_accepts_on_click_object() {
         let p: Value = serde_json::from_str(r#"{"on_click":"run:ls"}"#).unwrap();
-        assert_eq!(forget_key(&Some(p)).unwrap(), "run:ls");
-        assert!(forget_key(&Some(Value::String("run:ls".into()))).is_err());
+        assert_eq!(forget_key(Some(&p)).unwrap(), "run:ls");
+        assert!(forget_key(Some(&Value::String("run:ls".into()))).is_err());
     }
 
     #[test]
     fn run_cmd_accepts_cmd_object() {
         let p: Value = serde_json::from_str(r#"{"cmd":"echo hi"}"#).unwrap();
-        assert_eq!(run_cmd(&Some(p)).unwrap(), "echo hi");
-        assert!(run_cmd(&Some(Value::String("echo hi".into()))).is_err());
+        assert_eq!(run_cmd(Some(&p)).unwrap(), "echo hi");
+        assert!(run_cmd(Some(&Value::String("echo hi".into()))).is_err());
     }
 }

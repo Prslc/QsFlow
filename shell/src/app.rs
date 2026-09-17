@@ -257,16 +257,16 @@ fn load_icon(path: &str) -> Image {
 /// The theme fields arrive as hex strings and keep a fallback per field.
 pub fn theme_from(data: &ThemeData) -> Theme {
     Theme {
-        primary: parse_hex(&data.primary).unwrap_or(FALLBACK.primary),
-        on_primary: parse_hex(&data.on_primary).unwrap_or(FALLBACK.on_primary),
-        bg: parse_hex(&data.bg).unwrap_or(FALLBACK.bg),
-        fg: parse_hex(&data.fg).unwrap_or(FALLBACK.fg),
-        container: parse_hex(&data.container).unwrap_or(FALLBACK.container),
+        primary: parse_hex(data.primary.as_deref()).unwrap_or(FALLBACK.primary),
+        on_primary: parse_hex(data.on_primary.as_deref()).unwrap_or(FALLBACK.on_primary),
+        bg: parse_hex(data.bg.as_deref()).unwrap_or(FALLBACK.bg),
+        fg: parse_hex(data.fg.as_deref()).unwrap_or(FALLBACK.fg),
+        container: parse_hex(data.container.as_deref()).unwrap_or(FALLBACK.container),
     }
 }
 
-fn parse_hex(value: &Option<String>) -> Option<slint::Color> {
-    let text = value.as_deref()?.trim().trim_start_matches('#');
+fn parse_hex(value: Option<&str>) -> Option<slint::Color> {
+    let text = value?.trim().trim_start_matches('#');
     let digits = u32::from_str_radix(text, 16).ok()?;
     match text.len() {
         6 => Some(slint::Color::from_rgb_u8(
@@ -356,14 +356,14 @@ mod tests {
     #[test]
     fn hex_parsing_accepts_hash_and_bare_forms() {
         assert_eq!(
-            parse_hex(&Some("#7aa2f7".into())),
+            parse_hex(Some("#7aa2f7")),
             Some(slint::Color::from_rgb_u8(0x7a, 0xa2, 0xf7))
         );
         assert_eq!(
-            parse_hex(&Some("7aa2f7".into())),
+            parse_hex(Some("7aa2f7")),
             Some(slint::Color::from_rgb_u8(0x7a, 0xa2, 0xf7))
         );
-        assert_eq!(parse_hex(&Some("nope".into())), None);
-        assert_eq!(parse_hex(&None), None);
+        assert_eq!(parse_hex(Some("nope")), None);
+        assert_eq!(parse_hex(None), None);
     }
 }

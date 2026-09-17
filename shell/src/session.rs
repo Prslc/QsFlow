@@ -14,7 +14,7 @@ pub type EventSender = calloop::channel::Sender<Event>;
 /// The wire carries one string (`on_click`), which is a documented contract
 /// with out-of-process JSON-RPC hosts, so it stays a string on the wire; it is
 /// parsed once here, at the boundary, and nothing downstream matches prefixes.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Action {
     /// `launch:<desktop-id>`
     Launch(String),

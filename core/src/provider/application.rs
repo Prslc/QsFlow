@@ -114,16 +114,16 @@ impl Plugin for AppSearch {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let input = full.to_string();
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || do_search(&input))
+            Ok(tokio::task::spawn_blocking(move || do_search(&input))
                 .await
-                .unwrap_or_else(|_| Ok(vec![]))
+                .unwrap_or_default())
         })
     }
 }
 
 /// Score every cached app against the query; the query text is lowercased
 /// and tokenized once, not per app.
-fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str) -> Vec<ResultItem> {
     let query_lower = query.trim().to_lowercase();
     let query_words = tokenize(&query_lower);
 
@@ -169,7 +169,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    Ok(crate::provider::rank_results(results, true, 50))
+    crate::provider::rank_results(results, true, 50)
 }
 
 fn tokenize(s: &str) -> Vec<String> {
@@ -276,7 +276,7 @@ fn levenshtein(a: &[char], b: &[char]) -> usize {
     for (i, ca) in a.iter().enumerate() {
         curr[0] = i + 1;
         for (j, cb) in b.iter().enumerate() {
-            let cost = if ca == cb { 0 } else { 1 };
+            let cost = usize::from(ca != cb);
             curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
         }
         std::mem::swap(&mut prev, &mut curr);

@@ -14,7 +14,7 @@ pub struct Pending {
 }
 
 /// What a `done` resolves the staged batch to.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Applied {
     /// Nothing staged and no composition was open.
     Idle,

@@ -27,17 +27,17 @@ impl Plugin for Clipboard {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let query = query.to_lowercase();
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || do_search(&query))
+            Ok(tokio::task::spawn_blocking(move || do_search(&query))
                 .await
-                .unwrap_or_else(|_| Ok(vec![]))
+                .unwrap_or_default())
         })
     }
 }
 
-fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str) -> Vec<ResultItem> {
     let output = match Command::new("cliphist").arg("list").output() {
         Ok(o) => o,
-        Err(_) => return Ok(vec![]),
+        Err(_) => return vec![],
     };
     let text = String::from_utf8_lossy(&output.stdout);
     let mut results = parse_entries(query, &text);
@@ -45,7 +45,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     for r in &mut results {
         r.icon = icon.clone();
     }
-    Ok(results)
+    results
 }
 
 fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {

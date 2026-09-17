@@ -26,7 +26,7 @@ impl Plugin for Window {
         _full: &str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let input = query.to_string();
-        Box::pin(async move { do_search(&input) })
+        Box::pin(async move { Ok(do_search(&input)) })
     }
 }
 
@@ -43,19 +43,19 @@ struct WindowInfo {
 /// List niri's windows via `niri msg -j windows` and fuzzy-match title/app_id
 /// against the query. `on_click` focuses the window by id through `niri msg
 /// action focus-window` (runs detached after the launcher exits).
-fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str) -> Vec<ResultItem> {
     let output = std::process::Command::new("niri")
         .args(["msg", "-j", "windows"])
         .output();
     let Ok(output) = output else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if !output.status.success() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let windows: Vec<WindowInfo> = match serde_json::from_slice(&output.stdout) {
         Ok(w) => w,
-        Err(_) => return Ok(Vec::new()),
+        Err(_) => return Vec::new(),
     };
 
     let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
@@ -115,7 +115,7 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         }
     }
 
-    Ok(crate::provider::rank_results(results, false, 50))
+    crate::provider::rank_results(results, false, 50)
 }
 
 #[cfg(test)]

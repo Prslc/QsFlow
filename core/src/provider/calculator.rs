@@ -25,13 +25,13 @@ impl Plugin for Calculator {
         full: &str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let expr = full.to_string();
-        Box::pin(async move { do_search(&expr) })
+        Box::pin(async move { Ok(do_search(&expr)) })
     }
 }
 
-fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
+fn do_search(expr: &str) -> Vec<ResultItem> {
     if expr.is_empty() {
-        return Ok(vec![]);
+        return vec![];
     }
 
     // fasteval ships no constants or math built-ins; provide meval's surface
@@ -89,7 +89,7 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
     match fasteval::ez_eval(expr, &mut ns) {
         Ok(value) => {
             if value.is_infinite() || value.is_nan() {
-                return Ok(vec![]);
+                return vec![];
             }
             let formatted = if value.fract() == 0.0 {
                 format!("{}", value as i64)
@@ -100,14 +100,14 @@ fn do_search(expr: &str) -> Result<Vec<ResultItem>> {
                     .to_string()
             };
 
-            Ok(vec![ResultItem {
+            vec![ResultItem {
                 title: formatted,
                 summary: Some(expr.to_string()),
                 on_click: None,
                 icon: find_icon_path("calc"),
-            }])
+            }]
         }
-        Err(_) => Ok(vec![]),
+        Err(_) => vec![],
     }
 }
 
@@ -117,7 +117,6 @@ mod tests {
 
     fn first(expr: &str) -> String {
         do_search(expr)
-            .unwrap()
             .first()
             .map(|r| r.title.clone())
             .unwrap_or_default()
@@ -133,18 +132,18 @@ mod tests {
 
     #[test]
     fn empty_input() {
-        assert!(do_search("").unwrap().is_empty());
+        assert!(do_search("").is_empty());
     }
 
     #[test]
     fn division_by_zero() {
-        assert!(do_search("1/0").unwrap().is_empty());
+        assert!(do_search("1/0").is_empty());
     }
 
     #[test]
     fn non_math_input() {
-        assert!(do_search("firefox").unwrap().is_empty());
-        assert!(do_search("hello world").unwrap().is_empty());
+        assert!(do_search("firefox").is_empty());
+        assert!(do_search("hello world").is_empty());
     }
 
     #[test]
@@ -176,10 +175,10 @@ mod tests {
     #[test]
     fn functions() {
         let half = first("sin(pi / 2)");
-        assert!(half.starts_with("1"));
+        assert!(half.starts_with('1'));
         assert_eq!(first("abs(-5)"), "5");
         assert_eq!(first("cos(0)"), "1");
-        assert!(first("log(1000)").starts_with("3"));
+        assert!(first("log(1000)").starts_with('3'));
         assert_eq!(first("floor(2.9)"), "2");
         assert_eq!(first("ceil(2.1)"), "3");
         assert_eq!(first("min(3, 8)"), "3");
@@ -188,6 +187,6 @@ mod tests {
 
     #[test]
     fn unknown_identifier_is_not_math() {
-        assert!(do_search("bottles").unwrap().is_empty());
+        assert!(do_search("bottles").is_empty());
     }
 }

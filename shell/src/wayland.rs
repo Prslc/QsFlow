@@ -260,7 +260,7 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
     // `WaylandSource::insert` is the helper that dispatches pending events; the
     // plain `insert_source` callback would have to call `dispatch_pending`
     // itself, and an empty callback leaves every event unread.
-    WaylandSource::new(conn.clone(), event_queue)
+    WaylandSource::new(conn, event_queue)
         .insert(handle.clone())
         .map_err(|err| anyhow::anyhow!("wayland source: {err}"))?;
     handle
@@ -556,7 +556,7 @@ impl Shell {
                         self.logical_h,
                         self.adapter.window().scale_factor()
                     );
-                    self.send_ime_state(ime, &state);
+                    send_ime_state(ime, &state);
                     self.ime_state = Some(state);
                 }
                 _ => {}
@@ -565,16 +565,7 @@ impl Shell {
         let _ = self.conn.flush();
     }
 
-    /// `enable` + the caret rectangle + the surrounding text, committed as one
-    /// double-buffered batch.
-    fn send_ime_state(&self, ime: &ZwpTextInputV3, state: &ImeState) {
-        begin_ime(ime);
-        ime.set_cursor_rectangle(state.rect.0, state.rect.1, state.rect.2, state.rect.3);
-        ime.set_surrounding_text(state.text.clone(), state.cursor, state.anchor);
-        ime.commit();
-    }
-
-    fn enable_ime(&mut self) {
+    fn enable_ime(&self) {
         let Some(ime) = self.ime.as_ref() else { return };
         begin_ime(ime);
         ime.commit();
@@ -820,7 +811,7 @@ impl Shell {
         effect.set_blur_region(Some(region.wl_region()));
     }
 
-    fn key(&mut self, event_type: KeyEventType, keysym: Keysym, repeat: bool) {
+    fn key(&self, event_type: KeyEventType, keysym: Keysym, repeat: bool) {
         // A live composition owns the keyboard: fcitx5 reassigns Backspace and
         // the letters to itself, and a copy that also reached the field would
         // edit the query underneath it. Only the modifiers keep flowing, so
@@ -845,7 +836,7 @@ impl Shell {
             .dispatch_event(WindowEvent::internal(event));
     }
 
-    fn press_button(&mut self, position: (f64, f64), button: u32) {
+    fn press_button(&self, position: (f64, f64), button: u32) {
         self.adapter
             .window()
             .dispatch_event(WindowEvent::PointerPressed {
@@ -854,7 +845,7 @@ impl Shell {
             });
     }
 
-    fn release_button(&mut self, position: (f64, f64), button: u32) {
+    fn release_button(&self, position: (f64, f64), button: u32) {
         self.adapter
             .window()
             .dispatch_event(WindowEvent::PointerReleased {
@@ -943,6 +934,15 @@ fn begin_ime(ime: &ZwpTextInputV3) {
         zwp_text_input_v3::ContentPurpose::Normal,
     );
     ime.enable();
+}
+
+/// `enable` + the caret rectangle + the surrounding text, committed as one
+/// double-buffered batch.
+fn send_ime_state(ime: &ZwpTextInputV3, state: &ImeState) {
+    begin_ime(ime);
+    ime.set_cursor_rectangle(state.rect.0, state.rect.1, state.rect.2, state.rect.3);
+    ime.set_surrounding_text(state.text.clone(), state.cursor, state.anchor);
+    ime.commit();
 }
 
 /// The keys that only exist as encoded modifier events, which Slint tracks
@@ -1366,7 +1366,7 @@ impl Dispatch<ZwpTextInputV3, ()> for Shell {
                 // corner of the screen for the whole composition.
                 if let (Some(ime), Some(geometry)) = (state.ime.as_ref(), state.ime_state.as_ref())
                 {
-                    state.send_ime_state(ime, geometry);
+                    send_ime_state(ime, geometry);
                 }
             }
             zwp_text_input_v3::Event::Leave { surface } => {

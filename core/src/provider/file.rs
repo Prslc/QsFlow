@@ -46,9 +46,11 @@ macro_rules! search_plugin {
             ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
                 let query = query.to_lowercase();
                 Box::pin(async move {
-                    tokio::task::spawn_blocking(move || do_search(&query, $matcher))
-                        .await
-                        .unwrap_or_else(|_| Ok(vec![]))
+                    Ok(
+                        tokio::task::spawn_blocking(move || do_search(&query, $matcher))
+                            .await
+                            .unwrap_or_default(),
+                    )
                 })
             }
         }
@@ -86,10 +88,10 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
         .all(|token| path_lower.contains(token))
 }
 
-fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultItem> {
     let home = match get_home() {
         Ok(h) => h,
-        Err(_) => return Ok(vec![]),
+        Err(_) => return vec![],
     };
 
     let roots = [
@@ -158,5 +160,5 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Result<Vec<R
         }
     }
 
-    Ok(results)
+    results
 }
