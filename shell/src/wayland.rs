@@ -172,6 +172,9 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
         .bind(&qh, 1..=1, ())
         .map_err(|err| log::warn!("no viewporter: {err}"))
         .ok();
+    // A fractional buffer is only usable when a viewport maps it back onto the
+    // surface's logical size, so the exact-scale path needs both globals.
+    let fractional_manager = fractional_manager.filter(|_| viewporter.is_some());
     let blur_manager: Option<ExtBackgroundEffectManagerV1> = globals
         .bind(&qh, 1..=1, ())
         .map_err(|err| log::warn!("no background effect: {err}"))
@@ -184,6 +187,16 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
 
     let (core_tx, core_rx) = calloop::channel::channel();
     let (ipc_tx, ipc_rx) = calloop::channel::channel();
+
+    // A live listener means another shell owns the surface: refuse to start
+    // rather than steal the socket and leave that one holding a stale surface.
+    // The check runs before the core is spawned, so a second instance does not
+    // briefly start one.
+    if ipc::client("status").is_ok() {
+        anyhow::bail!("another qsflow-shell is already listening on the socket");
+    }
+    ipc::serve(ipc_tx).context("bind the IPC socket")?;
+
     let session = Session::spawn(core_tx).context("spawn qsflow-core")?;
 
     let resident = std::env::var("QSFLOW_RESIDENT").is_ok_and(|value| value == "1");
@@ -264,13 +277,6 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
             }
         })
         .map_err(|err| anyhow::anyhow!("ipc channel: {err}"))?;
-
-    // A live listener means another shell owns the surface: refuse to start
-    // rather than steal the socket and leave that one holding a stale surface.
-    if ipc::client("status").is_ok() {
-        anyhow::bail!("another qsflow-shell is already listening on the socket");
-    }
-    ipc::serve(ipc_tx).context("bind the IPC socket")?;
 
     if !shell.resident {
         shell.open();
@@ -474,7 +480,7 @@ impl Shell {
         let Some(item) = self.app.selected_item().cloned() else {
             return;
         };
-        if item.action == crate::session::Action::None {
+        if matches!(&item.action, crate::session::Action::None) {
             return;
         }
         let record = serde_json::json!({
@@ -562,11 +568,7 @@ impl Shell {
     /// `enable` + the caret rectangle + the surrounding text, committed as one
     /// double-buffered batch.
     fn send_ime_state(&self, ime: &ZwpTextInputV3, state: &ImeState) {
-        ime.set_content_type(
-            zwp_text_input_v3::ContentHint::None,
-            zwp_text_input_v3::ContentPurpose::Normal,
-        );
-        ime.enable();
+        begin_ime(ime);
         ime.set_cursor_rectangle(state.rect.0, state.rect.1, state.rect.2, state.rect.3);
         ime.set_surrounding_text(state.text.clone(), state.cursor, state.anchor);
         ime.commit();
@@ -574,11 +576,7 @@ impl Shell {
 
     fn enable_ime(&mut self) {
         let Some(ime) = self.ime.as_ref() else { return };
-        ime.set_content_type(
-            zwp_text_input_v3::ContentHint::None,
-            zwp_text_input_v3::ContentPurpose::Normal,
-        );
-        ime.enable();
+        begin_ime(ime);
         ime.commit();
         let _ = self.conn.flush();
     }
@@ -701,7 +699,12 @@ impl Shell {
             layer.commit();
         }
         self.frame_pending = true;
-        log::trace!("presented {}x{} (scale {})", width, height, self.scale);
+        log::trace!(
+            "presented {}x{} (scale {})",
+            width,
+            height,
+            self.effective_scale()
+        );
         // The item tree is laid out now, so a fresh focus change carries a real
         // cursor rectangle for the input method.
         if self.refocus_after_frame {
@@ -711,7 +714,7 @@ impl Shell {
     }
 
     fn apply_size(&mut self) {
-        let scale = self.scale;
+        let scale = self.effective_scale();
         self.width = (self.logical_w as f64 * scale).round() as u32;
         self.height = (self.logical_h as f64 * scale).round() as u32;
         self.adapter
@@ -722,7 +725,37 @@ impl Shell {
         self.adapter
             .window()
             .set_size(slint::PhysicalSize::new(self.width, self.height));
+        self.sync_surface_scale();
         self.adapter.window().request_redraw();
+    }
+
+    /// The scale a logical pixel is drawn at: the compositor's exact fractional
+    /// ratio when it offered one, else the integer buffer scale.
+    fn effective_scale(&self) -> f64 {
+        buffer_scale(self.scale, self.ratio)
+    }
+
+    /// Tell the surface how the buffer maps onto its logical size. With a
+    /// fractional ratio the buffer is `logical × ratio` and a viewport maps it
+    /// back, so the surface's own buffer scale stays 1; otherwise the integer
+    /// scale is what says how big a logical pixel is.
+    fn sync_surface_scale(&self) {
+        let Some(surface) = self.layer.as_ref().map(|layer| layer.wl_surface()) else {
+            return;
+        };
+        if self.ratio.is_some() {
+            surface.set_buffer_scale(1);
+            // A zero destination is a protocol error, and this can run before
+            // the first configure has given the surface a size.
+            if self.logical_w > 0
+                && self.logical_h > 0
+                && let Some(viewport) = self.viewport.as_ref()
+            {
+                viewport.set_destination(self.logical_w as i32, self.logical_h as i32);
+            }
+        } else {
+            surface.set_buffer_scale(self.scale.max(1.0) as i32);
+        }
     }
 
     fn rebuild_pool(&mut self) {
@@ -813,36 +846,20 @@ impl Shell {
     }
 
     fn press_button(&mut self, position: (f64, f64), button: u32) {
-        let button = match button {
-            0x110 => PointerEventButton::Left,
-            0x111 => PointerEventButton::Right,
-            0x112 => PointerEventButton::Middle,
-            0x113 => PointerEventButton::Back,
-            0x114 => PointerEventButton::Forward,
-            _ => PointerEventButton::Other,
-        };
         self.adapter
             .window()
             .dispatch_event(WindowEvent::PointerPressed {
                 position: LogicalPosition::new(position.0 as f32, position.1 as f32),
-                button,
+                button: pointer_button(button),
             });
     }
 
     fn release_button(&mut self, position: (f64, f64), button: u32) {
-        let button = match button {
-            0x110 => PointerEventButton::Left,
-            0x111 => PointerEventButton::Right,
-            0x112 => PointerEventButton::Middle,
-            0x113 => PointerEventButton::Back,
-            0x114 => PointerEventButton::Forward,
-            _ => PointerEventButton::Other,
-        };
         self.adapter
             .window()
             .dispatch_event(WindowEvent::PointerReleased {
                 position: LogicalPosition::new(position.0 as f32, position.1 as f32),
-                button,
+                button: pointer_button(button),
             });
     }
 
@@ -877,9 +894,9 @@ fn blur_rects(x: i32, y: i32, width: i32, height: i32, radius: i32) -> Vec<(i32,
     let mut dy = 0;
     while dy < radius {
         let band = 2.min(radius - dy);
-        let drop = (radius - dy) as f64;
+        let falloff = (radius - dy) as f64;
         let inset = (radius as f64
-            - (radius as f64 * radius as f64 - drop * drop)
+            - (radius as f64 * radius as f64 - falloff * falloff)
                 .max(0.0)
                 .sqrt())
         .round() as i32;
@@ -899,6 +916,33 @@ struct ImeState {
     text: String,
     cursor: i32,
     anchor: i32,
+}
+
+/// Linux input event codes (`BTN_LEFT` …) as Slint's pointer buttons.
+fn pointer_button(button: u32) -> PointerEventButton {
+    match button {
+        0x110 => PointerEventButton::Left,
+        0x111 => PointerEventButton::Right,
+        0x112 => PointerEventButton::Middle,
+        0x113 => PointerEventButton::Back,
+        0x114 => PointerEventButton::Forward,
+        _ => PointerEventButton::Other,
+    }
+}
+
+/// The scale a logical pixel is drawn at: the exact fractional ratio when the
+/// compositor offered one, else the integer buffer scale.
+fn buffer_scale(integer: f64, ratio: Option<f64>) -> f64 {
+    ratio.unwrap_or_else(|| integer.max(1.0))
+}
+
+/// The head of every text-input batch: the content type and the enable.
+fn begin_ime(ime: &ZwpTextInputV3) {
+    ime.set_content_type(
+        zwp_text_input_v3::ContentHint::None,
+        zwp_text_input_v3::ContentPurpose::Normal,
+    );
+    ime.enable();
 }
 
 /// The keys that only exist as encoded modifier events, which Slint tracks
@@ -922,56 +966,32 @@ fn is_modifier(keysym: Keysym) -> bool {
 
 /// Slint's `Key` codes for the keys that are not plain text.
 fn slint_key(keysym: Keysym) -> Option<Key> {
-    let key = if keysym == Keysym::BackSpace {
-        Key::Backspace
-    } else if keysym == Keysym::Tab {
-        Key::Tab
-    } else if keysym == Keysym::Return || keysym == Keysym::KP_Enter {
-        Key::Return
-    } else if keysym == Keysym::Escape {
-        Key::Escape
-    } else if keysym == Keysym::ISO_Left_Tab {
-        Key::Backtab
-    } else if keysym == Keysym::Delete {
-        Key::Delete
-    } else if keysym == Keysym::Shift_L {
-        Key::Shift
-    } else if keysym == Keysym::Shift_R {
-        Key::ShiftR
-    } else if keysym == Keysym::Control_L {
-        Key::Control
-    } else if keysym == Keysym::Control_R {
-        Key::ControlR
-    } else if keysym == Keysym::Alt_L || keysym == Keysym::Alt_R {
-        Key::Alt
-    } else if keysym == Keysym::ISO_Level3_Shift || keysym == Keysym::Mode_switch {
-        Key::AltGr
-    } else if keysym == Keysym::Caps_Lock {
-        Key::CapsLock
-    } else if keysym == Keysym::Super_L {
-        Key::Meta
-    } else if keysym == Keysym::Super_R {
-        Key::MetaR
-    } else if keysym == Keysym::Up {
-        Key::UpArrow
-    } else if keysym == Keysym::Down {
-        Key::DownArrow
-    } else if keysym == Keysym::Left {
-        Key::LeftArrow
-    } else if keysym == Keysym::Right {
-        Key::RightArrow
-    } else if keysym == Keysym::Home {
-        Key::Home
-    } else if keysym == Keysym::End {
-        Key::End
-    } else if keysym == Keysym::Page_Up {
-        Key::PageUp
-    } else if keysym == Keysym::Page_Down {
-        Key::PageDown
-    } else if keysym == Keysym::Insert {
-        Key::Insert
-    } else {
-        return None;
+    let key = match keysym {
+        Keysym::BackSpace => Key::Backspace,
+        Keysym::Tab => Key::Tab,
+        Keysym::Return | Keysym::KP_Enter => Key::Return,
+        Keysym::Escape => Key::Escape,
+        Keysym::ISO_Left_Tab => Key::Backtab,
+        Keysym::Delete => Key::Delete,
+        Keysym::Shift_L => Key::Shift,
+        Keysym::Shift_R => Key::ShiftR,
+        Keysym::Control_L => Key::Control,
+        Keysym::Control_R => Key::ControlR,
+        Keysym::Alt_L | Keysym::Alt_R => Key::Alt,
+        Keysym::ISO_Level3_Shift | Keysym::Mode_switch => Key::AltGr,
+        Keysym::Caps_Lock => Key::CapsLock,
+        Keysym::Super_L => Key::Meta,
+        Keysym::Super_R => Key::MetaR,
+        Keysym::Up => Key::UpArrow,
+        Keysym::Down => Key::DownArrow,
+        Keysym::Left => Key::LeftArrow,
+        Keysym::Right => Key::RightArrow,
+        Keysym::Home => Key::Home,
+        Keysym::End => Key::End,
+        Keysym::Page_Up => Key::PageUp,
+        Keysym::Page_Down => Key::PageDown,
+        Keysym::Insert => Key::Insert,
+        _ => return None,
     };
     Some(key)
 }
@@ -987,13 +1007,10 @@ fn key_text(keysym: Keysym) -> slint::SharedString {
 
 /// The QML's keyword chip: a one-to-three letter first word followed by a space.
 fn keyword(text: &str) -> &str {
-    let Some(prefix) = text.split(' ').next() else {
+    let Some((prefix, _)) = text.split_once(' ') else {
         return "";
     };
-    if prefix.len() <= 3
-        && prefix.chars().all(|c| c.is_ascii_alphabetic())
-        && text.len() > prefix.len()
-    {
+    if prefix.len() <= 3 && prefix.chars().all(|c| c.is_ascii_alphabetic()) {
         prefix
     } else {
         ""
@@ -1029,14 +1046,10 @@ impl CompositorHandler for Shell {
         if self.layer.as_ref().map(|layer| layer.wl_surface()) != Some(surface) {
             return;
         }
-        // With a viewport the buffer maps 1:1 onto the output and the surface's
-        // buffer scale stays 1, so the integer hint is ignored.
-        if self.viewport.is_some() {
-            return;
-        }
-        let factor = new_factor.max(1);
-        surface.set_buffer_scale(factor);
-        let scale = factor as f64;
+        // The integer scale is kept even when a fractional ratio is in use: it
+        // is the fallback for a compositor that offers the fractional global
+        // without the viewporter. `apply_size` picks which one sizes the buffer.
+        let scale = new_factor.max(1) as f64;
         if (self.scale - scale).abs() < f64::EPSILON {
             return;
         }
@@ -1494,6 +1507,18 @@ mod tests {
         assert_eq!(keyword("fire fox"), "", "the first word is too long");
         assert_eq!(keyword("b"), "", "no separator yet");
         assert_eq!(keyword(""), "");
+    }
+
+    #[test]
+    fn the_fractional_ratio_overrides_the_integer_scale() {
+        assert_eq!(buffer_scale(1.0, None), 1.0);
+        assert_eq!(
+            buffer_scale(2.0, None),
+            2.0,
+            "the integer ceiling is the fallback"
+        );
+        assert_eq!(buffer_scale(2.0, Some(1.25)), 1.25, "the exact ratio wins");
+        assert_eq!(buffer_scale(0.0, None), 1.0, "a zero scale is clamped");
     }
 
     #[test]
