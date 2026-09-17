@@ -101,6 +101,9 @@ export component LauncherWindow inherits Window {
     in property <int> first-row: 0;
     in-out property <string> query;
     in property <string> keyword: "";
+    /// True while the input method is composing; fcitx5 can deliver Return
+    /// mid-preedit, which must not launch a row.
+    out property <bool> composing: input.preedit-text != "";
     in property <bool> reduce-motion: false;
 
     // Entrance: `shown` flips on open and `progress` follows its binding, so
@@ -254,7 +257,11 @@ export component LauncherWindow inherits Window {
                         selection-foreground-color: root.theme.fg;
 
                         edited => { root.search(root.query); }
-                        accepted => { root.activate(root.selected); }
+                        accepted => {
+                        if (!root.composing) {
+                            root.activate(root.selected);
+                        }
+                    }
 
                         // Shell-level keys, ahead of the widget's own editing
                         // handling: navigation and deletion are the launcher's,
