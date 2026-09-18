@@ -2,6 +2,7 @@ use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -25,18 +26,27 @@ fn find_db() -> Result<PathBuf> {
         home.join(".config/mozilla/firefox"),
     ];
 
+    // `read_dir` order is arbitrary and a machine can hold several profiles
+    // (a stale ESR beside the live release), so take the most recently written
+    // one instead of the first the filesystem happens to list.
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
     for base in &bases {
         if let Ok(entries) = std::fs::read_dir(base) {
             for entry in entries.flatten() {
                 let db = entry.path().join("places.sqlite");
-                if db.exists() {
-                    return Ok(db);
+                let Ok(modified) = fs::metadata(&db).and_then(|meta| meta.modified()) else {
+                    continue;
+                };
+                if newest.as_ref().is_none_or(|(time, _)| modified > *time) {
+                    newest = Some((modified, db));
                 }
             }
         }
     }
 
-    anyhow::bail!("No Firefox profile with places.sqlite found")
+    newest
+        .map(|(_, path)| path)
+        .ok_or_else(|| anyhow::anyhow!("No Firefox profile with places.sqlite found"))
 }
 
 async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
@@ -50,12 +60,19 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
 
         let sql = match mode {
             Mode::Bookmarks => {
+                // The bookmark's own title (`moz_bookmarks.title`) is what the
+                // user saved and may have edited; `moz_places.title` is only the
+                // page's last-visited title, which Firefox overwrites on every
+                // visit. Prefer the former and fall back to the latter.
                 "
-                SELECT moz_places.title, moz_places.url
+                SELECT COALESCE(NULLIF(moz_bookmarks.title, ''), moz_places.title) AS title,
+                       moz_places.url
                 FROM moz_bookmarks
                 JOIN moz_places ON moz_bookmarks.fk = moz_places.id
                 WHERE moz_places.url <> ''
-                  AND (?1 = '' OR moz_places.title LIKE ?2 OR moz_places.url LIKE ?2)
+                  AND (?1 = ''
+                       OR COALESCE(NULLIF(moz_bookmarks.title, ''), moz_places.title) LIKE ?2
+                       OR moz_places.url LIKE ?2)
                 ORDER BY moz_bookmarks.dateAdded DESC
                 LIMIT 50
             "
