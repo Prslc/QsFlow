@@ -1,8 +1,3 @@
-//! Desktop actions: the `[Desktop Action <id>]` groups of a `.desktop` file.
-//!
-//! gio binds no desktop-action launcher, so the entry is read here and its argv
-//! is handed to the detached runner with no shell in between.
-
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 

@@ -1,7 +1,3 @@
-//! The unix socket behind `qsflow open|close|toggle|status`, which is also the
-//! single-instance guard: a live listener means another shell owns the surface,
-//! so a second daemon refuses to start.
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};

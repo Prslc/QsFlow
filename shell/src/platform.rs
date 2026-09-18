@@ -1,11 +1,3 @@
-//! The Slint platform behind the launcher.
-//!
-//! Slint has no layer-shell backend, so the shell supplies the documented
-//! custom-platform seam instead of a hand-written renderer: one [`Adapter`]
-//! implements [`WindowAdapter`] on top of the software renderer, which paints a
-//! premultiplied RGBA8 buffer that is byte-for-byte a `wl_shm` `ABGR8888`
-//! buffer, and the Wayland side presents it.
-
 use std::cell::{Cell, RefCell};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};

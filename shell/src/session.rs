@@ -1,6 +1,3 @@
-//! The core child (this binary re-run with `--core`): newline-delimited JSON
-//! over its stdio, plus the JSON-RPC request/response pair `forget` needs.
-
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 

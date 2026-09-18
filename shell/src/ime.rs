@@ -1,10 +1,3 @@
-//! The `zwp_text_input_v3` state machine.
-//!
-//! The protocol is double-buffered: `preedit_string`, `commit_string` and
-//! `delete_surrounding_text` only stage state, and a `done` applies the whole
-//! batch. Slint draws the composition itself once the batch is handed to it as
-//! an internal key event.
-
 /// One staged batch of text-input events.
 #[derive(Debug, Default)]
 pub struct Pending {

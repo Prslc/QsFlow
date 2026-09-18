@@ -1,7 +1,3 @@
-//! The Wayland side of the launcher: a `wlr-layer-shell` overlay that presents
-//! Slint's software-rendered frames through `wl_shm`, plus the seat, IPC and
-//! backend plumbing around it.
-
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};

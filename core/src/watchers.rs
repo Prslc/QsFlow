@@ -1,6 +1,3 @@
-//! inotify watchers for config files the resident core would otherwise read
-//! once at startup and never see change: the GTK theme CSS and `plugins.toml`.
-
 use notify::Watcher;
 use tokio::sync::mpsc;
 

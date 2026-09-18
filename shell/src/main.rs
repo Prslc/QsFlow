@@ -1,10 +1,3 @@
-//! `qsflow` — the QsFlow launcher and its core backend in one binary.
-//!
-//! No arguments runs the shell (resident when `QSFLOW_RESIDENT=1`); the IPC
-//! verbs `open`/`close`/`toggle`/`status` talk to a running instance; `--core`
-//! (or being invoked as `qsflow-core`) serves the JSON-RPC core on
-//! stdin/stdout.
-
 mod app;
 mod ime;
 mod ipc;

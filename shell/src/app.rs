@@ -1,6 +1,3 @@
-//! Launcher state — the result list, its selection and the fixed five-row
-//! containment window — independent of Wayland and of the Slint widgets.
-
 use std::path::Path;
 use std::rc::Rc;
 

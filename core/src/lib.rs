@@ -1,6 +1,3 @@
-//! The QsFlow backend: the plugin registry and the JSON-RPC service the shell
-//! talks to. Built into the `qsflow` binary and reached with `--core`.
-
 use anyhow::Result;
 
 mod models;
