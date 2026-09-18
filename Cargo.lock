@@ -1806,6 +1806,7 @@ dependencies = [
  "calloop-wayland-source",
  "cosmic-text",
  "env_logger",
+ "libc",
  "log",
  "qsflow-core",
  "resvg",

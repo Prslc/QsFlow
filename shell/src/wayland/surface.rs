@@ -133,6 +133,10 @@ impl Shell {
         self.text.clear_cache();
         self.app.hidden();
         ipc::VISIBLE.store(false, Ordering::Relaxed);
+        // glibc keeps freed large allocations in its arena, so the resident
+        // shell would sit hidden holding the render buffers it just dropped;
+        // hand the free pages back to the OS.
+        trim_allocator();
 
         if self.resident {
             return;
@@ -588,6 +592,20 @@ impl LayerShellHandler for Shell {
         let _ = self.conn.flush();
     }
 }
+
+/// Release the allocator's free pages back to the kernel. Only glibc's
+/// `malloc_trim` does this; other targets leave it to their allocator.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn trim_allocator() {
+    // SAFETY: `malloc_trim` is a plain libc allocator call with no
+    // preconditions and no memory effects beyond returning free pages.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn trim_allocator() {}
 
 #[cfg(test)]
 mod tests {
