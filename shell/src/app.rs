@@ -1,366 +1,1039 @@
-use std::path::Path;
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
-use slint::{Image, Model as _, ModelRc, VecModel};
+use crate::session::model::ResultItem;
+use crate::ui::geom;
+use crate::ui::theme::Theme;
 
-use crate::session::{Item, ThemeData};
-use crate::{LauncherWindow, ResultItem, Theme};
+pub const ENTRANCE_MS: u64 = 240;
+pub const REFLOW_MS: u64 = 150;
+/// The QML's `exitTimer`: launch dismissals wait this long before the surface
+/// goes away.
+pub const EXIT_DELAY_MS: u64 = 150;
+/// The field's caret blink interval.
+pub const CARET_BLINK_MS: u64 = 500;
 
-pub const VISIBLE_ROWS: usize = 5;
-
-/// Whole rows from accumulated scroll pixels, carrying the remainder so a
-/// trackpad stays smooth. A direction change drops the slack, otherwise the
-/// first notch back would be swallowed by the previous direction's remainder.
-pub fn whole_rows(carry: &mut f64, pixels: f64, row_h: f64) -> i32 {
-    if pixels == 0.0 || row_h <= 0.0 {
-        return 0;
-    }
-    if carry.signum() != 0.0 && carry.signum() != pixels.signum() {
-        *carry = 0.0;
-    }
-    *carry += pixels;
-    let rows = (*carry / row_h).trunc();
-    if rows != 0.0 {
-        *carry -= rows * row_h;
-    }
-    rows as i32
+/// What the pointer is over: a list row's tint, or the ✕ button's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hover {
+    Row(usize),
+    Clear,
 }
 
-/// QML-era fallbacks: a field the backend did not carry keeps its old colour
-/// instead of turning transparent.
-const FALLBACK: Theme = Theme {
-    primary: slint::Color::from_rgb_u8(0x7a, 0xa2, 0xf7),
-    on_primary: slint::Color::from_rgb_u8(0x1a, 0x1b, 0x26),
-    bg: slint::Color::from_rgb_u8(0x1a, 0x1b, 0x26),
-    fg: slint::Color::from_rgb_u8(0xc0, 0xca, 0xf5),
-    container: slint::Color::from_rgb_u8(0x24, 0x28, 0x3b),
-};
+pub struct Row {
+    pub title: String,
+    pub summary: Option<String>,
+    pub on_click: Option<String>,
+    /// Any icon spec (theme name, `papirus:<name>`, absolute path).
+    pub icon_spec: Option<String>,
+    /// The resolved absolute path, once known.
+    pub icon_path: Option<String>,
+    /// The core's `ephemeral` flag, forwarded when the row is selected.
+    pub ephemeral: bool,
+}
 
-pub struct App {
-    pub items: Vec<Item>,
-    /// Decoded icons by row; `None` means "not asked for yet". Only the visible
-    /// window is ever loaded, because every row in the model is instantiated.
-    icons: Vec<Option<Image>>,
+/// The selected row's fields that `select` and the launch command need.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Launch {
+    pub title: String,
+    pub summary: Option<String>,
+    pub icon: Option<String>,
+    pub target: String,
+    pub ephemeral: bool,
+}
+
+pub struct State {
+    pub query: String,
+    /// Caret, as a byte index into `query`, always on a char boundary.
+    pub caret: usize,
+    /// The fixed end of a keyboard selection; `caret` is the moving end. A
+    /// selection exists while the two differ (Ctrl+A, Shift+arrows).
+    pub anchor: Option<usize>,
+    /// The live IME preedit, drawn at the caret (never inserted into `query`).
+    pub preedit: Option<String>,
+    pub rows: Vec<Row>,
     pub selected: usize,
-    pub first_row: usize,
-    pub pending_forget: Option<(u64, usize)>,
-    last_payload: String,
-    model: Rc<VecModel<ResultItem>>,
+    /// Index of the top visible row of the fixed five-row window (`contain`).
+    pub first: usize,
+    pub theme: Theme,
+    /// The layer surface's logical size.
+    pub surface: (u32, u32),
+    /// The integer buffer scale `wl_surface` reports, used when the compositor
+    /// offers no fractional scale: 2 on a 1.25× output, where the exact ratio
+    /// would be better.
+    pub scale: i32,
+    /// The exact ratio from `wp_fractional_scale_v1` (`1.25` on the laptop
+    /// panel). When set, the buffer is `surface × this` and a viewport maps it
+    /// back onto the logical size, so `scale` above is not used for sizing.
+    pub fractional: Option<f32>,
+    /// Whether the layer surface currently exists.
+    pub visible: bool,
+    /// Whether the entrance animation has been started by the first drawn
+    /// frame. The layer surface is configured a round trip after `shown`, so
+    /// starting at the request would swallow the fade's first frames.
+    pub entrance_started: bool,
+    pub reduce_motion: bool,
+    /// What the pointer is over, if anything.
+    pub hovered: Option<Hover>,
+    /// The pointer's last position over the surface, so a moving list can
+    /// re-derive the hover.
+    cursor: Option<(f32, f32)>,
+    pub pointer_on_card: bool,
+    /// fcitx can deliver Enter while a preedit is live; Enter over composition
+    /// must not launch a row.
+    pub preedit_active: bool,
+    pub caret_visible: bool,
+    pub caret_at: Instant,
+    shown_at: Instant,
+    card_from: f32,
+    card_to: f32,
+    card_at: Instant,
+    pub dismiss_at: Option<Instant>,
+    /// Spec → path; `None` means "asked, no icon".
+    pub icon_cache: HashMap<String, Option<String>>,
 }
 
-impl App {
+impl State {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
-            items: Vec::new(),
-            icons: Vec::new(),
+            query: String::new(),
+            caret: 0,
+            anchor: None,
+            preedit: None,
+            rows: Vec::new(),
             selected: 0,
-            first_row: 0,
-            pending_forget: None,
-            last_payload: String::new(),
-            model: Rc::new(VecModel::default()),
+            first: 0,
+            theme: Theme::default(),
+            surface: (1920, 1080),
+            scale: 1,
+            fractional: None,
+            visible: false,
+            entrance_started: false,
+            reduce_motion: std::env::var_os("QSFLOW_REDUCED_MOTION").is_some(),
+            hovered: None,
+            cursor: None,
+            pointer_on_card: false,
+            preedit_active: false,
+            caret_visible: true,
+            caret_at: now,
+            shown_at: now,
+            card_from: geom::content_h(0),
+            card_to: geom::content_h(0),
+            card_at: now,
+            dismiss_at: None,
+            icon_cache: HashMap::new(),
         }
     }
 
-    pub fn install(&self, ui: &LauncherWindow) {
-        ui.set_results(ModelRc::from(self.model.clone()));
+    /// The buffer scale to render at: the compositor's fractional ratio when
+    /// there is one, else the integer scale.
+    pub fn scale_factor(&self) -> f32 {
+        self.fractional.unwrap_or(self.scale.max(1) as f32)
     }
 
-    /// An identical payload is dropped so a re-send cannot reset the cursor; a
-    /// genuinely different one starts from the top row. Rows are patched in
-    /// place rather than replaced: a model reset recreates every row element,
-    /// which restarts its selection and reflow animations — a visible jump on
-    /// each keystroke.
-    pub fn apply_results(
-        &mut self,
-        ui: &LauncherWindow,
-        items: Vec<Item>,
-        payload: String,
-    ) -> bool {
-        if !self.set_payload(items, payload) {
+    /// Whether the buffers are mapped through a `wp_viewport` — their size is
+    /// the logical size times [`State::scale_factor`], and the surface's own
+    /// buffer scale must stay 1.
+    pub fn uses_viewport(&self) -> bool {
+        self.fractional.is_some()
+    }
+
+    pub fn card_height(&self, now: Instant) -> f32 {
+        let to = self.card_to;
+        if self.reduce_motion {
+            return to;
+        }
+
+        let elapsed = now.saturating_duration_since(self.card_at).as_secs_f32() * 1000.0;
+        let t = (elapsed / REFLOW_MS as f32).clamp(0.0, 1.0);
+        self.card_from + (to - self.card_from) * ease_out_cubic(t)
+    }
+
+    /// The backdrop dim's current alpha (0 → `DIM_ALPHA`), not a progress
+    /// fraction.
+    pub fn dim_alpha(&self, now: Instant) -> f32 {
+        geom::DIM_ALPHA * self.entrance(now)
+    }
+
+    /// The card's fill alpha: the entrance animation is an opacity fade (the
+    /// QML scaled the card, which a flat pixmap cannot).
+    pub fn entrance(&self, now: Instant) -> f32 {
+        if self.reduce_motion {
+            // Reduced motion starts at the end state, as the iced-era runtime
+            // did. Returning 0 here is not "no animation", it is an invisible
+            // launcher: the dim and every `fade()`d colour are multiplied by
+            // this and the buffer stays fully transparent.
+            return 1.0;
+        }
+        if !self.entrance_started {
+            return 0.0;
+        }
+
+        let elapsed = now.saturating_duration_since(self.shown_at).as_secs_f32() * 1000.0;
+        ease_out_quint((elapsed / ENTRANCE_MS as f32).clamp(0.0, 1.0))
+    }
+
+    /// A card-content colour at `alpha`, scaled by the entrance fade: the whole
+    /// card arrives as one unit and the first frame really is invisible.
+    pub fn fade(&self, color: [u8; 3], alpha: f32, now: Instant) -> [u8; 4] {
+        [
+            color[0],
+            color[1],
+            color[2],
+            ((alpha * self.entrance(now)).clamp(0.0, 1.0) * 255.0).round() as u8,
+        ]
+    }
+
+    pub fn animating(&self, now: Instant) -> bool {
+        if self.reduce_motion || !self.entrance_started {
             return false;
         }
-        self.publish(ui);
-        true
+
+        let entrance =
+            now.saturating_duration_since(self.shown_at) < Duration::from_millis(ENTRANCE_MS);
+        let reflow = now.saturating_duration_since(self.card_at) < Duration::from_millis(REFLOW_MS);
+        entrance || reflow
     }
 
-    /// [`Self::apply_results`] without the widget writes, so the decision is
-    /// testable on its own. Returns false for an identical payload.
-    pub fn set_payload(&mut self, items: Vec<Item>, payload: String) -> bool {
-        if payload == self.last_payload && !self.items.is_empty() {
-            return false;
-        }
-        self.last_payload = payload;
-        // A forget that was still in flight belongs to the payload it was
-        // issued against; its answer must not remove a row from a new list.
-        self.pending_forget = None;
-        let old_len = self.items.len();
-        self.items = items;
-        let new_len = self.items.len();
-        self.icons = vec![None; new_len];
+    pub fn shown(&mut self, now: Instant) {
+        self.visible = true;
+        self.query.clear();
+        self.caret = 0;
+        self.anchor = None;
+        self.preedit = None;
+        self.preedit_active = false;
         self.selected = 0;
-        self.first_row = 0;
-        // Icons for the rows the window shows right away, so the first frame
-        // after a payload already carries them instead of popping in later.
-        self.warm_visible();
-
-        let common = old_len.min(new_len);
-        for index in 0..common {
-            let row = self.row(index);
-            self.model.set_row_data(index, row);
-        }
-        if new_len < old_len {
-            // `VecModel::remove` drops one row at a time, so the tail goes last.
-            for index in (new_len..old_len).rev() {
-                self.model.remove(index);
-            }
-        } else {
-            for index in old_len..new_len {
-                let row = self.row(index);
-                self.model.push(row);
-            }
-        }
-        true
+        self.hovered = None;
+        self.dismiss_at = None;
+        self.shown_at = now;
+        self.card_at = now;
+        self.card_from = geom::content_h(self.rows.len());
+        self.card_to = self.card_from;
+        self.contain();
+        self.caret_visible = true;
+        self.caret_at = now;
+        self.entrance_started = false;
     }
 
-    pub fn clear(&mut self, ui: &LauncherWindow) {
-        self.items.clear();
-        self.icons.clear();
-        self.selected = 0;
-        self.first_row = 0;
-        self.pending_forget = None;
-        self.last_payload.clear();
-        self.model.set_vec(Vec::new());
-        ui.set_results(ModelRc::from(self.model.clone()));
-        ui.set_selected(0);
-        ui.set_first_row(0);
-    }
-
-    pub fn selected_item(&self) -> Option<&Item> {
-        self.items.get(self.selected)
-    }
-
-    /// Arrows, pages and the wheel all land here: the selection moves, and the
-    /// window follows it only when it has to (the QML's `ListView.Contain`).
-    pub fn move_by(&mut self, delta: i32) {
-        if self.items.is_empty() {
+    /// The first frame of a show: this is where the entrance fade begins.
+    pub fn start_entrance(&mut self, now: Instant) {
+        if self.entrance_started {
             return;
         }
-        let last = self.items.len() as i32 - 1;
-        self.selected = (self.selected as i32 + delta).clamp(0, last) as usize;
-        self.contain();
+        self.entrance_started = true;
+        self.shown_at = now;
+        self.card_at = now;
+        self.card_from = geom::content_h(self.rows.len());
+        self.card_to = self.card_from;
     }
 
-    pub fn select(&mut self, index: usize) {
-        if index < self.items.len() {
-            self.selected = index;
-            self.contain();
-        }
+    pub fn hidden(&mut self) {
+        self.visible = false;
+        self.dismiss_at = None;
+        // The surface is gone, so nothing is composing on it any more.
+        self.preedit = None;
+        self.preedit_active = false;
     }
 
+    /// Keep the selection inside the five-row window, minimally: the QML's
+    /// `positionViewAtIndex(currentIndex, ListView.Contain)`.
     pub fn contain(&mut self) {
-        if self.items.is_empty() {
-            self.selected = 0;
-            self.first_row = 0;
-            return;
-        }
-        if self.selected >= self.items.len() {
-            self.selected = self.items.len() - 1;
-        }
-        if self.selected < self.first_row {
-            self.first_row = self.selected;
-        } else if self.selected >= self.first_row + VISIBLE_ROWS {
-            self.first_row = self.selected + 1 - VISIBLE_ROWS;
-        }
-        self.first_row = self
-            .first_row
-            .min(self.items.len().saturating_sub(VISIBLE_ROWS));
+        self.first = geom::contain(self.selected, self.first, self.rows.len());
+        self.resync_hover();
     }
 
-    /// Drops a row locally; only the core's `{"forgotten":true}` may call this.
-    pub fn remove_row(&mut self, ui: &LauncherWindow, index: usize) {
-        if self.remove_row_state(index) {
-            self.publish(ui);
-        }
-    }
+    /// The pointer position and the hover it implies; returns whether the hover
+    /// changed. The ✕ button sits outside the list and wins over a row.
+    pub fn hover_at(&mut self, x: f32, y: f32) -> bool {
+        self.cursor = Some((x, y));
+        let hover = if self.clear_hit(x, y) {
+            Some(Hover::Clear)
+        } else {
+            geom::row_at(self.surface, self.first, self.rows.len(), x, y).map(Hover::Row)
+        };
 
-    /// [`Self::remove_row`] without the widget writes.
-    pub fn remove_row_state(&mut self, index: usize) -> bool {
-        if index >= self.items.len() {
+        if hover == self.hovered {
             return false;
         }
-        self.items.remove(index);
-        if index < self.icons.len() {
-            self.icons.remove(index);
-        }
-        self.model.remove(index);
-        self.contain();
+        self.hovered = hover;
         true
     }
 
-    /// Decodes the icons the visible window needs and hands those rows to the
-    /// UI. Only rows that actually gained an icon are written back, so a scroll
-    /// does not notify the model about rows that did not change.
-    pub fn publish(&mut self, ui: &LauncherWindow) {
-        let end = (self.first_row + VISIBLE_ROWS).min(self.items.len());
-        for index in self.first_row..end {
-            let missing = self.icons.get(index).is_none_or(Option::is_none);
-            if missing {
-                self.ensure_icon(index);
-                let row = self.row(index);
-                self.model.set_row_data(index, row);
+    /// The pointer left the surface.
+    pub fn cursor_left(&mut self) {
+        self.cursor = None;
+        self.hovered = None;
+    }
+
+    /// Rows that move under a stationary pointer are *different* rows and draw
+    /// in the same place, so nothing fires an enter/exit for them: re-derive
+    /// the row hover. `Hover::Clear` is left alone, since it is not in the list.
+    fn resync_hover(&mut self) {
+        let row = self
+            .cursor
+            .and_then(|(x, y)| geom::row_at(self.surface, self.first, self.rows.len(), x, y));
+
+        match row {
+            Some(row) => self.hovered = Some(Hover::Row(row)),
+            None if matches!(self.hovered, Some(Hover::Row(_))) => self.hovered = None,
+            None => {}
+        }
+    }
+
+    /// The selected row's launch fields.
+    pub fn selected_row(&self) -> Option<Launch> {
+        let row = self.rows.get(self.selected)?;
+        let target = row.on_click.clone()?;
+        Some(Launch {
+            title: row.title.clone(),
+            summary: row.summary.clone(),
+            icon: row.icon_path.clone(),
+            target,
+            ephemeral: row.ephemeral,
+        })
+    }
+
+    pub fn retarget_height(&mut self, now: Instant) {
+        let target = geom::content_h(self.rows.len());
+        if target != self.card_to {
+            self.card_from = self.card_height(now);
+            self.card_to = target;
+            self.card_at = now;
+        }
+    }
+
+    // ---- editing ----------------------------------------------------------
+
+    /// The selected byte range, `None` when the caret is a bare point.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.anchor?;
+        let (start, end) = if anchor < self.caret {
+            (anchor, self.caret)
+        } else {
+            (self.caret, anchor)
+        };
+        (start != end).then_some((start, end))
+    }
+
+    /// Ctrl+A.
+    pub fn select_all(&mut self) {
+        self.anchor = Some(0);
+        self.caret = self.query.len();
+    }
+
+    /// Remove the selected range, if any; whether it removed something. The
+    /// anchor is always cleared: this is also what collapses a selection.
+    pub fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection() else {
+            self.anchor = None;
+            return false;
+        };
+
+        self.query.replace_range(start..end, "");
+        self.caret = start;
+        self.anchor = None;
+        true
+    }
+
+    /// Typing over a selection replaces it, as it does in any text field.
+    pub fn insert(&mut self, text: &str) {
+        self.delete_selection();
+        self.caret = self.caret.min(self.query.len());
+        self.query.insert_str(self.caret, text);
+        self.caret += text.len();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
+            self.query.remove(previous.0);
+            self.caret = previous.0;
+        }
+    }
+
+    pub fn delete(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        if self.caret < self.query.len() {
+            self.query.remove(self.caret);
+        }
+    }
+
+    /// `zwp_text_input_v3.delete_surrounding_text`: both lengths are *bytes*, so
+    /// characters are removed while they fit the budget — deleting three bytes
+    /// before the caret must not swallow three CJK characters. A character that
+    /// does not fit is left alone rather than deleted past the request, and both
+    /// loops stop at the ends of the query, so a bogus length cannot spin.
+    pub fn delete_surrounding(&mut self, before: u32, after: u32) {
+        // the IME is about to replace whatever is selected
+        self.delete_selection();
+        self.caret = self.caret.min(self.query.len());
+
+        let mut budget = before as usize;
+        while budget > 0 {
+            let Some((at, _)) = self.query[..self.caret].char_indices().next_back() else {
+                break;
+            };
+            let len = self.caret - at;
+            if len > budget {
+                break;
+            }
+            budget -= len;
+            self.backspace();
+        }
+
+        let mut budget = after as usize;
+        while budget > 0 {
+            let Some(next) = self.query[self.caret..].chars().next() else {
+                break;
+            };
+            let len = next.len_utf8();
+            if len > budget {
+                break;
+            }
+            budget -= len;
+            self.delete();
+        }
+    }
+
+    /// Home/End are deliberately not intercepted as widget shortcuts: they
+    /// belong to the caret.
+    pub fn home(&mut self) {
+        self.anchor = None;
+        self.caret = 0;
+    }
+
+    pub fn end(&mut self) {
+        self.anchor = None;
+        self.caret = self.query.len();
+    }
+
+    pub fn left(&mut self) {
+        // with a selection, a bare arrow collapses to the end it moves towards
+        if let Some((start, _)) = self.selection() {
+            self.anchor = None;
+            self.caret = start;
+            return;
+        }
+        self.anchor = None;
+        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
+            self.caret = previous.0;
+        }
+    }
+
+    pub fn right(&mut self) {
+        if let Some((_, end)) = self.selection() {
+            self.anchor = None;
+            self.caret = end;
+            return;
+        }
+        self.anchor = None;
+        if let Some(next) = self.query[self.caret..].chars().next() {
+            self.caret += next.len_utf8();
+        }
+    }
+
+    /// Shift+Left/Right/Home/End extend from wherever the caret sat when the
+    /// shift was first held.
+    pub fn extend_left(&mut self) {
+        self.anchor.get_or_insert(self.caret);
+        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
+            self.caret = previous.0;
+        }
+    }
+
+    pub fn extend_right(&mut self) {
+        self.anchor.get_or_insert(self.caret);
+        if let Some(next) = self.query[self.caret..].chars().next() {
+            self.caret += next.len_utf8();
+        }
+    }
+
+    pub fn extend_home(&mut self) {
+        self.anchor.get_or_insert(self.caret);
+        self.caret = 0;
+    }
+
+    pub fn extend_end(&mut self) {
+        self.anchor.get_or_insert(self.caret);
+        self.caret = self.query.len();
+    }
+
+    pub fn clear_query(&mut self) {
+        self.query.clear();
+        self.caret = 0;
+        self.anchor = None;
+    }
+
+    /// Whether a surface-local point is on the ✕ button. The numbers mirror the
+    /// renderer: a 26px disc inset 8px from the field's right edge.
+    pub fn clear_hit(&self, x: f32, y: f32) -> bool {
+        if self.query.is_empty() {
+            return false;
+        }
+
+        let right = geom::card_x(self.surface) + geom::card_w(self.surface) - geom::PAD - 8.0;
+        let center_y = geom::card_top(self.surface) + geom::PAD + geom::SEARCH_H / 2.0;
+        (x - (right - 13.0)).abs() <= 13.0 && (y - center_y).abs() <= 13.0
+    }
+
+    /// The text before the caret, which is what the IME wants as surrounding
+    /// text (only its byte length is reported, since nothing tracks it).
+    pub fn before_caret(&self) -> &str {
+        &self.query[..self.caret]
+    }
+
+    // ---- rows -------------------------------------------------------------
+
+    /// The selected row's `on_click`: what `⌫` offers to the core.
+    pub fn selected_target(&self) -> Option<String> {
+        self.rows.get(self.selected)?.on_click.clone()
+    }
+
+    /// Drop a row the core confirmed it really forgot. Looked up by `on_click`
+    /// rather than by index, because the payload may have been replaced while
+    /// the reply was in flight.
+    pub fn remove_row(&mut self, on_click: &str, now: Instant) -> bool {
+        let Some(index) = self
+            .rows
+            .iter()
+            .position(|row| row.on_click.as_deref() == Some(on_click))
+        else {
+            return false;
+        };
+
+        self.rows.remove(index);
+        self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.contain();
+        self.retarget_height(now);
+        true
+    }
+
+    pub fn apply_results(&mut self, items: Vec<ResultItem>, now: Instant) {
+        // The QML's `lastResults` dedupe: an identical re-send is dropped so it
+        // cannot reset the selection.
+        if self.rows_match(&items) && !self.rows.is_empty() {
+            return;
+        }
+
+        self.rows = items
+            .into_iter()
+            .map(|item| {
+                let icon_spec = item.icon.clone().filter(|spec| !spec.is_empty());
+                let icon_path = icon_spec.as_ref().and_then(|spec| {
+                    // absolute paths render directly; anything else is a core
+                    // resolve_icon round trip
+                    if spec.starts_with('/') {
+                        Some(spec.clone())
+                    } else {
+                        self.icon_cache.get(spec).cloned().flatten()
+                    }
+                });
+
+                Row {
+                    title: item.title,
+                    summary: item.summary,
+                    on_click: item.on_click,
+                    icon_spec,
+                    icon_path,
+                    ephemeral: item.ephemeral,
+                }
+            })
+            .collect();
+
+        // The QML's `onResultsUpdated`: a genuinely new payload starts from the
+        // top row, because what the user is looking at just changed under the
+        // cursor. A local removal (`⌫`) never comes through here, so it keeps
+        // the cursor in place, and an identical re-send returned above.
+        self.selected = 0;
+        self.contain();
+        self.retarget_height(now);
+    }
+
+    pub fn set_icon(&mut self, spec: &str, path: Option<String>) {
+        self.icon_cache.insert(spec.to_string(), path.clone());
+        for row in &mut self.rows {
+            if row.icon_spec.as_deref() == Some(spec) {
+                row.icon_path = path.clone();
             }
         }
-        ui.set_selected(self.selected as i32);
-        ui.set_first_row(self.first_row as i32);
     }
 
-    /// The icons of the rows inside the current window, decoded before they are
-    /// put into the model.
-    fn warm_visible(&mut self) {
-        let end = (self.first_row + VISIBLE_ROWS).min(self.items.len());
-        for index in self.first_row..end {
-            self.ensure_icon(index);
-        }
+    fn rows_match(&self, items: &[ResultItem]) -> bool {
+        self.rows.len() == items.len()
+            && self.rows.iter().zip(items).all(|(row, item)| {
+                row.title == item.title
+                    && row.summary == item.summary
+                    && row.on_click == item.on_click
+                    && row.icon_spec.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
+            })
     }
 
-    fn ensure_icon(&mut self, index: usize) {
-        if index < self.icons.len() && self.icons[index].is_none() {
-            self.icons[index] = Some(load_icon(&self.items[index].icon));
+    /// Move the selection by whole rows (the wheel): the highlighted row is what
+    /// Enter launches, so the selection moves, not just the window.
+    pub fn scroll(&mut self, rows: i32) {
+        if self.rows.is_empty() || rows == 0 {
+            return;
         }
+
+        let last = (self.rows.len() - 1) as i32;
+        self.selected = (self.selected as i32 + rows).clamp(0, last) as usize;
+        self.contain();
     }
 
-    fn row(&self, index: usize) -> ResultItem {
-        let item = &self.items[index];
-        ResultItem {
-            title: item.title.clone().into(),
-            summary: item.summary.clone().into(),
-            icon: self
-                .icons
-                .get(index)
-                .and_then(Clone::clone)
-                .unwrap_or_default(),
-            on_click: item.on_click.clone().into(),
+    pub fn up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+        self.contain();
+    }
+
+    pub fn down(&mut self) {
+        if self.selected + 1 < self.rows.len() {
+            self.selected += 1;
         }
+        self.contain();
+    }
+
+    pub fn page_up(&mut self) {
+        self.selected = self.selected.saturating_sub(geom::MAX_ROWS);
+        self.contain();
+    }
+
+    pub fn page_down(&mut self) {
+        self.selected = (self.selected + geom::MAX_ROWS).min(self.rows.len().saturating_sub(1));
+        self.contain();
+    }
+
+    /// The active keyword prefix (`b`, `h`, `f`, …): `^([a-zA-Z]{1,3})\s`.
+    pub fn keyword_prefix(&self) -> Option<&str> {
+        let end = self
+            .query
+            .as_bytes()
+            .iter()
+            .take(4)
+            .position(|byte| *byte == b' ')?;
+        if end == 0
+            || !self.query.as_bytes()[..end]
+                .iter()
+                .all(u8::is_ascii_alphabetic)
+        {
+            return None;
+        }
+
+        Some(&self.query[..end])
     }
 }
 
-fn load_icon(path: &str) -> Image {
-    if !path.starts_with('/') {
-        return Image::default();
-    }
-    Image::load_from_path(Path::new(path)).unwrap_or_default()
+fn ease_out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(3)
 }
 
-/// The theme fields arrive as hex strings and keep a fallback per field.
-pub fn theme_from(data: &ThemeData) -> Theme {
-    Theme {
-        primary: parse_hex(data.primary.as_deref()).unwrap_or(FALLBACK.primary),
-        on_primary: parse_hex(data.on_primary.as_deref()).unwrap_or(FALLBACK.on_primary),
-        bg: parse_hex(data.bg.as_deref()).unwrap_or(FALLBACK.bg),
-        fg: parse_hex(data.fg.as_deref()).unwrap_or(FALLBACK.fg),
-        container: parse_hex(data.container.as_deref()).unwrap_or(FALLBACK.container),
+fn ease_out_quint(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(5)
+}
+
+/// The one command line a row's `on_click` becomes: `ui/SearchWindow.qml:launch()`
+/// records the usage first, then maps the scheme to a verb. Anything without a
+/// scheme is a shell command.
+pub fn launch_command(target: &str) -> String {
+    if let Some(id) = target.strip_prefix("launch:") {
+        format!("launch {id}")
+    } else if let Some(command) = target.strip_prefix("run:") {
+        format!("run {command}")
+    } else if let Some(payload) = target.strip_prefix("copy:") {
+        format!("copy {payload}")
+    } else if let Some(spec) = target.strip_prefix("action:") {
+        format!("action {spec}")
+    } else if target.starts_with("http")
+        || target.starts_with("file:")
+        || target.starts_with("mailto:")
+    {
+        format!("open {target}")
+    } else {
+        format!("run {target}")
     }
 }
 
-fn parse_hex(value: Option<&str>) -> Option<slint::Color> {
-    let text = value?.trim().trim_start_matches('#');
-    let digits = u32::from_str_radix(text, 16).ok()?;
-    match text.len() {
-        6 => Some(slint::Color::from_rgb_u8(
-            (digits >> 16) as u8,
-            (digits >> 8) as u8,
-            digits as u8,
-        )),
-        8 => Some(slint::Color::from_argb_u8(
-            (digits >> 24) as u8,
-            (digits >> 16) as u8,
-            (digits >> 8) as u8,
-            digits as u8,
-        )),
-        _ => None,
+/// Whole rows from a fractional wheel delta, carrying the remainder. One notch
+/// arrives as a line *and* its pixel equivalent, so the pixel half must not add
+/// a second row; a trackpad (pixels only) accumulates to ~64px per row.
+pub fn whole_rows(accum: &mut f32, delta: f32) -> i32 {
+    // A reversal starts a new gesture: without this the previous direction's
+    // slack would swallow the first notch back.
+    if accum.signum() * delta.signum() < 0.0 {
+        *accum = 0.0;
     }
+
+    *accum += delta;
+    let whole = accum.trunc();
+    *accum -= whole;
+    whole as i32
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::Item;
+    use crate::session::model::ResultItem;
 
-    fn app_with(count: usize) -> App {
-        let mut app = App::new();
-        app.items = (0..count)
-            .map(|i| Item {
-                title: format!("row {i}"),
-                ..Default::default()
-            })
+    fn item(
+        title: &str,
+        summary: Option<&str>,
+        on_click: Option<&str>,
+        icon: Option<&str>,
+    ) -> ResultItem {
+        ResultItem {
+            title: title.into(),
+            summary: summary.map(str::to_string),
+            on_click: on_click.map(str::to_string),
+            icon: icon.map(str::to_string),
+            ephemeral: false,
+        }
+    }
+
+    fn state() -> State {
+        let mut state = State::new();
+        state.surface = (1920, 1080);
+        state
+    }
+
+    #[test]
+    fn contain_moves_only_as_far_as_the_selection_needs() {
+        assert_eq!(geom::contain(0, 0, 20), 0);
+        assert_eq!(geom::contain(geom::MAX_ROWS - 1, 0, 20), 0);
+        // stepping past the window scrolls by exactly one row
+        assert_eq!(geom::contain(geom::MAX_ROWS, 0, 20), 1);
+        assert_eq!(geom::contain(geom::MAX_ROWS + 1, 1, 20), 2);
+        // moving up *inside* the window keeps it put (ListView.Contain)
+        assert_eq!(geom::contain(3, 1, 20), 1);
+        // leaving it upwards follows the selection
+        assert_eq!(geom::contain(0, 3, 20), 0);
+        // the window never runs past the last row
+        assert_eq!(geom::contain(19, 0, 20), 15);
+        assert_eq!(geom::contain(19, 17, 20), 15);
+        // a list shorter than the window cannot scroll
+        assert_eq!(geom::contain(0, 5, 3), 0);
+        assert_eq!(geom::contain(2, 5, 3), 0);
+    }
+
+    #[test]
+    fn a_wheel_notch_moves_exactly_one_row() {
+        // the line delta and its pixel twin both arrive for one notch
+        let mut accum = 0.0;
+        assert_eq!(whole_rows(&mut accum, 1.0), 1);
+        assert_eq!(whole_rows(&mut accum, -2.0 / 64.0), 0);
+        // a trackpad accumulates pixels into whole rows
+        let mut accum = 0.0;
+        assert_eq!(whole_rows(&mut accum, 0.5), 0);
+        assert_eq!(whole_rows(&mut accum, 0.5), 1);
+        // a reversal drops the previous gesture's slack
+        let mut accum = -1.0;
+        assert_eq!(whole_rows(&mut accum, 0.5), 0);
+        assert_eq!(whole_rows(&mut accum, 1.0), 1);
+    }
+
+    #[test]
+    fn the_result_dedupe_matches_the_payload_it_was_built_from() {
+        let mut state = state();
+        let items = vec![
+            item("Files", None, None, None),
+            item(
+                "Firefox",
+                Some("Browser"),
+                Some("launch:firefox.desktop"),
+                Some("/i.svg"),
+            ),
+        ];
+        let now = std::time::Instant::now();
+        state.apply_results(items.clone(), now);
+
+        state.selected = 1;
+        // an identical re-send must not reset the selection
+        state.apply_results(items.clone(), now);
+        assert_eq!(state.selected, 1);
+
+        let changed = vec![
+            item("Files", None, None, None),
+            item(
+                "Firefox",
+                Some("Browser"),
+                Some("run:firefox"),
+                Some("/i.svg"),
+            ),
+        ];
+        state.apply_results(changed, now);
+        // a genuinely new payload starts from the top row, as the QML's
+        // `onResultsUpdated` did: what the cursor pointed at has changed
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.rows[1].on_click.as_deref(), Some("run:firefox"));
+    }
+
+    #[test]
+    fn a_moving_list_keeps_the_hover_on_the_row_under_the_pointer() {
+        let mut state = state();
+        let items: Vec<ResultItem> = (0..20)
+            .map(|i| item(&format!("row {i}"), None, Some("run:x"), None))
             .collect();
-        app.icons = vec![None; count];
-        app
-    }
+        state.apply_results(items, std::time::Instant::now());
 
-    #[test]
-    fn containment_scrolls_only_at_the_edges() {
-        let mut app = app_with(10);
-        app.selected = 4;
-        app.contain();
-        assert_eq!(app.first_row, 0, "row 4 is inside the first window");
-        app.selected = 5;
-        app.contain();
-        assert_eq!(app.first_row, 1, "row 5 pushes the window down by one");
-        app.selected = 0;
-        app.contain();
-        assert_eq!(app.first_row, 0);
-    }
+        // the pointer sits on the second visible row
+        let x = geom::card_x(state.surface) + 10.0;
+        let y = geom::rows_top(state.surface) + geom::ROW_H + 1.0;
+        assert!(state.hover_at(x, y));
+        assert_eq!(state.hovered, Some(Hover::Row(1)));
 
-    #[test]
-    fn moving_clamps_and_never_shrinks_the_window_past_the_payload() {
-        let mut app = app_with(3);
-        app.move_by(10);
-        assert_eq!(app.selected, 2);
-        assert_eq!(app.first_row, 0, "three rows fit in one window");
-        app.move_by(-10);
-        assert_eq!(app.selected, 0);
-    }
+        // a page turn draws different rows under the same pointer: the hover has
+        // to follow the row now under it, which is one further down the list
+        state.selected = geom::MAX_ROWS;
+        state.contain();
+        assert_eq!(state.first, 1);
+        assert_eq!(state.hovered, Some(Hover::Row(2)));
 
-    #[test]
-    fn a_short_payload_keeps_the_window_at_zero() {
-        let mut app = app_with(2);
-        app.selected = 1;
-        app.contain();
-        assert_eq!(app.first_row, 0);
-    }
-
-    #[test]
-    fn a_new_payload_drops_a_forget_that_was_still_in_flight() {
-        let mut app = App::new();
-        let rows = |count: usize| {
-            (0..count)
-                .map(|i| Item {
-                    title: format!("row {i}"),
-                    ..Default::default()
-                })
-                .collect::<Vec<_>>()
-        };
-        assert!(app.set_payload(rows(3), "first".into()));
-        app.pending_forget = Some((7, 1));
-        assert!(app.set_payload(rows(2), "second".into()));
-        assert_eq!(
-            app.pending_forget, None,
-            "the reply belongs to the list it was issued against"
+        // and the ✕ button's hover is not a row, so a page turn leaves it alone
+        state.query = "q".into();
+        let clear = (
+            geom::card_x(state.surface) + geom::card_w(state.surface) - geom::PAD - 8.0 - 13.0,
+            geom::card_top(state.surface) + geom::PAD + geom::SEARCH_H / 2.0,
         );
+        assert!(state.hover_at(clear.0, clear.1));
+        assert_eq!(state.hovered, Some(Hover::Clear));
+        state.contain();
+        assert_eq!(state.hovered, Some(Hover::Clear));
+
+        state.cursor_left();
+        assert_eq!(state.hovered, None);
     }
 
     #[test]
-    fn hex_parsing_accepts_hash_and_bare_forms() {
+    fn editing_is_utf8_safe() {
+        let mut state = state();
+        state.insert("中文");
+        state.insert("ab");
+        assert_eq!(state.query, "中文ab");
+        assert_eq!(state.caret, "中文ab".len());
+
+        // backspace removes a whole character, not a byte
+        state.backspace();
+        state.backspace();
+        assert_eq!(state.query, "中文");
+
+        state.home();
+        assert_eq!(state.caret, 0);
+        state.delete();
+        assert_eq!(state.query, "文");
+        state.end();
+        assert_eq!(state.caret, "文".len());
+
+        // the caret never leaves the string
+        state.left();
+        state.left();
+        assert_eq!(state.caret, 0);
+        state.right();
+        state.right();
+        assert_eq!(state.caret, "文".len());
+
+        state.clear_query();
+        assert!(state.query.is_empty() && state.caret == 0);
+    }
+
+    #[test]
+    fn deleting_surrounding_text_counts_bytes_not_characters() {
+        let mut state = state();
+
+        // one CJK character is three bytes: a three-byte request before the
+        // caret removes exactly that character
+        state.insert("中文");
+        state.delete_surrounding(3, 0);
+        assert_eq!(state.query, "中");
+        assert_eq!(state.caret, "中".len());
+
+        // ASCII is one byte a character
+        state.insert("ab");
+        state.delete_surrounding(1, 0);
+        assert_eq!(state.query, "中a");
+        state.delete_surrounding(1, 0);
+        assert_eq!(state.query, "中");
+
+        // a character that does not fit the budget is left alone: the request is
+        // never exceeded, so no user text disappears for a one-byte ask
+        state.delete_surrounding(1, 0);
+        assert_eq!(state.query, "中");
+
+        // forward deletion counts bytes the same way
+        state.caret = 0;
+        state.delete_surrounding(0, 3);
+        assert_eq!(state.query, "");
+
+        // a bogus length is clamped by the ends of the query, not looped
+        state.insert("x");
+        state.delete_surrounding(u32::MAX, u32::MAX);
+        assert_eq!(state.query, "");
+        assert_eq!(state.caret, 0);
+    }
+
+    #[test]
+    fn ctrl_a_selects_the_query_and_editing_replaces_it() {
+        let mut state = state();
+        state.insert("firefox");
+        state.select_all();
+        assert_eq!(state.selection(), Some((0, 7)));
+
+        // typing over a selection replaces it
+        state.insert("kit");
+        assert_eq!(state.query, "kit");
+        assert_eq!(state.caret, 3);
+        assert_eq!(state.selection(), None);
+
+        // backspace over a selection removes all of it, not one character
+        state.insert("ty");
+        state.select_all();
+        state.backspace();
+        assert!(state.query.is_empty(), "{:?}", state.query);
+
+        // a bare arrow collapses the selection instead of moving the caret
+        state.insert("abcdef");
+        state.select_all();
+        state.left();
+        assert_eq!((state.caret, state.selection()), (0, None));
+        state.select_all();
+        state.right();
+        assert_eq!((state.caret, state.selection()), (6, None));
+    }
+
+    #[test]
+    fn shift_arrows_extend_a_selection_from_the_anchor() {
+        let mut state = state();
+        state.insert("abc");
+        state.home();
+
+        state.extend_right();
+        state.extend_right();
+        assert_eq!(state.selection(), Some((0, 2)));
+        // walking back to the anchor leaves no selection at all
+        state.extend_left();
+        assert_eq!(state.selection(), Some((0, 1)));
+        state.extend_left();
+        assert_eq!(state.selection(), None);
+
+        // anchored in the middle, extending the other way flips the ends
+        state.clear_query();
+        state.insert("abc");
+        state.home();
+        state.right();
+        state.right();
+        state.extend_home();
+        assert_eq!(state.selection(), Some((0, 2)));
+        state.extend_right();
+        assert_eq!(state.selection(), Some((1, 2)));
+        state.extend_right();
+        assert_eq!(state.selection(), None, "back at the anchor");
+    }
+
+    #[test]
+    fn a_row_is_only_removed_when_the_core_confirms_the_forget() {
+        let mut state = state();
+        let items = vec![
+            item("Files", None, Some("launch:files.desktop"), None),
+            item("Firefox", None, Some("launch:firefox.desktop"), None),
+        ];
+        let now = std::time::Instant::now();
+        state.apply_results(items, now);
+        state.selected = 1;
         assert_eq!(
-            parse_hex(Some("#7aa2f7")),
-            Some(slint::Color::from_rgb_u8(0x7a, 0xa2, 0xf7))
+            state.selected_target().as_deref(),
+            Some("launch:firefox.desktop")
+        );
+
+        // "nothing was dropped" (a provider that implements no forget): the row
+        // stays exactly where it is
+        assert!(!state.remove_row("launch:other.desktop", now));
+        assert_eq!(state.rows.len(), 2);
+
+        // a confirmed forget takes that row out and keeps the selection valid
+        assert!(state.remove_row("launch:firefox.desktop", now));
+        assert_eq!(state.rows.len(), 1);
+        assert_eq!(state.rows[0].title, "Files");
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn the_fractional_scale_overrides_the_integer_one() {
+        let mut state = state();
+        // what niri reports for a 1.25x output
+        state.scale = 2;
+        state.surface = (1536, 864);
+        assert_eq!(state.scale_factor(), 2.0);
+        assert!(!state.uses_viewport());
+
+        state.fractional = Some(1.25);
+        assert_eq!(state.scale_factor(), 1.25);
+        assert!(state.uses_viewport());
+        // the same logical surface asks for 1920 physical pixels through the
+        // fractional ratio and 3072 through the integer scale: 2.56x the pixels
+        // for 1.25x of detail
+        assert_eq!((1536.0 * state.scale_factor()).round() as u32, 1920);
+        assert_eq!((1536.0 * 2.0) as u32, 3072);
+    }
+
+    #[test]
+    fn a_keyword_prefix_is_one_to_three_letters_and_a_space() {
+        let mut state = state();
+        state.query = "b firefox".into();
+        assert_eq!(state.keyword_prefix(), Some("b"));
+        state.query = "tr 你好".into();
+        assert_eq!(state.keyword_prefix(), Some("tr"));
+        state.query = "abcd ".into();
+        assert_eq!(state.keyword_prefix(), None);
+        state.query = "1 x".into();
+        assert_eq!(state.keyword_prefix(), None);
+        state.query = "b".into();
+        assert_eq!(state.keyword_prefix(), None);
+    }
+
+    #[test]
+    fn every_on_click_scheme_becomes_one_verb() {
+        assert_eq!(
+            launch_command("launch:firefox.desktop"),
+            "launch firefox.desktop"
+        );
+        assert_eq!(launch_command("run:kitty -e vim"), "run kitty -e vim");
+        assert_eq!(
+            launch_command(r#"copy:{"text":"hi"}"#),
+            r#"copy {"text":"hi"}"#
         );
         assert_eq!(
-            parse_hex(Some("7aa2f7")),
-            Some(slint::Color::from_rgb_u8(0x7a, 0xa2, 0xf7))
+            launch_command("action:org.x:new-window"),
+            "action org.x:new-window"
         );
-        assert_eq!(parse_hex(Some("nope")), None);
-        assert_eq!(parse_hex(None), None);
+        assert_eq!(
+            launch_command("https://example.com"),
+            "open https://example.com"
+        );
+        assert_eq!(
+            launch_command("file:///tmp/a%20b"),
+            "open file:///tmp/a%20b"
+        );
+        assert_eq!(launch_command("mailto:a@b"), "open mailto:a@b");
+        // no scheme at all is a shell command
+        assert_eq!(launch_command("vim"), "run vim");
+    }
+
+    #[test]
+    fn nothing_is_launched_without_a_target() {
+        let mut state = state();
+        let items = vec![item("Files", None, None, None)];
+        state.apply_results(items, std::time::Instant::now());
+        assert_eq!(state.selected_row(), None);
+    }
+
+    #[test]
+    fn an_ephemeral_row_is_forwarded_when_selected() {
+        let mut state = state();
+        let mut row = item("repo", None, Some("open:https://x"), None);
+        row.ephemeral = true;
+        state.apply_results(vec![row], std::time::Instant::now());
+        assert!(state.selected_row().unwrap().ephemeral);
     }
 }

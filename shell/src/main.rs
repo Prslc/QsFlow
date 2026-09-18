@@ -1,13 +1,21 @@
 mod app;
-mod ime;
-mod ipc;
-mod platform;
 mod session;
+mod ui;
 mod wayland;
 
-slint::include_modules!();
+use std::time::Instant;
 
-fn main() -> anyhow::Result<()> {
+use calloop::EventLoop;
+use calloop::channel::Event as ChannelEvent;
+use calloop_wayland_source::WaylandSource;
+use wayland_client::Connection;
+use wayland_client::globals::registry_queue_init;
+
+use crate::session::{backend, ipc};
+use crate::ui::render;
+use crate::wayland::Shell;
+
+fn main() -> std::process::ExitCode {
     let mut args = std::env::args();
     let invoked_as = args.next().unwrap_or_default();
     let rest: Vec<String> = args.collect();
@@ -22,29 +30,82 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .any(|arg| arg == "--core" || arg == "--list-plugins")
     {
-        return qsflow_core::run();
-    }
-
-    if let Some(verb) = rest.first() {
-        match verb.as_str() {
-            "open" | "close" | "toggle" | "status" => {
-                return ipc::client(verb).map_err(|err| anyhow::anyhow!("{err}"));
+        return match qsflow_core::run() {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("qsflow: {error}");
+                std::process::ExitCode::FAILURE
             }
-            other => {
-                eprintln!("unknown argument: {other}");
-                std::process::exit(2);
-            }
-        }
+        };
     }
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    // Slint has no layer-shell backend, so the shell installs its own platform:
-    // the software renderer behind a `wl_shm` overlay, with the event loop owned
-    // by the Wayland side.
-    let adapter = platform::Adapter::new();
-    slint::platform::set_platform(Box::new(platform::QsPlatform::new(adapter.clone())))
-        .map_err(|_| anyhow::anyhow!("a Slint platform is already installed"))?;
-    let ui = LauncherWindow::new().map_err(|err| anyhow::anyhow!("{err}"))?;
-    wayland::run(ui, adapter)
+    if rest.first().map(String::as_str) == Some("bench") {
+        render::bench();
+        return std::process::ExitCode::SUCCESS;
+    }
+
+    if let Some(verb) = rest.first()
+        && matches!(verb.as_str(), "open" | "close" | "toggle" | "status")
+    {
+        return ipc::client(verb);
+    }
+
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("qsflow: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let resident = std::env::var_os("QSFLOW_RESIDENT").is_some();
+
+    let conn = Connection::connect_to_env()?;
+    let (globals, event_queue) = registry_queue_init::<Shell>(&conn)?;
+    let qh = event_queue.handle();
+
+    let mut event_loop: EventLoop<'static, Shell> = EventLoop::try_new()?;
+    let loop_handle = event_loop.handle();
+
+    let (backend_tx, backend_channel) = calloop::channel::channel();
+    let (ipc_tx, ipc_channel) = calloop::channel::channel();
+    let (paste_tx, paste_channel) = calloop::channel::channel();
+
+    loop_handle.insert_source(backend_channel, |event, _, state: &mut Shell| {
+        if let ChannelEvent::Msg(event) = event {
+            state.on_backend(event);
+        }
+    })?;
+    loop_handle.insert_source(ipc_channel, |event, _, state: &mut Shell| {
+        if let ChannelEvent::Msg(command) = event {
+            state.on_ipc(command);
+        }
+    })?;
+    loop_handle.insert_source(paste_channel, |event, _, state: &mut Shell| {
+        if let ChannelEvent::Msg((generation, text)) = event {
+            state.on_paste(generation, text);
+        }
+    })?;
+    WaylandSource::new(conn.clone(), event_queue).insert(loop_handle.clone())?;
+
+    let mut shell = Shell::new(&conn, &qh, &loop_handle, &globals, paste_tx)?;
+
+    // The IPC listener is the single-instance guard: it must be up before the
+    // first Wayland round trip.
+    ipc::serve(ipc_tx)?;
+    backend::start(backend_tx);
+
+    if !resident {
+        shell.open(Instant::now());
+    }
+
+    while !shell.is_done() {
+        event_loop.dispatch(None, &mut shell)?;
+    }
+
+    Ok(())
 }

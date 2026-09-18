@@ -1,0 +1,372 @@
+mod ime;
+mod input;
+mod scale;
+mod surface;
+
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
+use calloop::LoopHandle;
+use calloop::channel::Sender;
+use calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::background_effect::{BackgroundEffectHandler, BackgroundEffectState};
+use smithay_client_toolkit::compositor::CompositorState;
+use smithay_client_toolkit::output::{OutputHandler, OutputState};
+use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
+use smithay_client_toolkit::seat::SeatState;
+use smithay_client_toolkit::seat::keyboard::Modifiers;
+use smithay_client_toolkit::shell::wlr_layer::{LayerShell, LayerSurface};
+use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::{Shm, ShmHandler};
+use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
+use tiny_skia::Pixmap;
+use wayland_client::globals::GlobalList;
+use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_shm};
+use wayland_client::{Connection, QueueHandle};
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
+use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1;
+use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
+use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_manager_v3::ZwpTextInputManagerV3;
+use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
+use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
+use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
+
+use crate::app::{self, State as Launcher};
+use crate::session::backend::{self, BackendEvent};
+use crate::session::ipc;
+use crate::ui::icons::IconCache;
+use crate::ui::text::TextEngine;
+use crate::ui::theme;
+use crate::wayland::ime::Pending;
+
+pub struct Shell {
+    conn: Connection,
+    qh: QueueHandle<Shell>,
+    loop_handle: LoopHandle<'static, Shell>,
+    registry_state: RegistryState,
+    compositor_state: CompositorState,
+    shm: Shm,
+    layer_shell: LayerShell,
+    output_state: OutputState,
+    seat_state: SeatState,
+    effect_state: BackgroundEffectState,
+    ime_manager: Option<ZwpTextInputManagerV3>,
+    ime: Option<ZwpTextInputV3>,
+    /// `wp_fractional_scale_v1`'s manager and the per-surface object: together
+    /// with the viewport below, they let a 1.25× output render at 1.25× instead
+    /// of the 2× its integer buffer scale asks for.
+    fractional_manager: Option<WpFractionalScaleManagerV1>,
+    fractional: Option<WpFractionalScaleV1>,
+    viewporter: Option<WpViewporter>,
+    viewport: Option<WpViewport>,
+    /// The destination the viewport was last set to (the surface's logical
+    /// size); the request is double-buffered state, so it is sent on change only.
+    viewport_destination: Option<(u32, u32)>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
+    /// Where a worker thread hands back a clipboard read, stamped with the show
+    /// it was requested for.
+    paste_tx: Sender<(u64, Option<String>)>,
+    /// Bumped on every `open`: a paste that outlived its show is dropped.
+    paste_generation: u64,
+    modifiers: Modifiers,
+    keyboard_focus: bool,
+    /// The surface exists only while shown: a toggle is create/destroy.
+    layer: Option<LayerSurface>,
+    /// Whether the compositor has configured the current surface. A layer
+    /// surface must commit once with no buffer before it may commit one, and a
+    /// payload can arrive from the core inside that window.
+    configured: bool,
+    effect: Option<ExtBackgroundEffectSurfaceV1>,
+    pool: Option<SlotPool>,
+    /// The frame as drawn. A blink does not keep a second full-size frame:
+    /// it restores the pixels under the caret from `caret_patch` and redraws
+    /// the caret alone.
+    pixmap: Option<Pixmap>,
+    caret_patch: Option<surface::CaretPatch>,
+    /// Chosen from what `wl_shm` advertises, at the first present.
+    shm_format: wl_shm::Format,
+    format_chosen: bool,
+    blur_sent: Option<(i32, i32, i32, i32)>,
+    ime_cursor_sent: Option<(i32, i32, i32, i32)>,
+    wheel_accum: f32,
+    pending: Pending,
+    icons: IconCache,
+    /// Icon specs already sent to the core's `resolve_icon`.
+    requested_icons: HashSet<String>,
+    text: TextEngine,
+    app: Launcher,
+    resident: bool,
+    timing: bool,
+    /// `QSFLOW_IME_LOG=1`: every text-input event and the state `done` left
+    /// behind. The preedit path cannot be driven from here (`wtype` never
+    /// reaches fcitx5), so a report is only diagnosable from this.
+    ime_log: bool,
+    started: Instant,
+    open_at: Option<Instant>,
+    last_present: Option<Instant>,
+    first_frame_logged: bool,
+    timer_registered: bool,
+    exit: bool,
+}
+
+impl Shell {
+    /// The constructor: everything `run()` used to do before it built the state.
+    pub fn new(
+        conn: &Connection,
+        qh: &QueueHandle<Shell>,
+        handle: &LoopHandle<'static, Shell>,
+        globals: &GlobalList,
+        paste_tx: Sender<(u64, Option<String>)>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let compositor = CompositorState::bind(globals, qh)?;
+        let shm = Shm::bind(globals, qh)?;
+        let layer_shell = LayerShell::bind(globals, qh)?;
+        let effect_state = BackgroundEffectState::new(globals, qh);
+        let ime_manager = ime::bind(globals, qh).ok();
+        let fractional = scale::bind(globals, qh);
+
+        Ok(Shell {
+            conn: conn.clone(),
+            qh: qh.clone(),
+            loop_handle: handle.clone(),
+            registry_state: RegistryState::new(globals),
+            compositor_state: compositor,
+            shm,
+            layer_shell,
+            output_state: OutputState::new(globals, qh),
+            seat_state: SeatState::new(globals, qh),
+            effect_state,
+            ime_manager,
+            ime: None,
+            fractional_manager: fractional.as_ref().map(|(manager, _)| manager.clone()),
+            fractional: None,
+            viewporter: fractional.map(|(_, viewporter)| viewporter),
+            viewport: None,
+            viewport_destination: None,
+            keyboard: None,
+            pointer: None,
+            paste_tx,
+            paste_generation: 0,
+            modifiers: Modifiers::default(),
+            keyboard_focus: false,
+            layer: None,
+            configured: false,
+            effect: None,
+            pool: None,
+            pixmap: None,
+            caret_patch: None,
+            shm_format: wl_shm::Format::Argb8888,
+            format_chosen: false,
+            blur_sent: None,
+            ime_cursor_sent: None,
+            wheel_accum: 0.0,
+            pending: Pending::default(),
+            icons: IconCache::new(),
+            requested_icons: HashSet::new(),
+            text: TextEngine::new(),
+            app: Launcher::new(),
+            resident: std::env::var_os("QSFLOW_RESIDENT").is_some(),
+            timing: std::env::var_os("QSFLOW_TIMING").is_some(),
+            ime_log: std::env::var_os("QSFLOW_IME_LOG").is_some(),
+            started: Instant::now(),
+            open_at: None,
+            last_present: None,
+            first_frame_logged: false,
+            timer_registered: false,
+            exit: false,
+        })
+    }
+
+    // ---- events ------------------------------------------------------------
+
+    pub fn on_backend(&mut self, event: BackendEvent) {
+        match event {
+            BackendEvent::Theme(config) => self.app.theme = theme::Theme::from_config(&config),
+            BackendEvent::Results(items) => {
+                let now = Instant::now();
+                self.app.apply_results(items, now);
+                self.request_icons();
+                let size = (30.0 * self.app.scale_factor()).round() as u32;
+                let paths: Vec<String> = self
+                    .app
+                    .rows
+                    .iter()
+                    .filter_map(|row| row.icon_path.clone())
+                    .collect();
+                for path in paths {
+                    self.icons.warm(&path, size);
+                }
+            }
+            BackendEvent::Icon { spec, path } => {
+                // Rasterise before the redraw, like the `Results` arm: the
+                // resolve reply arrives while the launcher is up, and a decode
+                // on the frame that is being animated is exactly what `warm`
+                // exists to avoid.
+                if let Some(path) = path.as_deref() {
+                    let size = (30.0 * self.app.scale_factor()).round() as u32;
+                    self.icons.warm(path, size);
+                }
+                self.app.set_icon(&spec, path)
+            }
+            // A confirmed forget is the only thing that removes a row: a
+            // provider without `forget` answers `false` and the list is left
+            // alone.
+            BackendEvent::Forgotten {
+                on_click,
+                forgotten,
+            } => {
+                if forgotten {
+                    self.app.remove_row(&on_click, Instant::now());
+                }
+            }
+            BackendEvent::CoreExited => self.exit = true,
+        }
+        self.redraw();
+    }
+
+    /// Ask the core for the absolute path of every icon spec that is not one.
+    fn request_icons(&mut self) {
+        let specs: Vec<String> = self
+            .app
+            .rows
+            .iter()
+            .filter_map(|row| row.icon_spec.as_deref())
+            .filter(|spec| !spec.starts_with('/'))
+            .map(str::to_string)
+            .collect();
+
+        for spec in specs {
+            if self.app.icon_cache.contains_key(&spec) || !self.requested_icons.insert(spec.clone())
+            {
+                continue;
+            }
+            backend::resolve_icon(&spec);
+        }
+    }
+
+    /// A clipboard read came back from its worker thread: insert it at the
+    /// caret and search, like any other query change.
+    pub fn on_paste(&mut self, generation: u64, text: Option<String>) {
+        let Some(text) = text else { return };
+        // The read outlives a dismissal; a paste must not land on the next show.
+        if generation != self.paste_generation || self.layer.is_none() {
+            return;
+        }
+
+        // A single-line field, so a pasted newline would otherwise shape a
+        // second line inside it.
+        let text: String = text
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
+        self.app.insert(text.trim());
+        self.redraw();
+        self.query_changed();
+    }
+
+    pub fn on_ipc(&mut self, command: ipc::Command) {
+        let now = Instant::now();
+        match command {
+            ipc::Command::Open => self.open(now),
+            ipc::Command::Close => self.dismiss(now),
+            ipc::Command::Toggle => {
+                if self.layer.is_some() {
+                    self.dismiss(now);
+                } else {
+                    self.open(now);
+                }
+            }
+            // answered by the connection thread, never forwarded
+            ipc::Command::Status => {}
+        }
+    }
+
+    pub fn redraw(&mut self) {
+        let now = Instant::now();
+        self.present(now);
+        let _ = self.conn.flush();
+    }
+
+    fn arm_timer(&mut self) {
+        if self.timer_registered {
+            return;
+        }
+        self.timer_registered = true;
+        let _ = self.loop_handle.insert_source(
+            Timer::from_duration(Duration::from_millis(app::CARET_BLINK_MS)),
+            |deadline, _, state: &mut Shell| state.on_timer(deadline),
+        );
+    }
+
+    /// The caret blink. Nothing else needs a timer: the entrance fade runs on
+    /// frame callbacks, and a hidden launcher arms neither.
+    fn on_timer(&mut self, now: Instant) -> TimeoutAction {
+        if self.layer.is_none() {
+            self.timer_registered = false;
+            return TimeoutAction::Drop;
+        }
+
+        if self.keyboard_focus && self.app.preedit.is_none() {
+            // A key press restarts the flash, as Qt's field does: stay on for a
+            // whole interval measured from the last edit instead of toggling a
+            // free-running timer, which could switch the caret off right after
+            // the user typed.
+            let phase = now.saturating_duration_since(self.app.caret_at);
+            let interval = Duration::from_millis(app::CARET_BLINK_MS);
+            if phase < interval {
+                self.app.caret_visible = true;
+                self.present_caret(now);
+                let _ = self.conn.flush();
+                return TimeoutAction::ToDuration(interval - phase);
+            }
+
+            self.app.caret_visible = !self.app.caret_visible;
+            self.present_caret(now);
+            let _ = self.conn.flush();
+        }
+
+        TimeoutAction::ToDuration(Duration::from_millis(app::CARET_BLINK_MS))
+    }
+
+    /// Whether the event loop should stop: set when the core dies or a
+    /// non-resident run dismisses.
+    pub fn is_done(&self) -> bool {
+        self.exit
+    }
+}
+
+impl OutputHandler for Shell {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.output_state
+    }
+
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+}
+
+impl ShmHandler for Shell {
+    fn shm_state(&mut self) -> &mut Shm {
+        &mut self.shm
+    }
+}
+
+impl BackgroundEffectHandler for Shell {
+    fn background_effect_state(&mut self) -> &mut BackgroundEffectState {
+        &mut self.effect_state
+    }
+
+    fn update_capabilities(&mut self) {}
+}
+
+impl ProvidesRegistryState for Shell {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+
+    registry_handlers![OutputState, SeatState];
+}
+
+delegate_registry!(Shell);
+delegate_dispatch2!(Shell);

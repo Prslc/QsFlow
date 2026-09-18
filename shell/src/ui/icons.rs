@@ -1,0 +1,200 @@
+use std::collections::HashMap;
+
+use tiny_skia::{Pixmap, PixmapPaint, PixmapRef, PremultipliedColorU8, Transform};
+
+pub struct IconCache {
+    /// (path, box size) → premultiplied RGBA bitmap. `None`: unreadable.
+    entries: HashMap<(String, u32), Option<Pixmap>>,
+}
+
+impl IconCache {
+    pub fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Drop every decoded icon. The decoded pixmaps are the large part of the
+    /// cache, and a hidden resident launcher has no business holding a previous
+    /// session's.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Rasterise `path` now, so a later draw cannot land the cost on the frame
+    /// that is being animated. Called when a payload arrives, which in resident
+    /// mode happens while the launcher is still hidden.
+    pub fn warm(&mut self, path: &str, size: u32) {
+        self.entries
+            .entry((path.to_string(), size))
+            .or_insert_with(|| render(path, size));
+    }
+
+    /// Draw the icon at `path` contained in a `size`×`size` box whose top-left
+    /// corner is `(x, y)`, at `opacity` (the entrance fade). `size` is in the
+    /// target's pixels.
+    pub fn draw(
+        &mut self,
+        target: &mut Pixmap,
+        path: &str,
+        x: f32,
+        y: f32,
+        size: u32,
+        opacity: f32,
+    ) {
+        let icon = self
+            .entries
+            .entry((path.to_string(), size))
+            .or_insert_with(|| render(path, size));
+
+        let Some(icon) = icon else { return };
+        target.draw_pixmap(
+            x.round() as i32,
+            y.round() as i32,
+            icon.as_ref(),
+            &PixmapPaint {
+                opacity: opacity.clamp(0.0, 1.0),
+                ..PixmapPaint::default()
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+/// Contain-fit `path` into a `size`×`size` box, transparent around it.
+fn render(path: &str, size: u32) -> Option<Pixmap> {
+    let data = std::fs::read(path).ok()?;
+    if path.to_ascii_lowercase().ends_with(".svg") {
+        render_svg(&data, size)
+    } else {
+        // Anything that is not an SVG is decoded as a PNG: that is what the
+        // theme's raster icons and every plugin directory hold.
+        let source = Pixmap::decode_png(&data).ok()?;
+        let mut target = Pixmap::new(size, size)?;
+        resample(source.as_ref(), &mut target);
+        Some(target)
+    }
+}
+
+/// Render the SVG into a `size`×`size` box, contained (aspect preserved).
+fn render_svg(data: &[u8], size: u32) -> Option<Pixmap> {
+    let tree = resvg::usvg::Tree::from_data(data, &resvg::usvg::Options::default()).ok()?;
+    let source = tree.size();
+    if source.width() <= 0.0 || source.height() <= 0.0 {
+        return None;
+    }
+
+    let mut pixmap = Pixmap::new(size, size)?;
+    let side = size as f32;
+    let scale = (side / source.width()).min(side / source.height());
+    let transform = Transform::from_scale(scale, scale).post_translate(
+        (side - source.width() * scale) / 2.0,
+        (side - source.height() * scale) / 2.0,
+    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    Some(pixmap)
+}
+
+/// Bilinear resize into the target box, which is what the GPU sampler the iced
+/// shell used did. Premultiplied channels interpolate correctly, so a
+/// transparent edge cannot bleed its colour.
+fn resample(source: PixmapRef, target: &mut Pixmap) {
+    let (sw, sh) = (source.width() as f32, source.height() as f32);
+    let (tw, th) = (target.width() as f32, target.height() as f32);
+    let scale = (tw / sw).min(th / sh);
+    let (offset_x, offset_y) = ((tw - sw * scale) / 2.0, (th - sh * scale) / 2.0);
+    let source_pixels = source.pixels();
+    let width = source.width() as i32;
+    let height = source.height() as i32;
+    let target_width = target.width();
+
+    for y in 0..target.height() {
+        for x in 0..target_width {
+            let fx = (x as f32 + 0.5 - offset_x) / scale - 0.5;
+            let fy = (y as f32 + 0.5 - offset_y) / scale - 0.5;
+            let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+            let (tx, ty) = (fx - fx.floor(), fy - fy.floor());
+
+            let mut channels = [0.0_f32; 4];
+            for (dx, dy, weight) in [
+                (0, 0, (1.0 - tx) * (1.0 - ty)),
+                (1, 0, tx * (1.0 - ty)),
+                (0, 1, (1.0 - tx) * ty),
+                (1, 1, tx * ty),
+            ] {
+                let (px, py) = (x0 + dx, y0 + dy);
+                if px < 0 || py < 0 || px >= width || py >= height || weight == 0.0 {
+                    continue;
+                }
+                let pixel = source_pixels[(py * width + px) as usize];
+                channels[0] += f32::from(pixel.red()) * weight;
+                channels[1] += f32::from(pixel.green()) * weight;
+                channels[2] += f32::from(pixel.blue()) * weight;
+                channels[3] += f32::from(pixel.alpha()) * weight;
+            }
+
+            // Premultiplied: a colour channel cannot exceed alpha, or
+            // `from_rgba` refuses the pixel outright.
+            let alpha = channels[3].round().clamp(0.0, 255.0) as u8;
+            let channel = |value: f32| value.round().clamp(0.0, f32::from(alpha)) as u8;
+            if let Some(pixel) = PremultipliedColorU8::from_rgba(
+                channel(channels[0]),
+                channel(channels[1]),
+                channel(channels[2]),
+                alpha,
+            ) {
+                target.pixels_mut()[(y * target_width + x) as usize] = pixel;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tiny_skia::Color;
+
+    /// A PNG on disk is the shape `render` accepts, so the test writes one: an
+    /// opaque red square.
+    fn red_png(name: &str) -> std::path::PathBuf {
+        let mut source = Pixmap::new(4, 4).unwrap();
+        source.fill(Color::from_rgba8(255, 0, 0, 255));
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, source.encode_png().unwrap()).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_png_icon_is_decoded_and_drawn_inside_its_box() {
+        let path = red_png("qsflow-icon-test.png");
+        let mut cache = IconCache::new();
+        let mut target = Pixmap::new(34, 34).unwrap();
+
+        cache.draw(&mut target, path.to_str().unwrap(), 2.0, 2.0, 30, 1.0);
+
+        let centre = target.pixel(17, 17).unwrap();
+        assert_eq!(centre.alpha(), 255, "the square is drawn");
+        assert_eq!((centre.red(), centre.green(), centre.blue()), (255, 0, 0));
+
+        // the box starts at (2,2) and is 30 wide: nothing outside it
+        assert_eq!(target.pixel(0, 0).unwrap().alpha(), 0, "outside, top-left");
+        assert_eq!(
+            target.pixel(33, 33).unwrap().alpha(),
+            0,
+            "outside, bottom-right"
+        );
+        assert!(target.pixel(15, 15).unwrap().alpha() > 0, "inside the box");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn an_unreadable_icon_draws_nothing_rather_than_failing() {
+        let mut cache = IconCache::new();
+        let mut target = Pixmap::new(30, 30).unwrap();
+        cache.draw(&mut target, "/nonexistent/icon.png", 0.0, 0.0, 30, 1.0);
+        assert!(target.pixels().iter().all(|p| p.alpha() == 0));
+    }
+}
