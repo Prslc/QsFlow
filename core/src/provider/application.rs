@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::LazyLock;
 
 use anyhow::Result;
-use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
+use freedesktop_desktop_entry::DesktopEntry;
 use gio::prelude::*;
 
 use crate::models::ResultItem;
@@ -384,10 +384,26 @@ fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
 /// action row from naming a group the launched file does not define).
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     let path = crate::system::desktop_action::find(id)?;
-    let locales = get_languages_from_env();
+    let locales = desktop_locales();
     let entry = DesktopEntry::from_path(&path, Some(&locales)).ok()?;
 
     Some(parse_meta(&entry, &locales))
+}
+
+/// The locale list gio itself localises `.desktop` keys with, straight from
+/// `g_get_language_names()` — so an action name cannot disagree with the
+/// `Name`/`Comment` gio hands back. The `.encoding` variants are dropped: the
+/// parser expects the `zh_CN` key shape, and `zh_CN.UTF-8` would match a bare
+/// `zh` before ever reaching `zh_CN`.
+fn desktop_locales() -> Vec<String> {
+    desktop_locales_from(gio::glib::language_names().into_iter().map(Into::into))
+}
+
+fn desktop_locales_from(names: impl IntoIterator<Item = String>) -> Vec<String> {
+    names
+        .into_iter()
+        .filter(|name| !name.contains('.'))
+        .collect()
 }
 
 #[cfg(test)]
@@ -602,5 +618,16 @@ mod tests {
     fn empty_query_matches_everything() {
         let m = meta(None, &[]);
         assert_eq!(s("Anything", None, Some(&m), "a.desktop", ""), 1);
+    }
+
+    #[test]
+    fn desktop_locales_drop_encoding_variants() {
+        // the shape g_get_language_names returns for zh_CN.UTF-8, with the bare
+        // language before an encoded key can match it
+        let names = ["zh_CN.UTF-8", "zh_CN", "zh.UTF-8", "zh", "C"].map(String::from);
+        assert_eq!(desktop_locales_from(names), ["zh_CN", "zh", "C"]);
+        // a @modifier survives, its encoded spelling does not
+        let names = ["sr_RS.UTF-8@latin", "sr_RS@latin", "sr@latin"].map(String::from);
+        assert_eq!(desktop_locales_from(names), ["sr_RS@latin", "sr@latin"]);
     }
 }
