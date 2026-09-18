@@ -11,12 +11,27 @@ use crate::system::icon::find_icon_path;
 
 /// Identity of one plugin as described by an external host's `list_plugins`.
 /// The host owns its own name/icon/ready hint; the core just relays them.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct HostMeta {
     pub id: String,
     pub name: String,
     pub icon: String,
     pub ready: String,
+}
+
+/// `(mtime, size)` of the resolved `command`, used to tell whether a cached
+/// host identity is still valid. `None` when the command cannot be resolved or
+/// stat'd, in which case the cache is never trusted.
+pub(crate) fn command_stamp(command: &str) -> Option<(u64, u64)> {
+    let path = resolve_command(command);
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((mtime, meta.len()))
 }
 
 /// A plugin whose results come from an external JSON-RPC subprocess declared

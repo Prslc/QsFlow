@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 
 use crate::models::ResultItem;
+use crate::provider::external::HostMeta;
 use crate::system::icon::find_icon_path;
 
 const DEFAULT_CONFIG: &str = include_str!("../default-plugins.toml");
@@ -79,6 +80,86 @@ type PluginMap = HashMap<&'static str, Box<dyn Plugin>>;
 struct Entry {
     plugin: Box<dyn Plugin>,
     keyword: String,
+    /// Set while an external plugin still runs on its placeholder identity:
+    /// the host has not been asked for its name/icon yet, so startup does not
+    /// fork it. `resolve_pending` clears this on first use.
+    pending: Option<PendingHost>,
+}
+
+#[derive(Clone)]
+struct PendingHost {
+    id: String,
+    command: String,
+}
+
+/// How many external hosts may be forked at once while resolving identities.
+/// Each is a fresh interpreter, so this is the memory ceiling of the walk.
+const DISCOVERY_CONCURRENCY: usize = 2;
+
+/// A discovered host identity, keyed by the configured command and stamped
+/// with the file's `(mtime, size)` so an edited plugin is re-discovered while
+/// an unchanged one is never forked. This is what lets a later start build the
+/// registry without touching a single host.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct HostCache {
+    hosts: std::collections::HashMap<String, CachedHost>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedHost {
+    mtime: u64,
+    size: u64,
+    metas: Vec<HostMeta>,
+}
+
+impl HostCache {
+    fn path() -> Option<std::path::PathBuf> {
+        dirs::cache_dir().map(|dir| dir.join("qsflow/plugin-hosts.json"))
+    }
+
+    fn load() -> Self {
+        let Some(path) = Self::path() else {
+            return Self::default();
+        };
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    /// The cached identities for `command`, only while the file it names is
+    /// unchanged. `None` means the host must be asked.
+    fn fresh(&self, command: &str) -> Option<Vec<HostMeta>> {
+        let (mtime, size) = crate::provider::external::command_stamp(command)?;
+        let cached = self.hosts.get(command)?;
+        (cached.mtime == mtime && cached.size == size).then(|| cached.metas.clone())
+    }
+
+    fn record(&mut self, command: &str, metas: &[HostMeta]) {
+        let Some((mtime, size)) = crate::provider::external::command_stamp(command) else {
+            return;
+        };
+        self.hosts.insert(
+            command.to_string(),
+            CachedHost {
+                mtime,
+                size,
+                metas: metas.to_vec(),
+            },
+        );
+    }
+
+    fn save(&self) {
+        let Some(path) = Self::path() else {
+            return;
+        };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(text) = serde_json::to_string(self) {
+            let _ = std::fs::write(path, text);
+        }
+    }
 }
 
 static CONFIG: tokio::sync::RwLock<Config> = tokio::sync::RwLock::const_new(Config {
@@ -109,44 +190,20 @@ pub async fn reload() {
 
 async fn do_reload() {
     let new_config = load_or_default();
-    let entries = build_entries(&new_config).await;
+    let entries = build_entries(&new_config);
     *CONFIG.write().await = new_config;
     *REGISTRY.write().await = entries;
     REGISTRY_READY.store(true, Ordering::Release);
 }
 
-/// Build registry entries from a config. Pure w.r.t. shared state: external
-/// hosts are asked once per unique command, then reused across entries that
-/// share it.
-async fn build_entries(config: &Config) -> Vec<Entry> {
+/// Build registry entries from a config. External hosts are never contacted
+/// here: a plugin with a cached, still-fresh identity is built from it, and one
+/// without starts on a placeholder that [`resolve_pending`] settles on first
+/// use. So startup forks nothing, however many external plugins are declared.
+fn build_entries(config: &Config) -> Vec<Entry> {
     let mut map: PluginMap = crate::provider::plugin_map();
     let mut entries = Vec::new();
-
-    // Ask every distinct host for its identity once, all at the same time: they
-    // are separate processes, and a sequential walk made the cold start the sum
-    // of them — and, when one stalled, the whole registry waited it out while
-    // holding `INIT`, which blocks every search and `?` behind it.
-    let mut commands: Vec<String> = config
-        .plugins
-        .iter()
-        .filter(|p| p.enable && !map.contains_key(p.id.as_str()))
-        .filter_map(|p| p.command.clone())
-        .collect();
-    commands.sort();
-    commands.dedup();
-
-    let mut discovered: HashMap<String, Vec<crate::provider::external::HostMeta>> =
-        HashMap::default();
-    let mut hosts = tokio::task::JoinSet::new();
-    for command in commands {
-        hosts.spawn(async move {
-            let metas = crate::provider::external::discover(&command).await;
-            (command, metas)
-        });
-    }
-    while let Some(Ok((command, metas))) = hosts.join_next().await {
-        discovered.insert(command, metas);
-    }
+    let cache = HostCache::load();
 
     for p in &config.plugins {
         if !p.enable {
@@ -156,16 +213,20 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
             entries.push(Entry {
                 plugin,
                 keyword: p.keyword.clone(),
+                pending: None,
             });
             continue;
         }
         let Some(command) = &p.command else {
             continue; // unknown id without an external host -> skipped
         };
-        let meta = discovered
-            .get(command)
-            .and_then(|hosts| hosts.iter().find(|m| m.id == p.id))
-            .cloned();
+        let meta = cache
+            .fresh(command)
+            .and_then(|metas| metas.into_iter().find(|m| m.id == p.id));
+        let pending = meta.is_none().then(|| PendingHost {
+            id: p.id.clone(),
+            command: command.clone(),
+        });
         entries.push(Entry {
             plugin: Box::new(crate::provider::external::External::new(
                 &p.id,
@@ -173,10 +234,91 @@ async fn build_entries(config: &Config) -> Vec<Entry> {
                 meta,
             )),
             keyword: p.keyword.clone(),
+            pending,
         });
     }
 
     entries
+}
+
+/// Ask the hosts of the external plugins still on their placeholder identity
+/// for their name/icon, bounded to [`DISCOVERY_CONCURRENCY`] at a time so the
+/// fan-out cannot fork every interpreter at once, and cache the answers. A
+/// `keyword` limits the walk to the plugin a search is about to use; `None`
+/// resolves them all (the `?` help table lists every name).
+async fn resolve_pending(keyword: Option<&str>) {
+    let _guard = INIT.lock().await;
+    let pending: Vec<(usize, PendingHost)> = {
+        let reg = REGISTRY.read().await;
+        reg.iter()
+            .enumerate()
+            .filter(|(_, entry)| keyword.is_none_or(|kw| entry.keyword == kw))
+            .filter_map(|(index, entry)| entry.pending.clone().map(|host| (index, host)))
+            .collect()
+    };
+    if pending.is_empty() {
+        return;
+    }
+
+    let mut commands: Vec<String> = pending
+        .iter()
+        .map(|(_, host)| host.command.clone())
+        .collect();
+    commands.sort();
+    commands.dedup();
+
+    // A command whose cached identity is still fresh is answered from disk;
+    // only the rest are forked.
+    let mut cache = HostCache::load();
+    let mut discovered: HashMap<String, Vec<HostMeta>> = HashMap::default();
+    let mut stale: Vec<String> = Vec::new();
+    for command in commands {
+        match cache.fresh(&command) {
+            Some(metas) => {
+                discovered.insert(command, metas);
+            }
+            None => stale.push(command),
+        }
+    }
+
+    if !stale.is_empty() {
+        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(DISCOVERY_CONCURRENCY));
+        let mut hosts = tokio::task::JoinSet::new();
+        for command in stale {
+            let permits = permits.clone();
+            hosts.spawn(async move {
+                let _permit = permits.acquire_owned().await;
+                let metas = crate::provider::external::discover(&command).await;
+                (command, metas)
+            });
+        }
+        while let Some(Ok((command, metas))) = hosts.join_next().await {
+            // An empty answer is a missing or stalled host, not an identity:
+            // keep it out of the cache so the next use retries.
+            if !metas.is_empty() {
+                cache.record(&command, &metas);
+            }
+            discovered.insert(command, metas);
+        }
+        cache.save();
+    }
+
+    let mut reg = REGISTRY.write().await;
+    for (index, host) in pending {
+        let Some(meta) = discovered
+            .get(&host.command)
+            .and_then(|metas| metas.iter().find(|m| m.id == host.id))
+            .cloned()
+        else {
+            continue; // leave the placeholder; a later use retries
+        };
+        reg[index].plugin = Box::new(crate::provider::external::External::new(
+            &host.id,
+            host.command,
+            Some(meta),
+        ));
+        reg[index].pending = None;
+    }
 }
 
 fn load_or_default() -> Config {
@@ -246,6 +388,7 @@ pub async fn print_list() {
 pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
     let map = crate::provider::plugin_map();
     ensure_loaded().await;
+    resolve_pending(None).await;
     let config = CONFIG.read().await;
     let reg = REGISTRY.read().await;
     config
@@ -303,6 +446,15 @@ pub async fn forget_row(on_click: &str) -> bool {
 
 pub async fn dispatch(input: &str) -> Vec<ResultItem> {
     ensure_loaded().await;
+    // A search that names a keyword only wakes that plugin's host; `?` lists
+    // every name, so it resolves them all. A plain query wakes none.
+    if input.trim() == "?" {
+        resolve_pending(None).await;
+    } else if let Some((keyword, _)) = input.split_once(' ')
+        && !keyword.trim().is_empty()
+    {
+        resolve_pending(Some(keyword.trim())).await;
+    }
     let reg = REGISTRY.read().await;
 
     if input.trim() == "?" {
@@ -476,5 +628,48 @@ mod tests {
         let merged = merge_config(base, user);
         assert_eq!(merged.plugins[0].command.as_deref(), Some("ext-host"));
         assert_eq!(merged.plugins[0].keyword, "gh");
+    }
+
+    #[test]
+    fn an_external_plugin_starts_on_a_placeholder_without_a_host_call() {
+        let config = parse(
+            r#"
+            [[plugins]]
+            id = "ext"
+            keyword = "e"
+            command = "/nonexistent/qsflow-test-host"
+            "#,
+        );
+        let entries = build_entries(&config);
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].pending.is_some(), "the host is not asked yet");
+        // the placeholder identity is the configured id
+        assert_eq!(entries[0].plugin.meta().name, "ext");
+    }
+
+    #[test]
+    fn the_host_identity_cache_goes_stale_when_the_command_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cmd = dir.path().join("host");
+        std::fs::write(&cmd, b"x").unwrap();
+        let command = cmd.display().to_string();
+
+        let mut cache = HostCache::default();
+        let metas = vec![HostMeta {
+            id: "ext".into(),
+            name: "Ext".into(),
+            icon: String::new(),
+            ready: String::new(),
+        }];
+        cache.record(&command, &metas);
+        assert!(cache.fresh(&command).is_some());
+
+        // a changed file is a stale identity, so the host is asked again
+        std::fs::write(&cmd, b"xy").unwrap();
+        assert!(cache.fresh(&command).is_none());
+
+        // a command that no longer exists is never fresh
+        std::fs::remove_file(&cmd).unwrap();
+        assert!(cache.fresh(&command).is_none());
     }
 }
