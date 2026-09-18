@@ -191,6 +191,25 @@ mod tests {
     }
 
     #[test]
+    fn an_svg_icon_is_rendered_without_the_text_feature() {
+        // `resvg` is built without `text`/`system-fonts`; path-only SVGs, which
+        // is what every theme and plugin icon is, must still render.
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
+        let path = std::env::temp_dir().join("qsflow-icon-test.svg");
+        std::fs::write(&path, svg).unwrap();
+
+        let mut cache = IconCache::new();
+        let mut target = Pixmap::new(34, 34).unwrap();
+        cache.draw(&mut target, path.to_str().unwrap(), 2.0, 2.0, 30, 1.0);
+
+        let centre = target.pixel(17, 17).unwrap();
+        assert_eq!(centre.alpha(), 255, "the square is drawn");
+        assert_eq!((centre.red(), centre.green(), centre.blue()), (255, 0, 0));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn an_unreadable_icon_draws_nothing_rather_than_failing() {
         let mut cache = IconCache::new();
         let mut target = Pixmap::new(30, 30).unwrap();
