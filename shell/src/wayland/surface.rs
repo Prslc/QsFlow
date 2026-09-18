@@ -63,6 +63,10 @@ impl Shell {
         self.blur_sent = None;
         self.ime_cursor_sent = None;
         self.first_frame_logged = false;
+        // The previous surface may have left a callback outstanding; nothing
+        // will answer it, so the new show starts unpaced.
+        self.frame_pending = false;
+        self.needs_present = false;
         // A paste worker from the previous show must not land on this one.
         self.paste_generation = self.paste_generation.wrapping_add(1);
 
@@ -116,6 +120,8 @@ impl Shell {
         // Dropping the layer surface destroys it: there is no hide/unmap verb.
         self.layer = None;
         self.configured = false;
+        self.frame_pending = false;
+        self.needs_present = false;
         // `destroy`, not a plain drop: wayland-rs only removes an object from
         // the connection when its destructor request is sent, so dropping the
         // proxy would leak one per toggle.
@@ -212,6 +218,7 @@ impl Shell {
         if !self.ensure_buffers(physical_w, physical_h) {
             return;
         }
+        self.needs_present = false;
         // The fade begins on the first frame that is actually drawn.
         self.app.start_entrance(now);
         {
@@ -231,11 +238,11 @@ impl Shell {
         // commit that should carry it, or the first frame goes unblurred.
         self.sync_blur();
 
-        self.blit(now);
+        self.blit();
     }
 
     /// Copy the drawn frame into a shared-memory buffer and commit it.
-    fn blit(&mut self, now: Instant) {
+    fn blit(&mut self) {
         if !self.configured {
             return;
         }
@@ -284,11 +291,12 @@ impl Shell {
         // should pace: niri takes the pending callback while processing the
         // commit, so a request sent after it only fires on the next commit —
         // which, on an idle launcher, is the next caret blink 500ms later, and
-        // the entrance fade then never plays.
-        if self.app.animating(now) {
-            let frame_surface = surface.clone();
-            surface.frame(&self.qh, FrameCallbackData(frame_surface));
-        }
+        // the entrance fade then never plays. It is requested on every commit,
+        // not only during an animation, so the next `redraw` is coalesced into
+        // it instead of presenting a second buffer in the same frame.
+        let frame_surface = surface.clone();
+        surface.frame(&self.qh, FrameCallbackData(frame_surface));
+        self.frame_pending = true;
 
         if buffer.attach_to(&surface).is_err() {
             return;
@@ -354,7 +362,7 @@ impl Shell {
         if let Some(pixmap) = self.pixmap.as_mut() {
             render::draw_caret(pixmap, &self.app, &mut self.text, now);
         }
-        self.blit(Instant::now());
+        self.blit();
     }
 
     /// Save the pixels the caret covers: the frame without it, in a rect just
@@ -528,7 +536,8 @@ impl CompositorHandler for Shell {
         _surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
-        self.present(Instant::now());
+        self.frame_pending = false;
+        self.pump();
     }
 
     fn surface_enter(

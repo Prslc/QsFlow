@@ -367,8 +367,7 @@ impl PointerHandler for Shell {
                         .clear_hit(event.position.0 as f32, event.position.1 as f32)
                     {
                         self.app.clear_query();
-                        self.present(now);
-                        let _ = self.conn.flush();
+                        self.redraw();
                         self.query_changed();
                         return;
                     }
@@ -421,8 +420,7 @@ impl PointerHandler for Shell {
         }
 
         if redraw {
-            self.present(now);
-            let _ = self.conn.flush();
+            self.redraw();
         }
     }
 }

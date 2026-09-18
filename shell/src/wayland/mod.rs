@@ -107,6 +107,12 @@ pub struct Shell {
     last_present: Option<Instant>,
     first_frame_logged: bool,
     timer_registered: bool,
+    /// Whether a `wl_surface.frame` callback is outstanding. Presents are paced
+    /// to it — at most one commit per compositor frame — so a burst of input
+    /// events cannot leave several buffers in flight and grow the shm pool.
+    frame_pending: bool,
+    /// A redraw was asked for while a frame callback was outstanding.
+    needs_present: bool,
     exit: bool,
 }
 
@@ -174,6 +180,8 @@ impl Shell {
             last_present: None,
             first_frame_logged: false,
             timer_registered: false,
+            frame_pending: false,
+            needs_present: false,
             exit: false,
         })
     }
@@ -282,10 +290,28 @@ impl Shell {
         }
     }
 
+    /// Ask for a redraw. The commit is paced to the compositor's frame
+    /// callback, so a burst of events (a key press plus its release, the
+    /// reflow frames, a payload) collapses into one commit per frame instead of
+    /// one per event; without that the shm pool doubled under every burst and
+    /// never shrank (measured: hundreds of MB while typing).
     pub fn redraw(&mut self) {
-        let now = Instant::now();
-        self.present(now);
+        self.needs_present = true;
+        self.pump();
         let _ = self.conn.flush();
+    }
+
+    /// Present if nothing is outstanding: a frame callback pending means the
+    /// compositor has not returned the previous frame yet.
+    fn pump(&mut self) {
+        if self.frame_pending || self.layer.is_none() || !self.configured {
+            return;
+        }
+        let now = Instant::now();
+        if !self.needs_present && !self.app.animating(now) {
+            return;
+        }
+        self.present(now);
     }
 
     fn arm_timer(&mut self) {
