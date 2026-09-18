@@ -10,8 +10,8 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `qsflow`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，把
-[Slint](https://slint.dev) 软件渲染器产出的帧通过 `wl_shm` 交给混成器，因此不需要 GPU 栈，也不需要 QML 运行时；内核负责插件注册表、JSON-RPC 协议与使用历史库。
+QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `qsflow`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，用
+[tiny-skia](https://github.com/RazrFalcon/tiny-skia) 把卡片、列表与动画直接光栅化进 `wl_shm` 缓冲，因此不需要 GPU 栈，也不依赖任何 GUI 工具包；内核负责插件注册表、JSON-RPC 协议与使用历史库。
 
 ## 截图
 
@@ -39,7 +39,7 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 ## 环境要求
 
 - 支持 `wlr-layer-shell` 协议的 **Wayland** 混成器
-- Rust 工具链（前后端都是 Rust，Slint 以普通 crate 引入）
+- Rust 工具链（前后端都是 Rust，壳只依赖 tiny-skia/cosmic-text 等普通 crate）
 - 覆盖中日文输入的字体（如 Source Han Sans）
 - Firefox（可选，用于书签和历史搜索）
 - [cliphist](https://github.com/sentriz/cliphist)（可选，用于剪贴板历史）
@@ -158,7 +158,9 @@ keyword = "s"
 ## 致谢
 
 - **[Wox](https://github.com/wox-launcher/wox)** — 本启动器的设计灵感来源。
-- **[Slint](https://slint.dev)** — 声明式 UI 工具包：卡片的布局、列表与动画都是 `.slint` 代码，由 Slint 软件渲染器绘制。
+- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** — 软件光栅化器，壳用它把卡片、列表与动画画进 `wl_shm` 缓冲。
+- **[cosmic-text](https://github.com/pop-os/cosmic-text)** — 文本整形与字形栅格化，用于输入框与结果行。
+- **[resvg](https://github.com/RazrFalcon/resvg)** — SVG 图标栅格化。
 - **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — 覆盖层所需的 Wayland 客户端管线。
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — 高质量 SVG 图标主题。
 - **[tokio](https://tokio.rs)** — Rust 异步运行时。

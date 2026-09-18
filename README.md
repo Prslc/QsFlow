@@ -14,9 +14,10 @@ QsFlow is a Wayland-native application launcher and quick-search tool for Linux.
 Type to search installed apps, Firefox bookmarks, web suggestions, and
 inline math — all from a single floating overlay. It ships as one Rust binary,
 `qsflow`, which runs as the overlay shell or, with `--core`, as the backend
-service. The shell owns a `wlr-layer-shell` surface and presents
-[Slint](https://slint.dev)'s software-rendered frames through `wl_shm`, so the
-frontend needs no GPU stack and no QML runtime; the core owns the plugin
+service. The shell owns a `wlr-layer-shell` surface and rasterises its own card,
+list and animations with
+[tiny-skia](https://github.com/RazrFalcon/tiny-skia) into a `wl_shm` buffer, so
+the frontend needs no GPU stack and no GUI toolkit; the core owns the plugin
 registry, the JSON-RPC protocol and the usage database.
 
 ## Screenshots
@@ -48,7 +49,7 @@ registry, the JSON-RPC protocol and the usage database.
 ## Requirements
 
 - **Wayland** compositor with `wlr-layer-shell` support
-- Rust toolchain (`cargo build --release` builds the whole workspace; Slint ships as ordinary crates)
+- Rust toolchain (`cargo build --release` builds the whole workspace; the shell is plain tiny-skia/cosmic-text crates)
 - A font with CJK coverage for Chinese/Japanese queries (e.g. Source Han Sans)
 - Firefox (optional, for bookmarks / history)
 - [cliphist](https://github.com/sentriz/cliphist) (optional, for clipboard history)
@@ -182,7 +183,9 @@ full protocol spec and the result-item (schema) contract are in
 ## Credit
 
 - **[Wox](https://github.com/wox-launcher/wox)** — the launcher concept is inspired by this project.
-- **[Slint](https://github.com/slint-ui/slint)** — declarative UI toolkit; the launcher's card, list and animations are `.slint` code rendered by Slint's software renderer.
+- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** — the software rasteriser the shell draws its card, list and animations into a `wl_shm` buffer with.
+- **[cosmic-text](https://github.com/pop-os/cosmic-text)** — text shaping and glyph rasterisation for the query and the result rows.
+- **[resvg](https://github.com/RazrFalcon/resvg)** — SVG icon rasterisation.
 - **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland client plumbing for the layer-shell overlay.
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
 - **[tokio](https://tokio.rs)** — async runtime driving the backend.
