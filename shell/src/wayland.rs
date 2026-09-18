@@ -193,11 +193,11 @@ pub fn run(ui: LauncherWindow, adapter: Rc<Adapter>) -> anyhow::Result<()> {
     // The check runs before the core is spawned, so a second instance does not
     // briefly start one.
     if ipc::client("status").is_ok() {
-        anyhow::bail!("another qsflow-shell is already listening on the socket");
+        anyhow::bail!("another qsflow is already listening on the socket");
     }
     ipc::serve(ipc_tx).context("bind the IPC socket")?;
 
-    let session = Session::spawn(core_tx).context("spawn qsflow-core")?;
+    let session = Session::spawn(core_tx).context("spawn the core")?;
 
     let resident = std::env::var("QSFLOW_RESIDENT").is_ok_and(|value| value == "1");
     let reduce_motion = std::env::var("QSFLOW_REDUCED_MOTION").is_ok_and(|value| value == "1");
@@ -359,7 +359,7 @@ impl Shell {
                 }
             }
             Event::CoreExited => {
-                log::error!("qsflow-core exited");
+                log::error!("the core exited");
                 self.app.clear(&self.ui);
                 self.exit = true;
             }

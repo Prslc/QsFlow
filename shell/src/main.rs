@@ -1,7 +1,9 @@
-//! `qsflow-shell` — the `QsFlow` launcher front end.
+//! `qsflow` — the QsFlow launcher and its core backend in one binary.
 //!
-//! With no arguments it runs the shell (resident when `QSFLOW_RESIDENT=1`); any
-//! other argument is an IPC verb sent to a running instance.
+//! No arguments runs the shell (resident when `QSFLOW_RESIDENT=1`); the IPC
+//! verbs `open`/`close`/`toggle`/`status` talk to a running instance; `--core`
+//! (or being invoked as `qsflow-core`) serves the JSON-RPC core on
+//! stdin/stdout.
 
 mod app;
 mod ime;
@@ -13,10 +15,27 @@ mod wayland;
 slint::include_modules!();
 
 fn main() -> anyhow::Result<()> {
-    if let Some(verb) = std::env::args().nth(1) {
+    let mut args = std::env::args();
+    let invoked_as = args.next().unwrap_or_default();
+    let rest: Vec<String> = args.collect();
+
+    // The shell re-execs this binary with `--core`; a `qsflow-core` symlink
+    // keeps the documented stdin/JSON-RPC entry point working.
+    let as_core = std::path::Path::new(&invoked_as)
+        .file_name()
+        .is_some_and(|name| name == "qsflow-core");
+    if as_core
+        || rest
+            .iter()
+            .any(|arg| arg == "--core" || arg == "--list-plugins")
+    {
+        return qsflow_core::run();
+    }
+
+    if let Some(verb) = rest.first() {
         match verb.as_str() {
             "open" | "close" | "toggle" | "status" => {
-                return ipc::client(&verb).map_err(|err| anyhow::anyhow!("{err}"));
+                return ipc::client(verb).map_err(|err| anyhow::anyhow!("{err}"));
             }
             other => {
                 eprintln!("unknown argument: {other}");

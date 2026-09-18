@@ -1,5 +1,5 @@
-//! The `qsflow-core` child: newline-delimited JSON over its stdio, plus the
-//! JSON-RPC request/response pair the `forget` verb needs.
+//! The core child (this binary re-run with `--core`): newline-delimited JSON
+//! over its stdio, plus the JSON-RPC request/response pair `forget` needs.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -162,7 +162,9 @@ pub struct Session {
 
 impl Session {
     pub fn spawn(tx: EventSender) -> std::io::Result<Self> {
-        let mut child = Command::new("qsflow-core")
+        // Re-exec this same binary in core mode; there is no second file.
+        let mut child = Command::new(std::env::current_exe()?)
+            .arg("--core")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Inherited so the core's warnings (a host that overran, a plugin

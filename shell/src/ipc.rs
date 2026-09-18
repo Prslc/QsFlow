@@ -1,6 +1,6 @@
-//! The unix socket behind `qsflow-shell open|close|toggle|status`, which is also
-//! the single-instance guard: a live listener means another shell owns the
-//! surface, so a second daemon refuses to start.
+//! The unix socket behind `qsflow open|close|toggle|status`, which is also the
+//! single-instance guard: a live listener means another shell owns the surface,
+//! so a second daemon refuses to start.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -22,7 +22,7 @@ pub type CommandSender = calloop::channel::Sender<Command>;
 
 pub fn socket_path() -> PathBuf {
     let base = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
-    base.join("qsflow-shell.sock")
+    base.join("qsflow.sock")
 }
 
 fn send_verb(verb: &str) -> std::io::Result<String> {

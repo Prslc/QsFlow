@@ -3,7 +3,13 @@ name = "qsflow-shell"
 version = "0.1.0"
 edition = "2024"
 
+# One artifact: the shell includes the core and re-runs itself with `--core`.
+[[bin]]
+name = "qsflow"
+path = "src/main.rs"
+
 [dependencies]
+qsflow-core = { path = "../core" }
 # The `slint` facade exposes neither the image decoders nor an IME entry point;
 # both live in the runtime crate, so the shell takes a direct edge on it. Exact
 # pin: the types must be the same crate instance the facade builds against.
@@ -30,6 +36,3 @@ xkbcommon = "0.8"
 
 [build-dependencies]
 slint-build = "1.18.0"
-
-[profile.release]
-opt-level = 3

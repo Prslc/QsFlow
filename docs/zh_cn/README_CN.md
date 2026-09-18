@@ -10,9 +10,8 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。后端为 Rust 异步实现（`qsflow-core`），前端是 Rust 覆盖层（`qsflow-shell`），界面用
-[Slint](https://slint.dev) 声明式编写：壳自己持有 `wlr-layer-shell` 表面，把 Slint
-软件渲染器产出的帧通过 `wl_shm` 交给混成器，因此不需要 GPU 栈，也不需要 QML 运行时。
+QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `qsflow`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，把
+[Slint](https://slint.dev) 软件渲染器产出的帧通过 `wl_shm` 交给混成器，因此不需要 GPU 栈，也不需要 QML 运行时；内核负责插件注册表、JSON-RPC 协议与使用历史库。
 
 ## 截图
 
@@ -49,16 +48,15 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ```bash
 git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow/core && cargo build --release
-cd ../shell && cargo build --release
-ln -s "$(pwd)/../core/target/release/qsflow-core" ~/.local/bin/qsflow-core
-ln -s "$(pwd)/target/release/qsflow-shell" ~/.local/bin/qsflow-shell
+cd QsFlow
+cargo build --release
+ln -s "$(pwd)/target/release/qsflow" ~/.local/bin/qsflow
 ```
 
 然后在混成器配置中绑定快捷键（如 `Alt+Space`）来启动：
 
 ```bash
-qsflow-shell
+qsflow
 ```
 
 启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
@@ -66,26 +64,26 @@ qsflow-shell
 
 ## 常驻模式（可选 —— 零冷启动）
 
-默认每次按热键都会重新拉起壳与 Rust 内核。要让启动器即刻弹出，让一个常驻的
-壳+内核保持存活，通过 unix socket（`$XDG_RUNTIME_DIR/qsflow-shell.sock`）切换表面：
+默认每次按热键都会重新拉起壳与 Rust 内核。要让启动器即刻弹出，让一个常驻进程
+保持存活，通过 unix socket（`$XDG_RUNTIME_DIR/qsflow.sock`）切换表面：
 
 ```ini
 # ~/.config/systemd/user/qsflow-launcher.service
 [Unit]
-Description=QsFlow launcher (resident qsflow-shell + core)
+Description=QsFlow launcher (resident)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/you/.local/bin/qsflow-shell
-Restart=on-failure
+ExecStart=/home/you/.local/bin/qsflow
+Restart=always
 RestartSec=2
-# qsflow-core 与 qsflow 软链都在 ~/.local/bin；由下面的 PATH（该目录须保持第一）解析
+# 让启动器执行的命令也能看到 ~/.local/bin
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY 由图形会话导入；这里只设 XDG_RUNTIME_DIR（uid 无关的 %t）
 Environment=XDG_RUNTIME_DIR=%t
-# 常驻模式：隐藏启动，用 `ipc call launcher toggle` 切换
+# 常驻模式：隐藏启动，用 `qsflow toggle` 切换
 Environment=QSFLOW_RESIDENT=1
 
 [Install]
@@ -95,12 +93,12 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now qsflow-launcher
 # niri 热键 —— 切换而非重新拉起：
-#   Alt+Space { spawn-sh "qsflow-shell toggle"; }
+#   Alt+Space { spawn-sh "qsflow toggle"; }
 ```
 
 动词为 `open` / `close` / `toggle` / `status`，都发给常驻实例持有的这个 socket；
 `status` 打印 `visible` 或 `hidden`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、
-关闭即隐藏）；不带该变量时，直接 `qsflow-shell` 保持旧行为——启动即弹出、关闭即退出，
+关闭即隐藏）；不带该变量时，直接 `qsflow` 保持旧行为——启动即弹出、关闭即退出，
 因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
 qsflow-launcher` 并还原绑定的启动方式。
 
@@ -152,7 +150,7 @@ keyword = "s"
 
 ## JSON-RPC 2.0
 
-`qsflow-core` 在同一条 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
+`qsflow --core` 在 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
 与启动器文本协议混用：方法 `search`、`top`、`select`、`forget`、`run`、`resolve_icon`、
 `list_plugins`、`theme`、`ping`。完整协议与结果项 schema 见
 [zh_cn/jsonrpc.md](zh_cn/jsonrpc.md)。

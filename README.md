@@ -4,7 +4,7 @@
 
 <img src="images/application_default.png" alt="App Icon" width="150" height="150"><br>
 
-English | [Chinese](docs/README_CN.md)
+English | [Chinese](docs/zh_cn/README_CN.md)
 
 </div>
 
@@ -12,11 +12,12 @@ English | [Chinese](docs/README_CN.md)
 
 QsFlow is a Wayland-native application launcher and quick-search tool for Linux.
 Type to search installed apps, Firefox bookmarks, web suggestions, and
-inline math — all from a single floating overlay. Built as a Rust backend
-(`qsflow-core`) plus a Rust overlay shell (`qsflow-shell`) whose interface is
-written in [Slint](https://slint.dev); the shell owns a `wlr-layer-shell`
-surface and presents Slint's software-rendered frames through `wl_shm`, so the
-frontend needs no GPU stack and no QML runtime.
+inline math — all from a single floating overlay. It ships as one Rust binary,
+`qsflow`, which runs as the overlay shell or, with `--core`, as the backend
+service. The shell owns a `wlr-layer-shell` surface and presents
+[Slint](https://slint.dev)'s software-rendered frames through `wl_shm`, so the
+frontend needs no GPU stack and no QML runtime; the core owns the plugin
+registry, the JSON-RPC protocol and the usage database.
 
 ## Screenshots
 
@@ -47,7 +48,7 @@ frontend needs no GPU stack and no QML runtime.
 ## Requirements
 
 - **Wayland** compositor with `wlr-layer-shell` support
-- Rust toolchain (both parts are Rust; Slint ships as ordinary crates)
+- Rust toolchain (`cargo build --release` builds the whole workspace; Slint ships as ordinary crates)
 - A font with CJK coverage for Chinese/Japanese queries (e.g. Source Han Sans)
 - Firefox (optional, for bookmarks / history)
 - [cliphist](https://github.com/sentriz/cliphist) (optional, for clipboard history)
@@ -56,16 +57,15 @@ frontend needs no GPU stack and no QML runtime.
 
 ```bash
 git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow/core && cargo build --release
-cd ../shell && cargo build --release
-ln -s "$(pwd)/../core/target/release/qsflow-core" ~/.local/bin/qsflow-core
-ln -s "$(pwd)/target/release/qsflow-shell" ~/.local/bin/qsflow-shell
+cd QsFlow
+cargo build --release
+ln -s "$(pwd)/target/release/qsflow" ~/.local/bin/qsflow
 ```
 
 Bind a hotkey (e.g. Alt+Space) to launch the shell:
 
 ```bash
-qsflow-shell
+qsflow
 ```
 
 The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
@@ -75,30 +75,29 @@ resident mode (below) the hotkey toggles the surface and dismiss hides it.
 ## Resident mode (optional — zero cold-start)
 
 By default each hotkey press re-spawns the shell and its Rust core. To pop the
-launcher up instantly, keep one resident shell + core alive and toggle the
-surface over a unix socket (`$XDG_RUNTIME_DIR/qsflow-shell.sock`):
+launcher up instantly, keep one resident process alive and toggle the surface
+over a unix socket (`$XDG_RUNTIME_DIR/qsflow.sock`):
 
 ```ini
 # ~/.config/systemd/user/qsflow-launcher.service
 [Unit]
-Description=QsFlow launcher (resident qsflow-shell + core)
+Description=QsFlow launcher (resident)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/you/.local/bin/qsflow-shell
+ExecStart=/home/you/.local/bin/qsflow
 # the shell exits 0 on a core crash, which is a *clean* exit — never "on-failure"
 Restart=always
 RestartSec=2
-# qsflow-core and the qsflow-shell symlink both live in ~/.local/bin; the PATH
-# below (that dir MUST stay first) resolves the core
+# so commands the launcher runs see ~/.local/bin too
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY come from the graphical session (imported by the
 # compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
 # no hardcoded display number or uid.
 Environment=XDG_RUNTIME_DIR=%t
-# resident mode: start hidden, toggle via `ipc call launcher toggle`
+# resident mode: start hidden, toggle via `qsflow toggle`
 Environment=QSFLOW_RESIDENT=1
 
 [Install]
@@ -108,13 +107,13 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now qsflow-launcher
 # niri hotkey — toggle instead of spawn:
-#   Alt+Space { spawn-sh "qsflow-shell toggle"; }
+#   Alt+Space { spawn-sh "qsflow toggle"; }
 ```
 
 The verbs are `open` / `close` / `toggle` / `status`, spoken to the socket the
 resident instance owns; `status` prints `visible` or `hidden`.
 `QSFLOW_RESIDENT=1` selects resident mode (start hidden, dismiss hides); without
-it a plain `qsflow-shell` shows on launch and quits on dismiss, so the manual/dev
+it a plain `qsflow` shows on launch and quits on dismiss, so the manual/dev
 path is independent of the systemd service. To revert,
 `systemctl --user disable --now qsflow-launcher` and restore the
 spawn-per-hotkey binding.
@@ -174,8 +173,8 @@ built-in defaults).
 
 ## JSON-RPC 2.0
 
-`qsflow-core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over the
-same stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
+`qsflow --core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over
+stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
 `select`, `forget`, `run`, `resolve_icon`, `list_plugins`, `theme`, `ping`. The
 full protocol spec and the result-item (schema) contract are in
 [docs/en/jsonrpc.md](docs/en/jsonrpc.md).

@@ -123,7 +123,7 @@ pub async fn handle(
             };
             // Await inline (request/response), unlike the streaming text-search
             // path: a JSON-RPC client gets its correlated response even for a
-            // one-shot `printf ... | qsflow-core` (no need to hold stdin open).
+            // one-shot `printf ... | qsflow --core` (no need to hold stdin open).
             if text.is_empty() {
                 // `top` is the dedicated most-used method; an empty `search`
                 // query is not a search. (The text protocol handles its own
