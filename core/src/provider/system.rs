@@ -67,6 +67,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
             summary: Some(cmd.to_string()),
             on_click: Some(format!("run:{cmd}")),
             icon: find_icon_path(icon).or_else(|| Some(String::new())),
+            ephemeral: false,
         })
         .collect()
 }

@@ -15,7 +15,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 |--------|--------|--------|
 | `search` | `{"text"}` | array of result items |
 | `top` | — | most-used items |
-| `select` | item object | `null` (records usage; `copy:` actions never recorded) |
+| `select` | item object | `null` (records usage; `ephemeral` and `copy:` rows are not) |
 | `forget` | `{"on_click"}` | `{"forgotten": bool}` |
 | `run` | `{"cmd"}` | `null` |
 | `action` | `{"desktop_id","action_id"}` | `null` (runs one `[Desktop Action …]` group of a desktop file) |
@@ -112,7 +112,7 @@ keyword+space identity hint. The hint stays otherwise:
 ## Result items
 
 `search` and `top` return an array of items. Every item is an object with these
-keys — all four are always present (`null` for an absent optional field):
+keys — all five are always present (`null` for an absent optional field):
 
 | Key | Type | Meaning |
 |-----|------|---------|
@@ -120,6 +120,7 @@ keys — all four are always present (`null` for an absent optional field):
 | `summary` | string \| null | secondary line (command, path, description, …) |
 | `on_click` | string \| null | action bound to Enter; see the schemes below |
 | `icon` | string \| null | absolute path to an icon image; see [Icon specs](#icon-specs) |
+| `ephemeral` | bool | when true, selecting this row is not recorded in usage history |
 
 `on_click` schemes:
 
@@ -137,9 +138,11 @@ survive; a `Terminal=true` handler is started inside a terminal.
 An item without `on_click` is non-interactive (display only).
 
 Selecting an item records it in usage history — the list behind an empty query
-(`top`). Items whose `on_click` is a `copy:` action are exempt regardless of
-source (built-in provider or external host): clipboard writes are one-shot, so
-they never enter the usage-ranked history.
+(`top`). Two kinds of row are exempt: one the host marked `ephemeral: true` (a
+one-shot search hit, say), and one whose `on_click` is a `copy:` write (its
+value is the copied text, not a target to re-open). The field or scheme
+declares the semantics, so the rule holds for every source — built-in provider
+and external host alike.
 
 ### Icon specs
 

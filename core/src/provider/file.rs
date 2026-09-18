@@ -147,6 +147,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                 summary: Some(path),
                 on_click: Some(file_url),
                 icon: find_icon_path(icon).or_else(|| Some(String::new())),
+                ephemeral: false,
             });
 
             if results.len() >= 50 {

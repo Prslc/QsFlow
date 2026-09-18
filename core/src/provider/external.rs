@@ -363,6 +363,19 @@ mod tests {
         assert!(resolved.ends_with(".svg"));
     }
 
+    #[test]
+    fn an_ephemeral_host_row_stays_ephemeral() {
+        let response = serde_json::json!({
+            "result": [
+                { "title": "repo", "on_click": "https://github.com/x/y", "ephemeral": true },
+                { "title": "Firefox", "on_click": "launch:firefox.desktop" },
+            ]
+        });
+        let items = parse_result_items(&response, "system-search").unwrap();
+        assert!(items[0].ephemeral, "the host's flag is carried through");
+        assert!(!items[1].ephemeral, "an absent flag means record it");
+    }
+
     /// A host that answers the way a plugin framework does: it consumes the
     /// request and prints one response line.
     fn host(dir: &tempfile::TempDir, reply: &str) -> String {

@@ -320,6 +320,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
                     summary: Some(format!("{usage} - {}", meta.ready)),
                     on_click: None,
                     icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
+                    ephemeral: false,
                 }
             })
             .collect();
@@ -347,6 +348,7 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
             summary: Some(meta.ready.to_string()),
             on_click: None,
             icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
+            ephemeral: false,
         }];
     }
 

@@ -131,6 +131,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
                     summary: Some(run_cmd.clone()),
                     on_click: Some(format!("run:{run_cmd}")),
                     icon: find_icon_path(name).or_else(|| Some(String::new())),
+                    ephemeral: false,
                 },
             ));
         }

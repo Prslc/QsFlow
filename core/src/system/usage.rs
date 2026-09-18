@@ -134,20 +134,25 @@ fn init_schema(conn: &Connection) {
     .ok();
 }
 
-/// Clipboard-write rows (`copy:`) are one-shot — the value is the copied
-/// text, not a re-launchable target — so they never enter usage history.
-/// The scheme declares the semantics, so this holds for every source with no
-/// per-plugin knowledge or host cooperation.
-fn is_ephemeral(on_click: &str) -> bool {
-    on_click.starts_with("copy:")
+/// A row the host marked `ephemeral`, or one whose `on_click` is a clipboard
+/// write (`copy:`), is not a re-launchable target: the first is a deliberate
+/// choice (a one-shot search hit, say), the second carries the copied text
+/// rather than something to re-open. Neither belongs in the usage-ranked
+/// history. The field/scheme declares the semantics, so this holds for every
+/// source — built-in providers and external JSON-RPC hosts alike.
+fn is_ephemeral(item: &serde_json::Value) -> bool {
+    item["ephemeral"].as_bool().unwrap_or(false)
+        || item["on_click"]
+            .as_str()
+            .is_some_and(|on_click| on_click.starts_with("copy:"))
 }
 
 fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     let item: serde_json::Value = serde_json::from_str(item_json)?;
-    let on_click = item["on_click"].as_str().context("item missing on_click")?;
-    if is_ephemeral(on_click) {
+    if is_ephemeral(&item) {
         return Ok(());
     }
+    let on_click = item["on_click"].as_str().context("item missing on_click")?;
 
     // Key by display title so alternate launch actions for one app merge
     // into a single entry; empty titles fall back to the action.
@@ -191,8 +196,8 @@ fn forget_with(conn: &Connection, on_click: &str) -> Result<bool> {
     Ok(deleted > 0)
 }
 
-/// Drop `copy:` rows recorded before the `is_ephemeral` guard existed. Runs at
-/// core startup so older usage databases heal on upgrade; idempotent.
+/// Drop `copy:` rows recorded before the guard existed. Runs at core startup
+/// so older usage databases heal on upgrade; idempotent.
 pub fn purge_ephemeral() -> Result<()> {
     with_db(purge_with)
 }
@@ -350,22 +355,45 @@ mod tests {
     }
 
     #[test]
-    fn copy_rows_are_never_recorded() {
+    fn one_shot_rows_are_never_recorded() {
         let conn = test_conn();
-        record_with(
-            &conn,
-            r#"{"title":"Clipboard","on_click":"copy:{\"text\": \"clip\"}"}"#,
-        )
-        .unwrap();
-        record_with(
-            &conn,
-            r#"{"title":"Firefox","on_click":"launch:firefox.desktop"}"#,
-        )
-        .unwrap();
+        for (title, on_click, ephemeral) in [
+            ("Clipboard", r#"copy:{"text": "clip"}"#, false),
+            ("github hit", "https://github.com/Prslc/QsFlow", true),
+        ] {
+            record_with(
+                &conn,
+                &serde_json::json!({
+                    "title": title,
+                    "on_click": on_click,
+                    "ephemeral": ephemeral,
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        // A URL the host did not mark, plus a launch, a command and a desktop
+        // action, are all re-launchable targets.
+        for (title, on_click) in [
+            ("Prslc/QsFlow", "https://github.com/Prslc/QsFlow"),
+            ("Firefox", "launch:firefox.desktop"),
+            ("btop", "run:btop"),
+            ("New Window", "action:firefox.desktop:new-window"),
+        ] {
+            record_with(
+                &conn,
+                &serde_json::json!({ "title": title, "on_click": on_click }).to_string(),
+            )
+            .unwrap();
+        }
 
-        let items = get_top_with(&conn, 10).unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["title"], "Firefox");
+        let mut titles: Vec<String> = get_top_with(&conn, 10)
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["title"].as_str().map(str::to_owned))
+            .collect();
+        titles.sort();
+        assert_eq!(titles, ["Firefox", "New Window", "Prslc/QsFlow", "btop"]);
     }
 
     #[test]
@@ -379,12 +407,17 @@ mod tests {
         )
         .unwrap();
         record_with(&conn, r#"{"title":"A","on_click":"run:a"}"#).unwrap();
+        record_with(&conn, r#"{"title":"URL","on_click":"https://example.com"}"#).unwrap();
 
         purge_with(&conn).unwrap();
 
-        let items = get_top_with(&conn, 10).unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["title"], "A");
+        let mut titles: Vec<String> = get_top_with(&conn, 10)
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["title"].as_str().map(str::to_owned))
+            .collect();
+        titles.sort();
+        assert_eq!(titles, ["A", "URL"], "a URL row is not ephemeral");
     }
 
     #[test]

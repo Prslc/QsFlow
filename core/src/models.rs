@@ -6,6 +6,10 @@ pub struct ResultItem {
     pub summary: Option<String>,
     pub on_click: Option<String>,
     pub icon: Option<String>,
+    /// The host asked for this row not to enter usage history — a one-shot
+    /// search hit, for instance. Absent on the wire means "record it".
+    #[serde(default)]
+    pub ephemeral: bool,
 }
 
 #[derive(Serialize, Debug, Clone)]

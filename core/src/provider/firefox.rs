@@ -84,6 +84,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
                 summary: Some(url.clone()),
                 on_click: Some(url),
                 icon: firefox_icon.clone(),
+                ephemeral: false,
             })
         })?;
 

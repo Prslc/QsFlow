@@ -13,7 +13,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 |------|------|------|
 | `search` | `{"text"}` | 结果项数组 |
 | `top` | — | 最常用项 |
-| `select` | 结果项对象 | `null`（记录使用） |
+| `select` | 结果项对象 | `null`（记录使用；`ephemeral` 与 `copy:` 行不记录） |
 | `forget` | `{"on_click"}` | `{"forgotten": bool}` |
 | `run` | `{"cmd"}` | `null` |
 | `action` | `{"desktop_id","action_id"}` | `null`（运行 desktop 文件里的一个 `[Desktop Action …]` 组） |
@@ -101,7 +101,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 
 ## 结果项
 
-`search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——四个键**始终都在**，
+`search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——五个键**始终都在**，
 缺省的可选字段为 `null`（而非省略）：
 
 | 键 | 类型 | 含义 |
@@ -110,6 +110,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 | `summary` | string \| null | 副行（命令、路径、描述……） |
 | `on_click` | string \| null | Enter 绑定的动作；见下方 scheme |
 | `icon` | string \| null | 图标图像的绝对路径；见 [图标规范](#图标规范) |
+| `ephemeral` | bool | 为 true 时，选中该项不记入使用历史 |
 
 `on_click` 的 scheme：
 
@@ -125,6 +126,11 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 的处理器会在终端中启动。
 
 无 `on_click` 的结果项不可交互（仅展示）。
+
+选择一项会把它记入使用历史（空查询时的 `top` 列表）。两类行会被豁免：主机标记
+`ephemeral: true` 的行（比如一次性的搜索结果），以及 `on_click` 为 `copy:` 的行
+（它的值是被复制的文本，而不是可再次打开的目标）。语义由字段或 scheme 声明，所以
+内置 provider 与外部主机都适用。
 
 ### 图标规范
 

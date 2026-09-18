@@ -73,6 +73,7 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
             summary: None,
             on_click: Some(format!("run:sh -c 'cliphist decode {id} | wl-copy'")),
             icon: Some(String::new()),
+            ephemeral: false,
         });
 
         if results.len() >= 50 {

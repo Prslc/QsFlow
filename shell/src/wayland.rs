@@ -488,6 +488,7 @@ impl Shell {
             "summary": item.summary,
             "on_click": item.on_click,
             "icon": item.icon,
+            "ephemeral": item.ephemeral,
         });
         self.session.select(&record);
         self.session.action(&item.action);

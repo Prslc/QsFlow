@@ -110,6 +110,10 @@ pub struct Item {
     pub icon: String,
     #[serde(default, rename = "on_click", deserialize_with = "nullable")]
     pub on_click: String,
+    /// The core's `ephemeral` flag: a row the plugin does not want recorded in
+    /// usage history. Forwarded back in the `select` record.
+    #[serde(default)]
+    pub ephemeral: bool,
     /// Filled in from `on_click` as the payload is read.
     #[serde(skip)]
     pub action: Action,
@@ -285,6 +289,17 @@ mod tests {
     fn request_of(on_click: &str) -> Option<serde_json::Value> {
         let line = Action::parse(on_click).request()?;
         Some(serde_json::from_str(line.trim_end()).expect("a request is one JSON object"))
+    }
+
+    #[test]
+    fn an_ephemeral_row_is_read_off_the_wire() {
+        let items: Vec<Item> = serde_json::from_value(serde_json::json!([
+            { "title": "repo", "on_click": "https://github.com/x/y", "ephemeral": true },
+            { "title": "Firefox", "on_click": "launch:firefox.desktop" },
+        ]))
+        .unwrap();
+        assert!(items[0].ephemeral);
+        assert!(!items[1].ephemeral, "an absent flag means record it");
     }
 
     #[test]

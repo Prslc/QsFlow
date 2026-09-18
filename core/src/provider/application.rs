@@ -145,6 +145,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                     summary: app.comment.clone(),
                     on_click: Some(format!("launch:{}", app.id)),
                     icon: app.icon_path(),
+                    ephemeral: false,
                 },
             ));
         }
@@ -162,6 +163,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                             summary: Some(app.title.clone()),
                             on_click: Some(format!("action:{}:{}", app.id, action.id)),
                             icon: app.icon_path(),
+                            ephemeral: false,
                         },
                     ));
                 }

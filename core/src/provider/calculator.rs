@@ -105,6 +105,7 @@ fn do_search(expr: &str) -> Vec<ResultItem> {
                 summary: Some(expr.to_string()),
                 on_click: None,
                 icon: find_icon_path("calc"),
+                ephemeral: false,
             }]
         }
         Err(_) => vec![],
