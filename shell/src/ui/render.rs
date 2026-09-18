@@ -649,12 +649,30 @@ fn draw_list(
         }
 
         let labels_x = icon_x + ICON_SIZE + 12.0;
-        let title = text.shape(&row.title, TITLE_SIZE * canvas.scale, Weight::BOLD);
+        // The selected row's ↵ hint is part of the layout: the labels must
+        // leave room for it, as the QML's Column did, so a long title cannot
+        // run underneath it.
+        let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
+        let enter_w = enter
+            .as_ref()
+            .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);
+        let labels_max = (rect.right() - 10.0 - labels_x - enter_w).max(0.0);
+
+        let title = text.fit(
+            &row.title,
+            TITLE_SIZE * canvas.scale,
+            Weight::BOLD,
+            labels_max * canvas.scale,
+        );
         let title_h = title.height / canvas.scale;
-        let summary = row
-            .summary
-            .as_deref()
-            .map(|summary| text.shape(summary, SUMMARY_SIZE * canvas.scale, Weight::NORMAL));
+        let summary = row.summary.as_deref().map(|summary| {
+            text.fit(
+                summary,
+                SUMMARY_SIZE * canvas.scale,
+                Weight::NORMAL,
+                labels_max * canvas.scale,
+            )
+        });
         let summary_h = summary
             .as_ref()
             .map_or(0.0, |shaped| shaped.height / canvas.scale);
@@ -670,7 +688,7 @@ fn draw_list(
         let clip = [
             canvas.px(labels_x),
             canvas.px(rect.y),
-            canvas.px(rect.right() - 10.0 - labels_x),
+            canvas.px(labels_max),
             canvas.px(rect.h),
         ];
 
@@ -693,11 +711,10 @@ fn draw_list(
             );
         }
 
-        if selected {
-            let check = text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL);
+        if let Some(check) = &enter {
             text.draw(
                 pixmap,
-                &check,
+                check,
                 state.fade(theme.primary, 0.55, now),
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,

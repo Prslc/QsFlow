@@ -55,6 +55,42 @@ impl TextEngine {
         }
     }
 
+    /// Shape one line, eliding it with `…` so it fits `max_width`. A line that
+    /// already fits is shaped as-is, which is the common case and costs one
+    /// shape; only an overlong line pays the truncation search.
+    pub fn fit(&mut self, text: &str, size: f32, weight: Weight, max_width: f32) -> Shaped {
+        let full = self.shape(text, size, weight);
+        if full.width <= max_width {
+            return full;
+        }
+
+        let ellipsis = self.shape("…", size, weight);
+        if max_width <= ellipsis.width {
+            return ellipsis;
+        }
+
+        // The largest char-boundary prefix that leaves room for the ellipsis,
+        // found by binary search over the byte boundaries so a long string
+        // costs a handful of shapes rather than one per character.
+        let mut boundaries: Vec<usize> = text.char_indices().map(|(index, _)| index).collect();
+        boundaries.push(text.len());
+        let (mut low, mut high) = (0, boundaries.len() - 1);
+        while low < high {
+            let mid = low + (high - low).div_ceil(2);
+            let width = self.shape(&text[..boundaries[mid]], size, weight).width;
+            if width + ellipsis.width <= max_width {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        let mut display = String::with_capacity(boundaries[low] + 4);
+        display.push_str(&text[..boundaries[low]]);
+        display.push('…');
+        self.shape(&display, size, weight)
+    }
+
     /// Draw a shaped line with its line-box's top-left corner at `(x, top)`.
     /// Pixels outside `clip` (`[x, y, w, h]`) are dropped.
     pub fn draw(
@@ -164,7 +200,27 @@ fn blend(data: &mut [u8], width: i32, height: i32, x: i32, y: i32, color: [u8; 4
 
 #[cfg(test)]
 mod tests {
-    use super::blend;
+    use super::{TextEngine, blend};
+    use cosmic_text::Weight;
+
+    #[test]
+    fn a_fitting_line_is_shaped_unchanged() {
+        let mut engine = TextEngine::new();
+        let full = engine.shape("Short", 14.0, Weight::NORMAL);
+        let fitted = engine.fit("Short", 14.0, Weight::NORMAL, full.width + 1.0);
+        assert_eq!(fitted.width, full.width);
+    }
+
+    #[test]
+    fn an_overlong_line_is_elided_to_the_limit() {
+        let mut engine = TextEngine::new();
+        let long = "a title that is far too long to ever fit on one card row";
+        let full = engine.shape(long, 14.0, Weight::BOLD);
+        let max = full.width / 3.0;
+        let fitted = engine.fit(long, 14.0, Weight::BOLD, max);
+        assert!(fitted.width <= max + 1.0, "{} > {max}", fitted.width);
+        assert!(fitted.width < full.width);
+    }
 
     #[test]
     fn glyph_blending_is_premultiplied_source_over() {
