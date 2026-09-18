@@ -31,6 +31,14 @@ impl TextEngine {
         }
     }
 
+    /// Drop the rasterised-glyph bitmaps. The `FontSystem`'s font database is
+    /// process-lifetime (rebuilding it costs ~70ms), but the glyph cache grows
+    /// with every distinct glyph and size a show draws, so the resident shell
+    /// frees it on dismiss the way it frees the icon caches.
+    pub fn clear_cache(&mut self) {
+        self.cache = SwashCache::new();
+    }
+
     /// Shape one unwrapped line at `size`.
     pub fn shape(&mut self, text: &str, size: f32, weight: Weight) -> Shaped {
         let line_height = (size * LINE_HEIGHT).round();

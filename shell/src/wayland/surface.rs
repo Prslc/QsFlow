@@ -130,6 +130,7 @@ impl Shell {
         self.icons.clear();
         self.app.icon_cache.clear();
         self.requested_icons.clear();
+        self.text.clear_cache();
         self.app.hidden();
         ipc::VISIBLE.store(false, Ordering::Relaxed);
 
