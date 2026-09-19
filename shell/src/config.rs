@@ -9,7 +9,7 @@ use crate::ui::theme;
 /// `~/.config/wayrun/theme.toml`. A missing file (or any missing key) keeps the
 /// default below, so an absent config is the shipped look.
 pub fn theme_path() -> Option<PathBuf> {
-    Some(dirs::home_dir()?.join(".config/wayrun/theme.toml"))
+    Some(wayrun_core::config::dir()?.join("theme.toml"))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

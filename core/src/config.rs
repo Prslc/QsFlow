@@ -6,12 +6,13 @@ pub use model::{Config, Font, WebSearch};
 
 const DEFAULT_TEMPLATE: &str = include_str!("../default-config.toml");
 
+/// `~/.config/wayrun`, the one config directory the shell and core share.
+pub fn dir() -> Option<PathBuf> {
+    Some(crate::system::fs::get_home().ok()?.join(".config/wayrun"))
+}
+
 pub fn path() -> Option<PathBuf> {
-    Some(
-        crate::system::fs::get_home()
-            .ok()?
-            .join(".config/wayrun/config.toml"),
-    )
+    Some(dir()?.join("config.toml"))
 }
 
 /// Write the shipped template on first use so the settings are discoverable.
