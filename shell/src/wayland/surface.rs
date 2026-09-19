@@ -13,7 +13,7 @@ use wayland_client::protocol::{wl_output, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use crate::session::{backend, ipc};
-use crate::ui::{geom, render};
+use crate::ui::render;
 
 use super::{Damage, Shell, scale};
 
@@ -285,16 +285,17 @@ impl Shell {
         // bottoms so a shrink is covered too.
         let surface_size = self.app.surface;
         let scale = self.app.scale_factor();
-        let top = geom::card_top(surface_size);
+        let layout = self.app.appearance.layout;
+        let top = layout.card_top(surface_size);
         let new_bottom = top + self.app.card_height(now);
         let damage = if full {
             Damage::FULL
         } else {
             let base_bottom = new_bottom.max(self.app.last_card_bottom);
             Damage::rect(
-                (geom::card_x(surface_size) * scale).floor() as i32 - 1,
+                (layout.card_x(surface_size) * scale).floor() as i32 - 1,
                 (top * scale).floor() as i32 - 1,
-                (geom::card_w(surface_size) * scale).ceil() as i32 + 2,
+                (layout.card_w(surface_size) * scale).ceil() as i32 + 2,
                 ((base_bottom - top) * scale).ceil() as i32 + 3,
             )
         };
@@ -569,8 +570,20 @@ impl Shell {
         };
         let _ = layer;
 
+        if !self.app.appearance.blur {
+            // `None` clears a region set before the config disabled blur.
+            if self.blur_sent.take().is_some() {
+                effect.set_blur_region(None);
+            }
+            return;
+        }
+
         let height = self.app.card_height(Instant::now());
-        let rects = geom::blur_rects(self.app.surface, height);
+        let rects = self
+            .app
+            .appearance
+            .layout
+            .blur_rects(self.app.surface, height);
         let key = rects
             .first()
             .map(|rect| (rect.x, rect.y, rect.width, rect.height));

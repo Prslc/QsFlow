@@ -31,6 +31,7 @@ use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 
 use crate::app::{self, State as Launcher};
+use crate::config::AppearanceConfig;
 use crate::session::backend::BackendEvent;
 use crate::session::ipc;
 use crate::ui::icons::IconCache;
@@ -301,7 +302,10 @@ impl Shell {
 
     pub fn on_backend(&mut self, event: BackendEvent) {
         match event {
-            BackendEvent::Theme(config) => self.app.theme = theme::Theme::from_config(&config),
+            BackendEvent::Theme(config) => {
+                self.app
+                    .set_system_theme(theme::Theme::from_config(&config));
+            }
             BackendEvent::Results(items) => {
                 let now = Instant::now();
                 self.app.apply_results(items, now);
@@ -329,6 +333,14 @@ impl Shell {
             }
             BackendEvent::CoreExited => self.exit = true,
         }
+        self.redraw();
+    }
+
+    /// `theme.toml` changed on disk. Radius, alpha and row count can move
+    /// pixels outside the usual card damage, so the next frame is full.
+    pub fn on_appearance(&mut self, config: AppearanceConfig, now: Instant) {
+        self.app.apply_appearance(config, now);
+        self.needs_full = true;
         self.redraw();
     }
 

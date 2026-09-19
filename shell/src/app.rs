@@ -1,11 +1,10 @@
 use std::time::{Duration, Instant};
 
+use crate::config::AppearanceConfig;
 use crate::session::model::ResultItem;
 use crate::ui::geom;
 use crate::ui::theme::Theme;
 
-pub const ENTRANCE_MS: u64 = 240;
-pub const REFLOW_MS: u64 = 150;
 /// Launch dismissals wait this long before the surface goes away.
 pub const EXIT_DELAY_MS: u64 = 150;
 /// The field's caret blink interval.
@@ -50,8 +49,13 @@ pub struct State {
     pub preedit: Option<String>,
     pub rows: Vec<Row>,
     pub selected: usize,
-    /// Index of the top visible row of the fixed five-row window (`contain`).
+    /// Index of the top visible row of the fixed `max_rows` window (`contain`).
     pub first: usize,
+    /// The core's system theme (the DMS palette, or the fallback).
+    pub system_theme: Theme,
+    /// The `theme.toml` appearance config.
+    pub appearance: AppearanceConfig,
+    /// The effective theme: `system_theme` with `appearance.colors` on top.
     pub theme: Theme,
     /// The layer surface's logical size.
     pub surface: (u32, u32),
@@ -66,6 +70,8 @@ pub struct State {
     /// frame. The layer surface is configured a round trip after `shown`, so
     /// starting at the request would swallow the fade's first frames.
     pub entrance_started: bool,
+    /// `WAYRUN_REDUCED_MOTION`: ORed with the config's `motion.reduced`.
+    reduced_env: bool,
     pub reduce_motion: bool,
     /// What the pointer is over, if anything.
     pub hovered: Option<Hover>,
@@ -92,6 +98,11 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         let now = Instant::now();
+        let appearance = AppearanceConfig::default();
+        let reduced_env = std::env::var_os("WAYRUN_REDUCED_MOTION").is_some();
+        let reduce_motion = reduced_env || appearance.reduced;
+        let theme = Theme::default();
+        let card = appearance.layout.content_h(0);
         Self {
             query: String::new(),
             caret: 0,
@@ -100,12 +111,15 @@ impl State {
             rows: Vec::new(),
             selected: 0,
             first: 0,
-            theme: Theme::default(),
+            system_theme: theme,
+            appearance,
+            theme,
             surface: (1920, 1080),
             scale: 1,
             fractional: None,
             entrance_started: false,
-            reduce_motion: std::env::var_os("WAYRUN_REDUCED_MOTION").is_some(),
+            reduced_env,
+            reduce_motion,
             hovered: None,
             cursor: None,
             pointer_on_card: false,
@@ -113,12 +127,33 @@ impl State {
             caret_visible: true,
             caret_at: now,
             shown_at: now,
-            card_from: geom::content_h(0),
-            card_to: geom::content_h(0),
+            card_from: card,
+            card_to: card,
             card_at: now,
             dismiss_at: None,
             last_card_bottom: 0.0,
         }
+    }
+
+    /// The `theme.toml` config changed. Recompute the theme and the derived
+    /// geometry; the caller repaints the whole frame.
+    pub fn apply_appearance(&mut self, config: AppearanceConfig, now: Instant) {
+        self.reduce_motion = self.reduced_env || config.reduced;
+        self.appearance = config;
+        self.refresh_theme();
+        self.card_from = self.appearance.layout.content_h(self.rows.len());
+        self.card_to = self.card_from;
+        self.card_at = now;
+    }
+
+    /// The core's system theme changed.
+    pub fn set_system_theme(&mut self, system: Theme) {
+        self.system_theme = system;
+        self.refresh_theme();
+    }
+
+    fn refresh_theme(&mut self) {
+        self.theme = Theme::overlay(self.system_theme, &self.appearance.colors);
     }
 
     /// The buffer scale to render at: the compositor's fractional ratio when
@@ -141,14 +176,14 @@ impl State {
         }
 
         let elapsed = now.saturating_duration_since(self.card_at).as_secs_f32() * 1000.0;
-        let t = (elapsed / REFLOW_MS as f32).clamp(0.0, 1.0);
+        let t = (elapsed / self.appearance.reflow_ms as f32).clamp(0.0, 1.0);
         self.card_from + (to - self.card_from) * ease_out_cubic(t)
     }
 
-    /// The backdrop dim's current alpha (0 → `DIM_ALPHA`), not a progress
-    /// fraction.
+    /// The backdrop dim's current alpha (0 → the config's `dim_alpha`), not a
+    /// progress fraction.
     pub fn dim_alpha(&self, now: Instant) -> f32 {
-        geom::DIM_ALPHA * self.entrance(now)
+        self.appearance.dim_alpha * self.entrance(now)
     }
 
     /// The card's fill alpha for the entrance's opacity fade.
@@ -164,7 +199,7 @@ impl State {
         }
 
         let elapsed = now.saturating_duration_since(self.shown_at).as_secs_f32() * 1000.0;
-        ease_out_quint((elapsed / ENTRANCE_MS as f32).clamp(0.0, 1.0))
+        ease_out_quint((elapsed / self.appearance.entrance_ms as f32).clamp(0.0, 1.0))
     }
 
     /// A card-content colour at `alpha`, scaled by the entrance fade: the whole
@@ -183,9 +218,10 @@ impl State {
             return false;
         }
 
-        let entrance =
-            now.saturating_duration_since(self.shown_at) < Duration::from_millis(ENTRANCE_MS);
-        let reflow = now.saturating_duration_since(self.card_at) < Duration::from_millis(REFLOW_MS);
+        let entrance = now.saturating_duration_since(self.shown_at)
+            < Duration::from_millis(self.appearance.entrance_ms);
+        let reflow = now.saturating_duration_since(self.card_at)
+            < Duration::from_millis(self.appearance.reflow_ms);
         entrance || reflow
     }
 
@@ -200,7 +236,7 @@ impl State {
         self.dismiss_at = None;
         self.shown_at = now;
         self.card_at = now;
-        self.card_from = geom::content_h(self.rows.len());
+        self.card_from = self.appearance.layout.content_h(self.rows.len());
         self.card_to = self.card_from;
         self.contain();
         self.caret_visible = true;
@@ -216,7 +252,7 @@ impl State {
         self.entrance_started = true;
         self.shown_at = now;
         self.card_at = now;
-        self.card_from = geom::content_h(self.rows.len());
+        self.card_from = self.appearance.layout.content_h(self.rows.len());
         self.card_to = self.card_from;
     }
 
@@ -227,9 +263,12 @@ impl State {
         self.preedit_active = false;
     }
 
-    /// Keep the selection inside the five-row window, minimally.
+    /// Keep the selection inside the `max_rows` window, minimally.
     pub fn contain(&mut self) {
-        self.first = geom::contain(self.selected, self.first, self.rows.len());
+        self.first = self
+            .appearance
+            .layout
+            .contain(self.selected, self.first, self.rows.len());
         self.resync_hover();
     }
 
@@ -240,7 +279,10 @@ impl State {
         let hover = if self.clear_hit(x, y) {
             Some(Hover::Clear)
         } else {
-            geom::row_at(self.surface, self.first, self.rows.len(), x, y).map(Hover::Row)
+            self.appearance
+                .layout
+                .row_at(self.surface, self.first, self.rows.len(), x, y)
+                .map(Hover::Row)
         };
 
         if hover == self.hovered {
@@ -260,9 +302,11 @@ impl State {
     /// in the same place, so nothing fires an enter/exit for them: re-derive
     /// the row hover. `Hover::Clear` is left alone, since it is not in the list.
     fn resync_hover(&mut self) {
-        let row = self
-            .cursor
-            .and_then(|(x, y)| geom::row_at(self.surface, self.first, self.rows.len(), x, y));
+        let row = self.cursor.and_then(|(x, y)| {
+            self.appearance
+                .layout
+                .row_at(self.surface, self.first, self.rows.len(), x, y)
+        });
 
         match row {
             Some(row) => self.hovered = Some(Hover::Row(row)),
@@ -285,7 +329,7 @@ impl State {
     }
 
     pub fn retarget_height(&mut self, now: Instant) {
-        let target = geom::content_h(self.rows.len());
+        let target = self.appearance.layout.content_h(self.rows.len());
         if target != self.card_to {
             self.card_from = self.card_height(now);
             self.card_to = target;
@@ -466,8 +510,9 @@ impl State {
             return false;
         }
 
-        let right = geom::card_x(self.surface) + geom::card_w(self.surface) - geom::PAD - 8.0;
-        let center_y = geom::card_top(self.surface) + geom::PAD + geom::SEARCH_H / 2.0;
+        let layout = &self.appearance.layout;
+        let right = layout.card_x(self.surface) + layout.card_w(self.surface) - geom::PAD - 8.0;
+        let center_y = layout.card_top(self.surface) + geom::PAD + geom::SEARCH_H / 2.0;
         (x - (right - 13.0)).abs() <= 13.0 && (y - center_y).abs() <= 13.0
     }
 
@@ -564,12 +609,15 @@ impl State {
     }
 
     pub fn page_up(&mut self) {
-        self.selected = self.selected.saturating_sub(geom::MAX_ROWS);
+        self.selected = self
+            .selected
+            .saturating_sub(self.appearance.layout.max_rows);
         self.contain();
     }
 
     pub fn page_down(&mut self) {
-        self.selected = (self.selected + geom::MAX_ROWS).min(self.rows.len().saturating_sub(1));
+        self.selected = (self.selected + self.appearance.layout.max_rows)
+            .min(self.rows.len().saturating_sub(1));
         self.contain();
     }
 
@@ -642,6 +690,7 @@ pub fn whole_rows(accum: &mut f32, delta: f32) -> i32 {
 mod tests {
     use super::*;
     use crate::session::model::ResultItem;
+    use crate::ui::geom::Layout;
 
     fn item(
         title: &str,
@@ -666,21 +715,57 @@ mod tests {
 
     #[test]
     fn contain_moves_only_as_far_as_the_selection_needs() {
-        assert_eq!(geom::contain(0, 0, 20), 0);
-        assert_eq!(geom::contain(geom::MAX_ROWS - 1, 0, 20), 0);
+        let l = Layout::default();
+        let max = l.max_rows;
+        assert_eq!(l.contain(0, 0, 20), 0);
+        assert_eq!(l.contain(max - 1, 0, 20), 0);
         // stepping past the window scrolls by exactly one row
-        assert_eq!(geom::contain(geom::MAX_ROWS, 0, 20), 1);
-        assert_eq!(geom::contain(geom::MAX_ROWS + 1, 1, 20), 2);
+        assert_eq!(l.contain(max, 0, 20), 1);
+        assert_eq!(l.contain(max + 1, 1, 20), 2);
         // moving up *inside* the window keeps it put
-        assert_eq!(geom::contain(3, 1, 20), 1);
+        assert_eq!(l.contain(3, 1, 20), 1);
         // leaving it upwards follows the selection
-        assert_eq!(geom::contain(0, 3, 20), 0);
+        assert_eq!(l.contain(0, 3, 20), 0);
         // the window never runs past the last row
-        assert_eq!(geom::contain(19, 0, 20), 15);
-        assert_eq!(geom::contain(19, 17, 20), 15);
+        assert_eq!(l.contain(19, 0, 20), 15);
+        assert_eq!(l.contain(19, 17, 20), 15);
         // a list shorter than the window cannot scroll
-        assert_eq!(geom::contain(0, 5, 3), 0);
-        assert_eq!(geom::contain(2, 5, 3), 0);
+        assert_eq!(l.contain(0, 5, 3), 0);
+        assert_eq!(l.contain(2, 5, 3), 0);
+    }
+
+    #[test]
+    fn an_appearance_change_rebuilds_the_theme_and_geometry() {
+        let mut state = state();
+        let now = std::time::Instant::now();
+
+        let mut config = AppearanceConfig::default();
+        config.colors.fg = Some([0x10, 0x20, 0x30]);
+        config.layout.max_rows = 2;
+        state.set_system_theme(Theme {
+            primary: [1, 2, 3],
+            fg: [4, 5, 6],
+            container: [7, 8, 9],
+        });
+        state.apply_appearance(config, now);
+
+        assert_eq!(state.theme.primary, [1, 2, 3]);
+        assert_eq!(state.theme.fg, [0x10, 0x20, 0x30]);
+        assert_eq!(state.theme.container, [7, 8, 9]);
+        assert_eq!(state.card_to, state.appearance.layout.content_h(0));
+    }
+
+    #[test]
+    fn the_env_reduced_motion_flag_survives_a_config_reload() {
+        let mut state = state();
+        state.reduced_env = true;
+        state.reduce_motion = true;
+        let config = AppearanceConfig {
+            reduced: false,
+            ..AppearanceConfig::default()
+        };
+        state.apply_appearance(config, std::time::Instant::now());
+        assert!(state.reduce_motion);
     }
 
     #[test]
@@ -744,14 +829,15 @@ mod tests {
         state.apply_results(items, std::time::Instant::now());
 
         // the pointer sits on the second visible row
-        let x = geom::card_x(state.surface) + 10.0;
-        let y = geom::rows_top(state.surface) + geom::ROW_H + 1.0;
+        let layout = state.appearance.layout;
+        let x = layout.card_x(state.surface) + 10.0;
+        let y = layout.rows_top(state.surface) + geom::ROW_H + 1.0;
         assert!(state.hover_at(x, y));
         assert_eq!(state.hovered, Some(Hover::Row(1)));
 
         // a page turn draws different rows under the same pointer: the hover has
         // to follow the row now under it, which is one further down the list
-        state.selected = geom::MAX_ROWS;
+        state.selected = layout.max_rows;
         state.contain();
         assert_eq!(state.first, 1);
         assert_eq!(state.hovered, Some(Hover::Row(2)));
@@ -759,8 +845,8 @@ mod tests {
         // and the ✕ button's hover is not a row, so a page turn leaves it alone
         state.query = "q".into();
         let clear = (
-            geom::card_x(state.surface) + geom::card_w(state.surface) - geom::PAD - 8.0 - 13.0,
-            geom::card_top(state.surface) + geom::PAD + geom::SEARCH_H / 2.0,
+            layout.card_x(state.surface) + layout.card_w(state.surface) - geom::PAD - 8.0 - 13.0,
+            layout.card_top(state.surface) + geom::PAD + geom::SEARCH_H / 2.0,
         );
         assert!(state.hover_at(clear.0, clear.1));
         assert_eq!(state.hovered, Some(Hover::Clear));

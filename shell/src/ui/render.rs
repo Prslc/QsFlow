@@ -6,6 +6,7 @@ use tiny_skia::{
 };
 
 use crate::app::{Hover, State};
+use crate::config::AppearanceConfig;
 use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
@@ -255,11 +256,12 @@ pub fn draw(
     };
     let surface = state.surface;
     let theme = state.theme;
+    let layout = state.appearance.layout;
 
     let card = Rect {
-        x: geom::card_x(surface),
-        y: geom::card_top(surface),
-        w: geom::card_w(surface),
+        x: layout.card_x(surface),
+        y: layout.card_top(surface),
+        w: layout.card_w(surface),
         h: state.card_height(now),
     };
 
@@ -299,8 +301,8 @@ pub fn draw(
             w: card.w - 2.0,
             h: card.h - 2.0,
         },
-        geom::RADIUS - 1.0,
-        state.fade(theme.container, geom::CARD_ALPHA, now),
+        layout.radius - 1.0,
+        state.fade(theme.container, state.appearance.card_alpha, now),
     );
     canvas.stroke_round(
         pixmap,
@@ -310,14 +312,19 @@ pub fn draw(
             w: card.w - 1.0,
             h: card.h - 1.0,
         },
-        geom::RADIUS - 0.5,
+        layout.hairline_radius(),
         1.0,
         state.fade([255, 255, 255], 0.35, now),
     );
 
     mark("card");
     let field = Rect::field_at(card.x, card.y, card.w);
-    canvas.fill_round(pixmap, field, 9.0, state.fade(theme.fg, 0.08, now));
+    canvas.fill_round(
+        pixmap,
+        field,
+        layout.field_radius(),
+        state.fade(theme.fg, 0.08, now),
+    );
 
     mark("shapes");
 
@@ -337,7 +344,7 @@ pub fn draw(
     // A payload that grows the card lays its rows out immediately while the
     // height still animates: the band below the card's current bottom edge
     // belongs to the backdrop, not to the card.
-    let resting = geom::card_top(surface) + geom::content_h(state.rows.len());
+    let resting = layout.card_top(surface) + layout.content_h(state.rows.len());
     let bottom = card.y + card.h;
     let mut band = None;
     if full && bottom < resting {
@@ -492,10 +499,11 @@ fn draw_query(
 /// caret and the rectangle the IME is told about must not drift apart.
 fn caret_box(state: &State, text: &mut TextEngine) -> (Rect, f32) {
     let surface = state.surface;
+    let layout = state.appearance.layout;
     let field = Rect::field_at(
-        geom::card_x(surface),
-        geom::card_top(surface),
-        geom::card_w(surface),
+        layout.card_x(surface),
+        layout.card_top(surface),
+        layout.card_w(surface),
     );
     let scale = state.scale_factor();
     let before = text.shape(state.before_caret(), QUERY_SIZE * scale, Weight::MEDIUM);
@@ -594,7 +602,7 @@ fn draw_toolbar(
     canvas.fill_round(
         pixmap,
         chip,
-        6.0,
+        state.appearance.layout.chip_radius(),
         state.fade(state.theme.primary, 0.16, now),
     );
     text.draw(
@@ -617,16 +625,17 @@ fn draw_list(
     now: Instant,
 ) {
     let theme = state.theme;
-    let left = geom::card_x(surface) + geom::PAD;
-    let width = geom::card_w(surface) - 2.0 * geom::PAD;
-    let top = geom::rows_top(surface);
+    let layout = state.appearance.layout;
+    let left = layout.card_x(surface) + geom::PAD;
+    let width = layout.card_w(surface) - 2.0 * geom::PAD;
+    let top = layout.rows_top(surface);
 
     for (index, row) in state
         .rows
         .iter()
         .enumerate()
         .skip(state.first)
-        .take(geom::MAX_ROWS)
+        .take(layout.max_rows)
     {
         let y = top + (index - state.first) as f32 * geom::ROW_H;
         let rect = Rect {
@@ -644,7 +653,7 @@ fn draw_list(
             (false, false) => None,
         };
         if let Some(background) = background {
-            canvas.fill_round(pixmap, rect, 8.0, background);
+            canvas.fill_round(pixmap, rect, layout.row_radius(), background);
         }
 
         // Always 3px wide so the icon sits at the same x on every row; only the
@@ -783,10 +792,11 @@ fn draw_footer(
 
     // The footer is the last band of the card, derived from the same height the
     // card itself animates to.
+    let layout = state.appearance.layout;
     let y =
-        geom::card_top(surface) + geom::content_h(state.rows.len()) - geom::PAD - geom::FOOTER_H;
+        layout.card_top(surface) + layout.content_h(state.rows.len()) - geom::PAD - geom::FOOTER_H;
     let size = SUGGESTION_SIZE * canvas.scale;
-    let left = geom::card_x(surface) + geom::PAD;
+    let left = layout.card_x(surface) + geom::PAD;
 
     let shaped = text.shape(hints, size, Weight::NORMAL);
     text.draw(
@@ -812,7 +822,7 @@ fn draw_footer(
             pixmap,
             &shaped,
             state.fade(state.theme.fg, 0.45, now),
-            canvas.px(geom::card_x(surface) + geom::card_w(surface) - geom::PAD) - shaped.width,
+            canvas.px(layout.card_x(surface) + layout.card_w(surface) - geom::PAD) - shaped.width,
             canvas.px(y + (geom::FOOTER_H - shaped.height / canvas.scale) / 2.0),
             None,
         );
@@ -858,7 +868,7 @@ pub fn bench() {
             0,
             0,
             0,
-            (geom::DIM_ALPHA * 255.0).round() as u8,
+            (AppearanceConfig::default().dim_alpha * 255.0).round() as u8,
         ));
     }
     println!("pixmap.fill (2.07M px): {:?}/frame", at.elapsed() / repeats);
@@ -941,7 +951,7 @@ mod tests {
 
     /// The 8-bit alpha the dim writes, derived from the one constant.
     fn dim_u8() -> u8 {
-        (geom::DIM_ALPHA * 255.0).round() as u8
+        (AppearanceConfig::default().dim_alpha * 255.0).round() as u8
     }
 
     #[test]
@@ -980,7 +990,12 @@ mod tests {
         assert_eq!(pixmap.pixel(32, 40).unwrap().alpha(), 255);
 
         // 0.30 dim over transparent, the same value the backdrop has
-        canvas.restore_dim_below(&mut pixmap, 32.0, (64, 64), geom::DIM_ALPHA);
+        canvas.restore_dim_below(
+            &mut pixmap,
+            32.0,
+            (64, 64),
+            AppearanceConfig::default().dim_alpha,
+        );
 
         let below = pixmap.pixel(32, 40).unwrap();
         assert_eq!(
@@ -1037,7 +1052,12 @@ mod tests {
         canvas.fill_all(&mut pixmap, [255, 255, 255, 255]);
 
         // the band starts at logical 10, i.e. buffer row 20
-        canvas.restore_dim_below(&mut pixmap, 10.0, (64, 64), geom::DIM_ALPHA);
+        canvas.restore_dim_below(
+            &mut pixmap,
+            10.0,
+            (64, 64),
+            AppearanceConfig::default().dim_alpha,
+        );
         assert_eq!(pixmap.pixel(32, 19).unwrap().alpha(), 255, "above the band");
         assert_eq!(
             pixmap.pixel(32, 20).unwrap().alpha(),
@@ -1132,8 +1152,9 @@ mod tests {
         // it can no longer be the sentinel.
         let inside = pixmap
             .pixel(
-                (geom::card_x(state.surface) + geom::card_w(state.surface) / 2.0) as u32,
-                (geom::card_top(state.surface) + 10.0) as u32,
+                (state.appearance.layout.card_x(state.surface)
+                    + state.appearance.layout.card_w(state.surface) / 2.0) as u32,
+                (state.appearance.layout.card_top(state.surface) + 10.0) as u32,
             )
             .unwrap();
         assert_ne!((inside.red(), inside.green(), inside.blue()), (255, 0, 255));
@@ -1144,9 +1165,9 @@ mod tests {
         let mut state = State::new();
         state.surface = (1600, 1080);
         state.reduce_motion = true;
-        let card_h = geom::content_h(0);
+        let card_h = state.appearance.layout.content_h(0);
         // The previous card was 200px taller than the current one.
-        state.last_card_bottom = geom::card_top(state.surface) + card_h + 200.0;
+        state.last_card_bottom = state.appearance.layout.card_top(state.surface) + card_h + 200.0;
 
         let mut text = TextEngine::new();
         let mut icons = IconCache::new();
@@ -1164,7 +1185,7 @@ mod tests {
 
         // Below the current card but inside the old one: the dim, not the
         // sentinel and not a leftover row.
-        let y = (geom::card_top(state.surface) + card_h + 100.0) as u32;
+        let y = (state.appearance.layout.card_top(state.surface) + card_h + 100.0) as u32;
         let pixel = pixmap.pixel(800, y).unwrap();
         assert_ne!(
             (pixel.red(), pixel.green(), pixel.blue()),
@@ -1178,7 +1199,12 @@ mod tests {
         let canvas = Canvas { scale: 1.0 };
         let mut pixmap = pixmap();
         canvas.fill_all(&mut pixmap, [255, 255, 255, 255]);
-        canvas.restore_dim_below(&mut pixmap, 0.0, (64, 64), geom::DIM_ALPHA);
+        canvas.restore_dim_below(
+            &mut pixmap,
+            0.0,
+            (64, 64),
+            AppearanceConfig::default().dim_alpha,
+        );
         // every row is the dim, including the first one
         for y in [0, 1, 63] {
             assert_eq!(pixmap.pixel(32, y).unwrap().alpha(), dim_u8(), "y={y}");

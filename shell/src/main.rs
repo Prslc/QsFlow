@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod session;
 mod ui;
 mod wayland;
@@ -74,6 +75,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (backend_tx, backend_channel) = calloop::channel::channel();
     let (ipc_tx, ipc_channel) = calloop::channel::channel();
     let (paste_tx, paste_channel) = calloop::channel::channel();
+    let (appearance_tx, appearance_channel) = calloop::channel::channel();
 
     loop_handle.insert_source(backend_channel, |event, _, state: &mut Shell| {
         if let ChannelEvent::Msg(event) = event {
@@ -90,9 +92,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             state.on_paste(generation, text);
         }
     })?;
+    loop_handle.insert_source(appearance_channel, |event, _, state: &mut Shell| {
+        if let ChannelEvent::Msg(config) = event {
+            state.on_appearance(config, Instant::now());
+        }
+    })?;
     WaylandSource::new(conn.clone(), event_queue).insert(loop_handle.clone())?;
 
     let mut shell = Shell::new(&conn, &qh, &loop_handle, &globals, paste_tx)?;
+    shell.on_appearance(config::AppearanceConfig::load(), Instant::now());
+    // Held for the process's life: dropping it stops live config updates.
+    let _appearance_watcher = config::watch(appearance_tx);
 
     // The IPC listener is the single-instance guard: it must be up before the
     // first Wayland round trip.

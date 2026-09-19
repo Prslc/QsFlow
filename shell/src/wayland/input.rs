@@ -331,11 +331,12 @@ impl PointerHandler for Shell {
 
         for event in events {
             let inside_card = {
+                let layout = self.app.appearance.layout;
                 let (x, y) = (event.position.0 as f32, event.position.1 as f32);
-                x >= geom::card_x(self.app.surface)
-                    && x <= geom::card_x(self.app.surface) + geom::card_w(self.app.surface)
-                    && y >= geom::card_top(self.app.surface)
-                    && y <= geom::card_top(self.app.surface) + self.app.card_height(now)
+                x >= layout.card_x(self.app.surface)
+                    && x <= layout.card_x(self.app.surface) + layout.card_w(self.app.surface)
+                    && y >= layout.card_top(self.app.surface)
+                    && y <= layout.card_top(self.app.surface) + self.app.card_height(now)
             };
 
             match event.kind {
@@ -368,7 +369,7 @@ impl PointerHandler for Shell {
                         return;
                     }
 
-                    let row = geom::row_at(
+                    let row = self.app.appearance.layout.row_at(
                         self.app.surface,
                         self.app.first,
                         self.app.rows.len(),
