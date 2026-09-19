@@ -85,6 +85,20 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
         .all(|token| path_lower.contains(token))
 }
 
+/// Walk filter: skip hidden dirs and build caches everywhere, and skip the
+/// three roots at depth 1 of the home root (they are walked on their own) so a
+/// hit under them is not emitted twice.
+fn keep_entry(name: &str, depth: usize) -> bool {
+    if name.starts_with('.')
+        || name == "node_modules"
+        || name == "target"
+        || name == "__pycache__"
+    {
+        return false;
+    }
+    !(depth == 1 && matches!(name, "Desktop" | "Documents" | "Downloads"))
+}
+
 fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultItem> {
     if query.is_empty() {
         return vec![];
@@ -111,13 +125,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
         let walker = WalkDir::new(root)
             .max_depth(3)
             .into_iter()
-            .filter_entry(|e| {
-                let name = e.file_name().to_string_lossy();
-                !name.starts_with('.')
-                    && name != "node_modules"
-                    && name != "target"
-                    && name != "__pycache__"
-            });
+            .filter_entry(|e| keep_entry(&e.file_name().to_string_lossy(), e.depth()));
 
         for entry in walker.filter_map(Result::ok) {
             let ft = entry.file_type();
@@ -172,5 +180,23 @@ mod tests {
     fn empty_query_matches_nothing() {
         assert!(do_search("", match_name).is_empty());
         assert!(do_search("", match_path).is_empty());
+    }
+
+    #[test]
+    fn the_home_roots_are_skipped_only_under_the_home_root() {
+        // depth 1 under `~`: walked as its own root, so skip it here
+        assert!(!keep_entry("Desktop", 1));
+        assert!(!keep_entry("Documents", 1));
+        assert!(!keep_entry("Downloads", 1));
+        // a same-named dir deeper, or one directly inside a root, is kept
+        assert!(keep_entry("Desktop", 2));
+        assert!(keep_entry("Desktop", 0));
+        assert!(keep_entry("Documents", 2));
+        // build caches and dotdirs are skipped anywhere
+        assert!(!keep_entry(".config", 1));
+        assert!(!keep_entry("node_modules", 1));
+        assert!(!keep_entry("target", 3));
+        assert!(!keep_entry("__pycache__", 2));
+        assert!(keep_entry("notes.txt", 2));
     }
 }
