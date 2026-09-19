@@ -20,8 +20,6 @@ use super::{Damage, Shell, scale};
 const NAMESPACE: &str = "WayRun";
 
 impl Shell {
-    // ---- surface lifecycle -------------------------------------------------
-
     pub fn open(&mut self, now: Instant) {
         if self.layer.is_some() {
             return;
@@ -47,9 +45,8 @@ impl Shell {
             .effect_state
             .get_background_effect(layer.wl_surface(), &self.qh)
             .ok();
-        // Both objects must exist before the surface's first commit: the
-        // fractional scale arrives as an event on the first one, and the
-        // viewport is what maps the scaled buffer back onto the logical size.
+        // Both objects must exist before the first commit: the fractional scale
+        // arrives as an event on the first one, and the viewport maps it back.
         self.fractional = self.fractional_manager.as_ref().map(|manager| {
             manager.get_fractional_scale(layer.wl_surface(), &self.qh, scale::ScaleData)
         });
@@ -102,9 +99,8 @@ impl Shell {
         }
 
         self.disable_ime();
-        // The staged text-input state belongs to the surface that is going
-        // away: a `done` queued for the old composition must not land on the
-        // next show's empty query.
+        // The staged text-input state belongs to the surface going away: a queued
+        // `done` must not land on the next show's empty query.
         self.pending.clear();
         if let Some(viewport) = self.viewport.take() {
             viewport.destroy();
@@ -113,17 +109,14 @@ impl Shell {
             fractional.destroy();
         }
         self.viewport_destination = None;
-        // `app.fractional` is retained: it is an output property, so the next
-        // `open` allocates at the exact ratio instead of the integer ceiling.
-        // The new surface's `PreferredScale` refreshes it on the first commit.
-        // Dropping the layer surface destroys it: there is no hide/unmap verb.
+        // `app.fractional` is retained (an output property), so the next `open`
+        // allocates at the exact ratio. Dropping the layer surface destroys it.
         self.layer = None;
         self.configured = false;
         self.frame_pending = false;
         self.needs_present = false;
-        // `destroy`, not a plain drop: wayland-rs only removes an object from
-        // the connection when its destructor request is sent, so dropping the
-        // proxy would leak one per toggle.
+        // `destroy`, not a plain drop: wayland-rs removes an object only when its
+        // destructor is sent, so dropping the proxy would leak one per toggle.
         if let Some(effect) = self.effect.take() {
             effect.destroy();
         }
@@ -141,9 +134,8 @@ impl Shell {
         self.text.clear_cache();
         self.app.hidden();
         ipc::VISIBLE.store(false, Ordering::Relaxed);
-        // glibc keeps freed large allocations in its arena, so the resident
-        // shell would sit hidden holding the render buffers it just dropped;
-        // hand the free pages back to the OS.
+        // glibc keeps freed large allocations in its arena, so a hidden resident
+        // shell would hold the render buffers it just dropped; return the pages.
         trim_allocator();
 
         if self.resident {
@@ -153,8 +145,6 @@ impl Shell {
         let _ = now;
         self.exit = true;
     }
-
-    // ---- present -----------------------------------------------------------
 
     /// The buffer size in pixels: the logical size times the effective scale,
     /// which is the fractional ratio when the compositor offered one.
@@ -187,9 +177,8 @@ impl Shell {
         );
     }
 
-    /// The retained pixmap, the shared-memory pool and the two persistent
-    /// buffers for a physical size. Recreating the pixmap or a size change
-    /// invalidates both buffers and the whole frame.
+    /// The retained pixmap, the shm pool and the two persistent buffers for a
+    /// physical size; a size change invalidates both buffers and the frame.
     fn ensure_buffers(&mut self, physical_w: u32, physical_h: u32) -> bool {
         if physical_w == 0 || physical_h == 0 {
             return false;
@@ -204,9 +193,8 @@ impl Shell {
         if !sized(&self.pixmap) {
             self.pixmap = Pixmap::new(physical_w, physical_h);
             self.caret_patch = None;
-            // Room for two full-output buffers. Each persistent buffer takes a
-            // slot; the pool grows on demand, so this is the bound of a
-            // frame-callback-paced present, not a hard cap.
+            // Room for two full-output buffers; each persistent buffer takes a
+            // slot, and the pool grows on demand rather than being a hard cap.
             self.pool =
                 SlotPool::new(physical_w as usize * physical_h as usize * 4 * 2, &self.shm).ok();
             // A fresh pixmap holds nothing; the whole frame has to be laid down.
@@ -280,9 +268,8 @@ impl Shell {
             );
         }
 
-        // What the frame just changed, in physical pixels. A settled repaint is
-        // the card rectangle, spanned by the union of the previous and current
-        // bottoms so a shrink is covered too.
+        // What the frame just changed, in physical pixels: a settled repaint is
+        // the card rect, spanned by the previous and current bottoms.
         let surface_size = self.app.surface;
         let scale = self.app.scale_factor();
         let layout = self.app.appearance.layout;
@@ -318,10 +305,8 @@ impl Shell {
         }
     }
 
-    /// Copy the damaged region of the retained frame into a free shared-memory
-    /// buffer, damage only that region and commit. Reusing a buffer keeps the
-    /// undamaged pixels from its previous upload, so a small change costs a
-    /// small copy and the compositor only recomposites the damage.
+    /// Copy the damaged region into a free shm buffer and commit; the rest of the
+    /// buffer keeps its previous upload, so only the damage recomposites.
     fn blit(&mut self) -> bool {
         if !self.configured {
             return false;
@@ -378,9 +363,8 @@ impl Shell {
             }
         }
 
-        // With a fractional ratio the buffer is `logical × ratio` and the
-        // viewport maps it back; the surface's own scale stays 1. Without one,
-        // the integer scale is what says how big a logical pixel is.
+        // With a fractional ratio the buffer is `logical × ratio` and the viewport
+        // maps it back (surface scale 1); without one the integer scale applies.
         if self.app.uses_viewport() {
             surface.set_buffer_scale(1);
             if self.viewport_destination != Some((width, height)) {
@@ -394,9 +378,8 @@ impl Shell {
         }
         surface.damage_buffer(damage.x, damage.y, damage.w, damage.h);
 
-        // The frame callback must be requested before the commit it paces: a
-        // request sent after the commit waits for the next one. It is requested
-        // on every commit so the next `redraw` is coalesced into it.
+        // The frame callback is requested before the commit it paces — a request
+        // after it waits for the next — so the next `redraw` coalesces into it.
         let frame_surface = surface.clone();
         surface.frame(&self.qh, FrameCallbackData(frame_surface));
         self.frame_pending = true;
@@ -433,9 +416,8 @@ impl Shell {
             self.last_present = Some(now);
         }
 
-        // `WAYRUN_SNAPSHOT=<path>` writes the buffer as drawn, once per show:
-        // the only way to tell what the shell produced from what the compositor
-        // did with it.
+        // `WAYRUN_SNAPSHOT=<path>` writes the buffer as drawn, once per show: the
+        // only way to tell what the shell produced from what the compositor did.
         if let Some(path) = std::env::var_os("WAYRUN_SNAPSHOT")
             && !self.first_frame_logged
         {
@@ -486,9 +468,8 @@ impl Shell {
         None
     }
 
-    /// Retry a deferred present shortly. Used when both buffers are still held
-    /// by the compositor: the frame callback usually wakes `pump`, but a
-    /// release can arrive on its own.
+    /// Retry a deferred present shortly, for when both buffers are still held; the
+    /// frame callback usually wakes `pump`, but a release can arrive alone.
     fn schedule_retry(&mut self) {
         if self.retry_armed {
             return;
@@ -524,9 +505,8 @@ impl Shell {
         }
     }
 
-    /// Save the pixels the caret covers: the frame without it, in a rect just
-    /// around the caret. A blink restores this patch and redraws the caret, so
-    /// the shell never holds a second full-size frame.
+    /// The frame without the caret, saved in a rect just around it. A blink
+    /// restores this patch and redraws the caret, so no second full frame is held.
     fn capture_caret_patch(&mut self) {
         let (x, y, w, h) = render::caret_rect(&self.app, &mut self.text);
         let scale = self.app.scale_factor();
@@ -602,9 +582,8 @@ impl Shell {
     }
 }
 
-/// The pixels under the caret, saved from a frame drawn without it. A blink
-/// restores the patch and redraws the caret, so the shell holds no second
-/// full-output pixmap.
+/// The pixels under the caret from a frame drawn without it; a blink restores the
+/// patch and redraws the caret, so no second full pixmap is held.
 #[derive(Debug)]
 pub(super) struct CaretPatch {
     x: u32,
@@ -838,9 +817,8 @@ mod tests {
 
     #[test]
     fn a_longer_shm_canvas_is_not_a_panic() {
-        // `sctk` rounds a slot's length up to 64 bytes, so the canvas is longer
-        // than the pixmap whenever the buffer's byte length is not a multiple
-        // of 64.
+        // `sctk` rounds a slot's length up to 64 bytes, so the canvas can be
+        // longer than the pixmap when its byte length is not a multiple of 64.
         let source: Vec<u8> = (0..16).collect();
         let mut destination = vec![0u8; 16 + 48];
 

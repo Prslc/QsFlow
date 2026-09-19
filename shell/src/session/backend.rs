@@ -70,9 +70,8 @@ pub fn forget_row(on_click: &str) {
     );
 }
 
-/// Pin a row's stored snapshot to the top of one exact query. A notification,
-/// not a request: the caller re-searches and the pin leads the reply, so no
-/// reply of its own is needed.
+/// Pin a row's snapshot to one exact query. A notification, not a request: the
+/// caller re-searches and the pin leads the reply.
 pub fn pin(scope: &str, item: serde_json::Value) {
     send(
         &serde_json::json!({
@@ -104,9 +103,8 @@ pub fn reveal(uri: &str) {
 /// Spawn the core and wire the reader/writer threads: one writer owns stdin (no
 /// interleaved lines), the reader reaps the child when stdout closes.
 pub fn start(tx: Sender<BackendEvent>) {
-    // Re-exec this same binary in core mode; there is no second file. stderr is
-    // inherited so the core's warnings (a host that overran, a plugin that did
-    // not answer) land in the unit's journal.
+    // Re-exec this same binary in core mode; stderr is inherited so the core's
+    // warnings land in the unit's journal.
     let spawned = std::env::current_exe().and_then(|exe| {
         Command::new(exe)
             .arg("--core")
@@ -149,9 +147,8 @@ pub fn start(tx: Sender<BackendEvent>) {
         });
     }
 
-    // Warm the core's caches (app list + external host discovery) here rather
-    // than on the first keystroke: the daemon boots long before the launcher is
-    // shown. A real search supersedes this one and its payload is dropped.
+    // Warm the core's caches here, not on the first keystroke: the daemon boots
+    // long before the launcher is shown; a real search supersedes this one.
     send("a");
 }
 

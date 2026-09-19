@@ -2,10 +2,8 @@ use std::process::{Command, Stdio};
 
 use calloop::channel::Sender;
 
-/// Read the selection on a worker thread and hand the text to the event loop.
-/// `generation` is the show the read was requested for: a read that finishes
-/// after a dismissal must be dropped by `on_paste`, not pasted into the next
-/// show (a stalled selection owner is exactly why this runs off the loop).
+/// Read the selection on a worker thread. `generation` is the show it belongs to,
+/// so a read finishing after a dismissal is dropped instead of pasted later.
 pub fn read(tx: Sender<(u64, Option<String>)>, generation: u64) {
     std::thread::spawn(move || {
         let _ = tx.send((generation, paste()));

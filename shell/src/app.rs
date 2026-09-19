@@ -18,9 +18,8 @@ pub enum Hover {
     Clear,
 }
 
-/// The keyboard-driven action panel (Wox-style) opened with Shift+Enter over the
-/// selected row. It replaces the result list until it is dismissed or an action
-/// runs; `parent` is the row it belongs to.
+/// The action panel (Wox-style) opened with Shift+Enter over the selected row. It
+/// replaces the result list; `parent` is the row it belongs to.
 pub struct Menu {
     pub parent: usize,
     pub actions: Vec<ActionItem>,
@@ -83,13 +82,11 @@ pub struct State {
     /// The integer buffer scale `wl_surface` reports, used when the compositor
     /// offers no fractional scale; it is the ceiling of the exact ratio.
     pub scale: i32,
-    /// The exact ratio from `wp_fractional_scale_v1`. When set, the buffer is
-    /// `surface × this` and a viewport maps it back onto the logical size, so
-    /// `scale` above is not used for sizing.
+    /// The exact ratio from `wp_fractional_scale_v1`: the buffer is
+    /// `surface × this` and a viewport maps it back, so `scale` is not used.
     pub fractional: Option<f32>,
-    /// Whether the entrance animation has been started by the first drawn
-    /// frame. The layer surface is configured a round trip after `shown`, so
-    /// starting at the request would swallow the fade's first frames.
+    /// Whether the entrance animation has started on the first drawn frame; the
+    /// layer surface configures a round trip after `shown`.
     pub entrance_started: bool,
     /// `WAYRUN_REDUCED_MOTION`: ORed with the config's `motion.reduced`.
     reduced_env: bool,
@@ -110,9 +107,8 @@ pub struct State {
     card_to: f32,
     card_at: Instant,
     pub dismiss_at: Option<Instant>,
-    /// The bottom edge of the card rectangle drawn last. A settle repaint only
-    /// covers the card, so a shrink has to restore the dim over the old edge
-    /// too, and this is how it is known.
+    /// The bottom edge of the card drawn last. A settle repaint covers only the
+    /// card, so a shrink must restore the dim over the old edge too.
     pub last_card_bottom: f32,
 }
 
@@ -184,16 +180,14 @@ impl State {
         self.fractional.unwrap_or(self.scale.max(1) as f32)
     }
 
-    /// Whether the buffers are mapped through a `wp_viewport` — their size is
-    /// the logical size times [`State::scale_factor`], and the surface's own
-    /// buffer scale must stay 1.
+    /// Whether the buffers are mapped through a `wp_viewport`: their size is
+    /// `surface × scale_factor` and the surface's own buffer scale stays 1.
     pub fn uses_viewport(&self) -> bool {
         self.fractional.is_some()
     }
 
-    /// The card's resting height: the action panel when one is open, else the
-    /// result list. Every height computation goes through here, so the footer,
-    /// the blur region and the reflow all agree with the drawn frame.
+    /// The card's resting height (panel when open, else the list). The footer,
+    /// blur region and reflow all read it, so they agree with the drawn frame.
     pub fn content_height(&self) -> f32 {
         match &self.menu {
             Some(menu) => self.appearance.layout.panel_h(menu.actions.len()),
@@ -222,8 +216,7 @@ impl State {
     pub fn entrance(&self, now: Instant) -> f32 {
         if self.reduce_motion {
             // Reduced motion starts at the end state: returning 0 here leaves
-            // the dim and every `fade()`d colour transparent, an invisible
-            // launcher rather than "no animation".
+            // the dim and every faded colour invisible, not "no animation".
             return 1.0;
         }
         if !self.entrance_started {
@@ -305,8 +298,6 @@ impl State {
             .contain(self.selected, self.first, self.rows.len());
         self.resync_hover();
     }
-
-    // ---- action panel -----------------------------------------------------
 
     /// Open the selected row's action panel; whether it had one to open.
     pub fn open_actions(&mut self) -> bool {
@@ -423,9 +414,8 @@ impl State {
         self.hovered = None;
     }
 
-    /// Rows that move under a stationary pointer are *different* rows and draw
-    /// in the same place, so nothing fires an enter/exit for them: re-derive
-    /// the row hover. `Hover::Clear` is left alone, since it is not in the list.
+    /// Rows that move under a stationary pointer are different rows and fire no
+    /// enter/exit, so re-derive the hover; `Hover::Clear` is left alone.
     fn resync_hover(&mut self) {
         let hit = self.cursor.and_then(|(x, y)| {
             if let Some(menu) = &self.menu {
@@ -471,8 +461,6 @@ impl State {
             self.card_at = now;
         }
     }
-
-    // ---- editing ----------------------------------------------------------
 
     /// The selected byte range, `None` when the caret is a bare point.
     pub fn selection(&self) -> Option<(usize, usize)> {
@@ -532,11 +520,8 @@ impl State {
         }
     }
 
-    /// `zwp_text_input_v3.delete_surrounding_text`: both lengths are *bytes*, so
-    /// characters are removed while they fit the budget — deleting three bytes
-    /// before the caret must not swallow three CJK characters. A character that
-    /// does not fit is left alone rather than deleted past the request, and both
-    /// loops stop at the ends of the query, so a bogus length cannot spin.
+    /// `delete_surrounding_text` lengths are UTF-8 *bytes*: remove characters
+    /// while they fit, stop at the ends, so a bogus length cannot spin.
     pub fn delete_surrounding(&mut self, before: u32, after: u32) {
         // the IME is about to replace whatever is selected
         self.delete_selection();
@@ -655,11 +640,8 @@ impl State {
         &self.query[..self.caret]
     }
 
-    // ---- rows -------------------------------------------------------------
-
-    /// Drop a row the core confirmed it really forgot. Looked up by `on_click`
-    /// rather than by index, because the payload may have been replaced while
-    /// the reply was in flight.
+    /// Drop a row the core confirmed it forgot, looked up by `on_click` because
+    /// the payload may have been replaced while the reply was in flight.
     pub fn remove_row(&mut self, on_click: &str, now: Instant) -> bool {
         let Some(index) = self
             .rows
@@ -687,11 +669,8 @@ impl State {
 
         self.rows = items;
 
-        // A genuinely new payload starts from the top row; what the user is
-        // looking at changed under the cursor. A local removal (`⌫`) never comes
-        // through here and an identical re-send returned above, so both keep the
-        // cursor. A fresh payload also belongs to a new list, so any open panel
-        // is stale.
+        // A fresh payload starts at the top row, and any open panel is stale; a
+        // local removal and an identical re-send keep the cursor.
         self.selected = 0;
         self.menu = None;
         self.contain();
@@ -786,9 +765,8 @@ pub enum ActionCommand {
     },
 }
 
-/// Decode one action's `on_click`. `None` for a malformed `pin:`/`unpin:`
-/// payload, which is ignored rather than run as a command; a scheme-less target
-/// is an ordinary launch command.
+/// Decode one action's `on_click`; a malformed `pin:`/`unpin:` is ignored, and a
+/// scheme-less target is an ordinary launch command.
 pub fn parse_action(on_click: &str) -> Option<ActionCommand> {
     if let Some(payload) = on_click.strip_prefix("pin:") {
         let value: serde_json::Value = serde_json::from_str(payload).ok()?;
@@ -845,8 +823,7 @@ pub fn launch_command(target: &str) -> String {
 }
 
 /// Whole rows from a fractional wheel delta, carrying the remainder. One notch
-/// arrives as a line *and* its pixel equivalent, so the pixel half must not add
-/// a second row; a trackpad (pixels only) accumulates to ~64px per row.
+/// arrives as a line and its pixel half, so pixels must not add a second row.
 pub fn whole_rows(accum: &mut f32, delta: f32) -> i32 {
     // A reversal starts a new gesture: without this the previous direction's
     // slack would swallow the first notch back.

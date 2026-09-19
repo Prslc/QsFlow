@@ -11,9 +11,8 @@ pub const SUGGESTION_SIZE: f32 = 11.0;
 pub const BADGE_SIZE: f32 = 15.0;
 pub const QUERY_SIZE: f32 = 18.0;
 pub const ICON_SIZE: f32 = 30.0;
-/// The search field's inner insets: the container's 14, the magnifier's 22, the
-/// row's 12px spacing and the input's own 8. The IME needs it to place the
-/// caret rectangle.
+/// The search field's inner insets (container 14, magnifier 22, spacing 12 and
+/// input 8); the IME needs it to place the caret rectangle.
 pub const TEXT_INSET: f32 = 14.0 + 22.0 + 12.0 + 8.0;
 
 /// Everything logical→physical scaling goes through here.
@@ -46,9 +45,8 @@ impl Canvas {
         }
     }
 
-    /// Overwrite `rect` with the backdrop dim. A region repaint has to put the
-    /// backdrop back before drawing over it; `BlendMode::Source` replaces rather
-    /// than composites, so the dim is never applied twice.
+    /// Overwrite `rect` with the backdrop dim. `BlendMode::Source` replaces, so
+    /// a region repaint can put the dim back without applying it twice.
     pub fn restore_dim(&self, pixmap: &mut Pixmap, rect: Rect, dim: f32) {
         let Some(path) = round_rect(rect.scaled(self.scale), 0.0) else {
             return;
@@ -65,9 +63,8 @@ impl Canvas {
         );
     }
 
-    /// The band below `y` is backdrop. The card's height animates while its
-    /// content is already laid out at its final size, so a growing payload
-    /// paints rows below the card's edge.
+    /// The band below `y` is backdrop. A growing payload lays rows out at final
+    /// size while the card still animates, so they paint below its edge.
     pub fn restore_dim_below(&self, pixmap: &mut Pixmap, y: f32, surface: (u32, u32), dim: f32) {
         self.restore_dim(
             pixmap,
@@ -205,9 +202,8 @@ impl Rect {
         self.y + self.h / 2.0
     }
 
-    /// The search field inside a card of top-left `(x, y)` and width `w`: inset
-    /// by `PAD`, one `SEARCH_H` tall. The drawn field and the IME's `caret_box`
-    /// both build it here so they cannot drift.
+    /// The search field inside a card at `(x, y)` of width `w`, inset by `PAD`
+    /// and `SEARCH_H` tall; the IME's `caret_box` shares it so they cannot drift.
     pub fn field_at(x: f32, y: f32, w: f32) -> Self {
         Self {
             x: x + geom::PAD,
@@ -217,9 +213,8 @@ impl Rect {
         }
     }
 
-    /// The same rectangle in the target's pixels. `round_rect` builds paths in
-    /// the pixmap's coordinate space, so every rect handed to it has to be
-    /// scaled, not just radii and strokes.
+    /// The same rectangle in the target's pixels: `round_rect` works in pixmap
+    /// space, so every rect passed to it must be scaled, not just radii.
     pub fn scaled(self, scale: f32) -> Self {
         Self {
             x: self.x * scale,

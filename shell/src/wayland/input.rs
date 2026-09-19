@@ -38,9 +38,8 @@ impl Shell {
                     self.redraw();
                     return;
                 }
-                // The shell owns no clipboard: Ctrl+C/X hand the selected text
-                // to the core's `copy` verb, which writes it with `wl-copy` —
-                // the same path a `copy:` row takes.
+                // The shell owns no clipboard: Ctrl+C/X hand the selection to the
+                // core's `copy` verb, which writes it with `wl-copy`.
                 Keysym::c => {
                     self.copy_selection();
                     return;
@@ -57,9 +56,8 @@ impl Shell {
             }
         }
 
-        // The action panel owns the keyboard while it is open. A key it does
-        // not use dismisses it and falls through to the field, so typing or an
-        // arrow continues in the results.
+        // The action panel owns the keyboard while open; a key it does not use
+        // dismisses it and falls through to the field.
         if self.app.menu.is_some() {
             match event.keysym {
                 Keysym::Escape => {
@@ -101,9 +99,8 @@ impl Shell {
             }
         }
 
-        // `redraw` is "something on screen changed"; `edited` is narrower and
-        // only a *query* change may send a search line, so navigation and the
-        // action panel never re-run a search.
+        // `redraw` is "something visible changed"; `edited` is narrower, and only
+        // a query change may send a search, so navigation never re-searches.
         let mut redraw = true;
         let mut edited = false;
         match event.keysym {
@@ -170,10 +167,8 @@ impl Shell {
         }
     }
 
-    /// Every query change is one search line; the core debounces and aborts
-    /// superseded searches. Every path that edits the field goes through here —
-    /// typing, paste, the IME and the ✕ — or it draws a query the core never
-    /// saw.
+    /// Every query change is one search line (the core debounces); every editing
+    /// path — typing, paste, IME, ✕ — goes through here.
     pub(super) fn query_changed(&self) {
         backend::send(&self.app.query);
     }
@@ -203,10 +198,8 @@ impl Shell {
         self.schedule_dismiss(now);
     }
 
-    /// The surface outlives a launch by 150ms, in both modes. Without the delay
-    /// a non-resident run returns from the event loop while the verb is still
-    /// queued for the writer thread, and the process exit can beat the line to
-    /// the core.
+    /// The surface outlives a launch by 150ms. Without it a non-resident run can
+    /// exit before the queued verb reaches the writer thread.
     fn schedule_dismiss(&mut self, now: Instant) {
         let at = now + Duration::from_millis(app::EXIT_DELAY_MS);
         self.app.dismiss_at = Some(at);
@@ -249,9 +242,8 @@ impl Shell {
         self.execute_action(&action, now);
     }
 
-    /// One action-panel command. Pin/unpin re-search so the new leading row
-    /// appears while the launcher stays open; the rest behave like a launch and
-    /// dismiss, except `forget`, which drops the row in place like `⌫`.
+    /// One action-panel command. Pin/unpin re-search so the launcher stays open;
+    /// the rest launch and dismiss, except `forget`, which drops the row in place.
     fn execute_action(&mut self, action: &ActionItem, now: Instant) {
         let Some(command) = app::parse_action(&action.on_click) else {
             return;
@@ -319,8 +311,7 @@ impl SeatHandler for Shell {
             {
                 self.ime = Some(manager.get_text_input(&seat, qh, ime::TextInputData));
                 // A non-resident first show opens before the seat capability is
-                // dispatched, so the proxy is created after `open()` already
-                // ran `enable_ime` into a `None`. Enable it here in that case.
+                // dispatched, so enable the IME here after `open` missed it.
                 if self.layer.is_some() {
                     self.enable_ime();
                 }

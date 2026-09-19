@@ -3,13 +3,11 @@ use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, PixmapRef, PremultipliedColorU8, Transform};
 
 pub struct IconCache {
-    /// path → (box size → premultiplied RGBA bitmap). The outer key is a
-    /// `String` so the per-frame lookup can borrow the path as `&str`; the
-    /// inner value is `None` for an unreadable file.
+    /// path → (box size → premultiplied RGBA). The key is a `String` so a
+    /// per-frame lookup borrows a `&str`; `None` marks an unreadable file.
     entries: HashMap<String, HashMap<u32, Option<Pixmap>>>,
-    /// The same bitmap recoloured to the theme foreground, for the action
-    /// panel's theme glyphs. Keyed by colour too, so a live theme change makes
-    /// new entries instead of showing the old tint.
+    /// The same bitmap recoloured to the theme foreground, keyed by colour too,
+    /// so a live theme change does not show the old tint.
     tinted: HashMap<(String, u32, [u8; 3]), Option<Pixmap>>,
 }
 
@@ -21,17 +19,15 @@ impl IconCache {
         }
     }
 
-    /// Drop every decoded icon. The decoded pixmaps are the large part of the
-    /// cache, and a hidden resident launcher has no business holding a previous
-    /// session's.
+    /// Drop every decoded icon: the pixmaps are the cache's bulk, and a hidden
+    /// resident launcher has no business holding them.
     pub fn clear(&mut self) {
         self.entries.clear();
         self.tinted.clear();
     }
 
-    /// Rasterise `path` now, so a later draw cannot land the cost on the frame
-    /// that is being animated. Called when a payload arrives, which in resident
-    /// mode happens while the launcher is still hidden.
+    /// Rasterise `path` now, so a later draw cannot land the cost on an animated
+    /// frame; called when a payload arrives, while the launcher is still hidden.
     pub fn warm(&mut self, path: &str, size: u32) {
         self.entries
             .entry(path.to_string())
@@ -53,10 +49,8 @@ impl IconCache {
             });
     }
 
-    /// Draw `path` recoloured to `color` when it is a monochrome silhouette;
-    /// a coloured icon is drawn unchanged. The action panel's theme glyphs
-    /// (pin, trash, copy) are dark-on-transparent and would be invisible on the
-    /// dark card otherwise.
+    /// Draw `path` tinted to `color` when it is a monochrome silhouette; a
+    /// coloured icon is left unchanged. The panel's dark glyphs need this.
     pub fn draw_tinted(
         &mut self,
         target: &mut Pixmap,
@@ -89,9 +83,8 @@ impl IconCache {
         );
     }
 
-    /// Draw the icon at `path` contained in a `size`×`size` box whose top-left
-    /// corner is `(x, y)`, at `opacity` (the entrance fade). `size` is in the
-    /// target's pixels.
+    /// Draw the icon contained in a `size`×`size` box at `(x, y)`, at `opacity`;
+    /// `size` is in the target's pixels.
     pub fn draw(
         &mut self,
         target: &mut Pixmap,
@@ -143,9 +136,8 @@ fn render(path: &str, size: u32) -> Option<Pixmap> {
     }
 }
 
-/// Recolour a monochrome silhouette to `color`, preserving alpha. A coloured
-/// icon is left alone: the pin/trash/copy glyphs are grey and need the theme
-/// colour, but a folder or an application icon must keep its own.
+/// Recolour a monochrome silhouette to `color`, preserving alpha; a coloured icon
+/// is left alone.
 fn tint(pixmap: &mut Pixmap, color: [u8; 3]) {
     let greyscale = pixmap
         .pixels()

@@ -31,9 +31,8 @@ pub(super) fn draw_magnifier(
     );
 }
 
-/// The field's text area: its left edge and its width. The field is
-/// single-line, so a wider query is scrolled inside the box rather than clipped
-/// with the caret outside it.
+/// The field's text area: left edge and width. The field is single-line, so a
+/// wider query scrolls inside the box rather than clipping the caret.
 fn text_area(field: Rect) -> (f32, f32) {
     (field.x + TEXT_INSET, field.w - TEXT_INSET - 40.0)
 }
@@ -114,8 +113,7 @@ pub(super) fn draw_query(
     );
 
     // The preedit is drawn at the caret, never inserted into the query: glyphs
-    // in the text colour over a translucent selection quad, so a composition
-    // stays legible on a transparent surface.
+    // over a translucent quad, so a composition stays legible.
     if let Some(preedit) = &state.preedit {
         let shaped = text.shape(preedit, size, Weight::MEDIUM);
         let quad = Rect {
@@ -138,9 +136,8 @@ pub(super) fn draw_query(
     }
 }
 
-/// The caret's box in logical units, and how far the query is scrolled so it
-/// fits the field. The one place the caret geometry is computed: the drawn
-/// caret and the rectangle the IME is told about must not drift apart.
+/// The caret's box and how far the query is scrolled so it fits. The one caret
+/// geometry, shared with the IME cursor rectangle, so the two cannot drift.
 fn caret_box(state: &State, text: &mut TextEngine) -> (Rect, f32) {
     let surface = state.surface;
     let layout = state.appearance.layout;

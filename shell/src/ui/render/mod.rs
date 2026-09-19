@@ -85,11 +85,8 @@ pub fn draw(
         h: state.card_height(now),
     };
 
-    // The frame is retained across presents, so a settled frame only repaints
-    // the card's own rectangle and leaves the (unchanged) full-screen dim in
-    // place — the dim was the single largest per-frame cost. An animation or a
-    // fresh frame repaints the whole surface: the dim is moving, or the
-    // backdrop is not there yet.
+    // The frame is retained, so a settled frame repaints only the card and
+    // leaves the dim in place; an animation or fresh frame repaints it all.
     let dim = state.dim_alpha(now);
     if full {
         canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
@@ -111,8 +108,7 @@ pub fn draw(
     mark("clear");
 
     // The card: a translucent fill with a 1px white hairline. The hairline is a
-    // *ring*, never a base fill under the whole card, which would raise the
-    // interior's composite alpha and cost it its background transmission.
+    // *ring*, not a base fill, which would raise the interior's alpha.
     canvas.fill_round(
         pixmap,
         Rect {
@@ -163,9 +159,8 @@ pub fn draw(
     footer::draw_footer(&canvas, pixmap, surface, state, text, now);
     mark("footer");
 
-    // A payload that grows the card lays its rows out immediately while the
-    // height still animates: the band below the card's current bottom edge
-    // belongs to the backdrop, not to the card.
+    // A growing payload lays rows out immediately while the height animates, so
+    // the band below the card's bottom belongs to the backdrop.
     let resting = layout.card_top(surface) + state.content_height();
     let bottom = card.y + card.h;
     let mut band = None;

@@ -61,9 +61,8 @@ impl Dispatch2<ZwpTextInputV3, Shell> for TextInputData {
     }
 }
 
-/// The staged `zwp_text_input_v3` state. The protocol is double-buffered: the
-/// events only mean anything once `done` arrives, so every field is held here
-/// first.
+/// The staged `zwp_text_input_v3` state. The protocol is double-buffered, so the
+/// events only apply once `done` arrives.
 #[derive(Debug, Default)]
 pub struct Pending {
     /// `Some(None)` is an explicit clear.
@@ -75,9 +74,8 @@ pub struct Pending {
 /// What `done` should do with the drawn preedit.
 #[derive(Debug, PartialEq, Eq)]
 pub enum PreeditAction {
-    /// The IME said nothing about a preedit, so the composition is over and
-    /// whatever is drawn has to go; skipping this leaves a stale composition
-    /// in the field.
+    /// The IME said nothing about a preedit, so the composition is over and what
+    /// is drawn must go.
     Clear,
     /// The IME staged a preedit: `None` is an explicit clear.
     Set(Option<String>),
@@ -123,8 +121,6 @@ pub fn content_type() -> (ContentHint, ContentPurpose) {
 }
 
 impl Shell {
-    // ---- input method ------------------------------------------------------
-
     pub(super) fn enable_ime(&mut self) {
         let Some(ime) = self.ime.as_ref() else { return };
         let (hint, purpose) = content_type();
@@ -142,11 +138,8 @@ impl Shell {
         self.ime_cursor_sent = None;
     }
 
-    /// Tell the IME where the caret is, so its panel can follow it. The
-    /// rectangle comes from the renderer's own caret geometry, so a long query
-    /// that scrolls the field cannot leave the candidate window behind.
-    /// Deduped like the blur region: a present must not commit a text-input
-    /// state change.
+    /// Tell the IME where the caret is, using the renderer's own caret geometry so
+    /// a scrolled field cannot strand it; deduped like the blur region.
     pub(super) fn sync_ime_cursor(&mut self) {
         let Some(ime) = self.ime.as_ref() else { return };
         if self.layer.is_none() {
@@ -217,9 +210,8 @@ impl Shell {
             }
         }
 
-        // A commit is a query change like any other keystroke: without this a
-        // composition draws its characters but never searches for them. The
-        // preedit itself stays out of `query`, so it needs no search.
+        // A commit is a query change like any keystroke, or the composition draws
+        // characters but never searches; the preedit stays out of `query`.
         if edited {
             self.query_changed();
         }

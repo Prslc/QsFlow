@@ -9,11 +9,8 @@ use crate::ui::text::TextEngine;
 
 use super::canvas::{Canvas, SUGGESTION_SIZE};
 
-/// The footer's left-hand hint: the action panel's keys while it is open, the
-/// launch keys once there are rows, a distinct "No results" when a non-empty
-/// query came back empty, and the history help otherwise. `No results` must not
-/// be confused with the untouched empty state, or a searched-but-empty payload
-/// reads as "not searched".
+/// The footer's left hint: the panel's keys when open, the launch keys once rows
+/// exist, a distinct "No results" for an empty search, else history help.
 pub(super) fn footer_hint(rows: usize, query_empty: bool, panel: bool) -> &'static str {
     if panel {
         "↵ Run   ↑↓ Move   Esc Back"

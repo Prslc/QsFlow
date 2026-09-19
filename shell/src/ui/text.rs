@@ -17,9 +17,8 @@ pub struct Shaped {
     pub height: f32,
 }
 
-/// The shaped-line cache key: the text plus its size (as bits — `f32` is not
-/// `Eq`) and weight. A card redraw reshapes the same row titles on every
-/// animation frame, so a hit is the common case.
+/// The shaped-line cache key: text, size (as bits — `f32` is not `Eq`) and weight.
+/// A redraw reshapes the same titles every frame, so a hit is the common case.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ShapeKey {
     text: String,
@@ -27,9 +26,8 @@ struct ShapeKey {
     weight: Weight,
 }
 
-/// Distinct lines kept before the cache is dropped wholesale. A show's live set
-/// is tiny (five rows, the query, the footer); the cap only guards a long typing
-/// session, and `clear_cache` frees everything on dismiss anyway.
+/// Distinct lines kept before the cache is dropped wholesale; a show's live set is
+/// tiny and `clear_cache` frees everything on dismiss.
 const SHAPE_CACHE_MAX: usize = 256;
 
 pub struct TextEngine {
@@ -53,18 +51,15 @@ impl TextEngine {
         }
     }
 
-    /// Drop the rasterised-glyph bitmaps and the shaped-line cache. The
-    /// `FontSystem`'s font database is process-lifetime, but the glyph cache
-    /// grows with every distinct glyph and size a show draws, so the resident
-    /// shell frees it on dismiss.
+    /// Drop the glyph bitmaps and shaped lines. The font database is process-
+    /// lifetime, but a resident shell frees the caches on dismiss.
     pub fn clear_cache(&mut self) {
         self.cache = SwashCache::new();
         self.shapes.clear();
         release_font_pages(&self.font_system);
     }
 
-    /// Shape one unwrapped line at `size`, returning a handle to the cached
-    /// layout. The same line, size and weight is shaped once; every later frame
+    /// Shape one unwrapped line, cached by text/size/weight; every later frame
     /// that draws it is a hash lookup.
     pub fn shape(&mut self, text: &str, size: f32, weight: Weight) -> Rc<Shaped> {
         let key = ShapeKey {
@@ -107,9 +102,8 @@ impl TextEngine {
         }
     }
 
-    /// Shape one line, eliding it with `…` so it fits `max_width`. A line that
-    /// already fits is shaped as-is, which is the common case and costs one
-    /// shape; only an overlong line pays the truncation search.
+    /// Shape one line elided with `…` to fit `max_width`; a line that already
+    /// fits is shaped as-is, and only an overlong one pays the search.
     pub fn fit(&mut self, text: &str, size: f32, weight: Weight, max_width: f32) -> Rc<Shaped> {
         let full = self.shape(text, size, weight);
         if full.width <= max_width {
@@ -121,10 +115,8 @@ impl TextEngine {
             return ellipsis;
         }
 
-        // The largest char-boundary prefix that leaves room for the ellipsis,
-        // found by binary search over the byte boundaries so a long string
-        // costs a handful of shapes rather than one per character. The prefix
-        // shapes are cached, so a later frame only pays the search.
+        // The largest char-boundary prefix that leaves room for the ellipsis, by
+        // binary search over byte boundaries so a long string costs few shapes.
         let mut boundaries: Vec<usize> = text.char_indices().map(|(index, _)| index).collect();
         boundaries.push(text.len());
         let (mut low, mut high) = (0, boundaries.len() - 1);
@@ -264,10 +256,8 @@ fn blend(data: &mut [u8], width: i32, height: i32, x: i32, y: i32, color: [u8; 4
     data[index + 3] = (alpha + destination).min(255) as u8;
 }
 
-/// Hand the resident pages of every mmap'd font file back to the OS. Shaping a
-/// CJK line faults a font's tables in, and neither the glyph cache nor
-/// `malloc_trim` touches a file mapping, so a hidden shell would otherwise keep
-/// the whole page set. The mapping stays valid: the next shape re-faults.
+/// Hand the resident pages of every mmap'd font file back to the OS: shaping
+/// faults tables in, and nothing else reclaims a file mapping.
 #[cfg(target_os = "linux")]
 fn release_font_pages(font_system: &FontSystem) {
     let mut seen: HashSet<*const u8> = HashSet::new();

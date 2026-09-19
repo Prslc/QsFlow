@@ -39,9 +39,8 @@ use crate::ui::text::TextEngine;
 use crate::ui::theme;
 use crate::wayland::ime::Pending;
 
-/// A changed rectangle in physical buffer pixels. `full` means the whole buffer
-/// and ignores the numbers; a zero-size rect means nothing changed. Used both to
-/// repaint the retained frame and to keep the two shm buffers in step.
+/// A changed rectangle in physical buffer pixels. `full` means the whole buffer, a
+/// zero-size rect means nothing changed; it keeps the two shm buffers in step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Damage {
     x: i32,
@@ -144,9 +143,8 @@ pub struct Shell {
     effect_state: BackgroundEffectState,
     ime_manager: Option<ZwpTextInputManagerV3>,
     ime: Option<ZwpTextInputV3>,
-    /// `wp_fractional_scale_v1`'s manager and the per-surface object: together
-    /// with the viewport below, they let a 1.25× output render at 1.25× instead
-    /// of the 2× its integer buffer scale asks for.
+    /// `wp_fractional_scale_v1`'s manager and per-surface object, with the
+    /// viewport, let a 1.25× output render at 1.25× rather than 2×.
     fractional_manager: Option<WpFractionalScaleManagerV1>,
     fractional: Option<WpFractionalScaleV1>,
     viewporter: Option<WpViewporter>,
@@ -165,15 +163,13 @@ pub struct Shell {
     keyboard_focus: bool,
     /// The surface exists only while shown: a toggle is create/destroy.
     layer: Option<LayerSurface>,
-    /// Whether the compositor has configured the current surface. A layer
-    /// surface must commit once with no buffer before it may commit one, and a
-    /// payload can arrive from the core inside that window.
+    /// Whether the compositor has configured the surface. A layer surface commits
+    /// once with no buffer first, and a payload can arrive inside that window.
     configured: bool,
     effect: Option<ExtBackgroundEffectSurfaceV1>,
     pool: Option<SlotPool>,
-    /// Two persistent shm buffers, reused across presents: an unchanged region
-    /// is neither copied nor re-uploaded. `buffer_stale[i]` is what the pixmap
-    /// has changed since buffer `i` was last written.
+    /// Two persistent shm buffers reused across presents; `buffer_stale[i]` is
+    /// what the pixmap changed since buffer `i` was last written.
     buffers: [Option<Buffer>; 2],
     buffer_stale: [Damage; 2],
     /// The buffer to write next, so the two alternate.
@@ -184,9 +180,8 @@ pub struct Shell {
     /// A present was deferred because both buffers were still held by the
     /// compositor; a short timer retries it.
     retry_armed: bool,
-    /// The frame as drawn. A blink does not keep a second full-size frame:
-    /// it restores the pixels under the caret from `caret_patch` and redraws
-    /// the caret alone.
+    /// The frame as drawn. A blink keeps no second full-size frame: it restores
+    /// the pixels under the caret and redraws only the caret.
     pixmap: Option<Pixmap>,
     caret_patch: Option<surface::CaretPatch>,
     /// Chosen from what `wl_shm` advertises, at the first present.
@@ -201,24 +196,21 @@ pub struct Shell {
     app: Launcher,
     resident: bool,
     timing: bool,
-    /// `WAYRUN_IME_LOG=1`: every text-input event and the state `done` left
-    /// behind. The preedit path cannot be driven from here (`wtype` never
-    /// reaches fcitx5), so a report is only diagnosable from this.
+    /// `WAYRUN_IME_LOG=1`: every text-input event and the state `done` left; the
+    /// preedit path cannot be driven from here, so it is the only diagnosis.
     ime_log: bool,
     started: Instant,
     open_at: Option<Instant>,
     last_present: Option<Instant>,
     first_frame_logged: bool,
     timer_registered: bool,
-    /// Whether a `wl_surface.frame` callback is outstanding. Presents are paced
-    /// to it — at most one commit per compositor frame — so a burst of input
-    /// events cannot leave several buffers in flight and grow the shm pool.
+    /// Whether a `wl_surface.frame` callback is outstanding. Presents are paced to
+    /// it, so a burst of input cannot leave buffers in flight.
     frame_pending: bool,
     /// A redraw was asked for while a frame callback was outstanding.
     needs_present: bool,
-    /// The retained frame has to be laid down whole: a fresh pixmap, a scale or
-    /// size change, or the entrance's moving dim. A settled redraw only repaints
-    /// the card's rectangle.
+    /// The retained frame must be laid down whole: a fresh pixmap, a scale or size
+    /// change, or the entrance. A settled redraw repaints only the card.
     needs_full: bool,
     exit: bool,
 }
@@ -298,8 +290,6 @@ impl Shell {
         })
     }
 
-    // ---- events ------------------------------------------------------------
-
     pub fn on_backend(&mut self, event: BackendEvent) {
         match event {
             BackendEvent::Theme(config) => {
@@ -324,9 +314,8 @@ impl Shell {
                     }
                 }
             }
-            // A confirmed forget is the only thing that removes a row: a
-            // provider without `forget` answers `false` and the list is left
-            // alone.
+            // A confirmed forget is the only thing that removes a row; a provider
+            // without `forget` answers `false` and the list is left alone.
             BackendEvent::Forgotten {
                 on_click,
                 forgotten,
@@ -385,9 +374,8 @@ impl Shell {
         }
     }
 
-    /// Ask for a redraw. The commit is paced to the compositor's frame
-    /// callback, so a burst of events collapses into one commit per frame
-    /// instead of one per event.
+    /// Ask for a redraw. The commit is paced to the compositor's frame callback,
+    /// so a burst of events collapses into one commit per frame.
     pub fn redraw(&mut self) {
         self.needs_present = true;
         self.pump();
@@ -427,10 +415,8 @@ impl Shell {
         }
 
         if self.keyboard_focus && self.app.preedit.is_none() {
-            // A key press restarts the flash: stay on for a whole interval
-            // measured from the last edit instead of toggling a free-running
-            // timer, which could switch the caret off right after the user
-            // typed.
+            // A key press restarts the flash: stay on for a whole interval from the
+            // last edit, not a free-running timer that could switch off mid-type.
             let phase = now.saturating_duration_since(self.app.caret_at);
             let interval = Duration::from_millis(app::CARET_BLINK_MS);
             if phase < interval {

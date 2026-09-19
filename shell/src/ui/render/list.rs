@@ -58,9 +58,8 @@ pub(super) fn draw_list(
         }
 
         let labels_x = icon_x + ICON_SIZE + 12.0;
-        // The selected row's ↵ hint and the pinned badge are part of the
-        // layout: the labels must leave room for both, so a long title cannot
-        // run underneath either.
+        // The selected row's ↵ hint and the pinned badge are part of the layout:
+        // the labels must leave room for both.
         let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()

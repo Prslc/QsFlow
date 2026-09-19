@@ -4,9 +4,8 @@ pub const SEARCH_H: f32 = 52.0;
 pub const GAP: f32 = 10.0;
 pub const FOOTER_H: f32 = 28.0;
 
-/// The runtime geometry, every value selectable from `theme.toml`'s `[layout]`
-/// and `[appearance]`. The defaults reproduce the original hard-coded metrics
-/// exactly, so an untouched config renders byte-for-byte the same frame.
+/// The runtime geometry, overridable from `theme.toml`. The defaults reproduce
+/// the original metrics, so an untouched config renders the same frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Layout {
     pub width_ratio: f32,
@@ -54,9 +53,8 @@ impl Layout {
         ((surface.1 as f32) * self.top_ratio).round()
     }
 
-    /// The ✕ button's circle in surface-local logical pixels: centre x, centre y
-    /// and radius. The toolbar draws it and `State::clear_hit` claims it, so
-    /// both read the same numbers.
+    /// The ✕ button's circle in logical pixels: centre x, centre y, radius. The
+    /// toolbar draws it and `State::clear_hit` claims it.
     pub fn clear_circle(&self, surface: (u32, u32)) -> (f32, f32, f32) {
         let right = self.card_x(surface) + self.card_w(surface) - PAD - 8.0;
         let center_y = self.card_top(surface) + PAD + SEARCH_H / 2.0;
@@ -74,8 +72,7 @@ impl Layout {
     }
 
     /// `pad + search + gap + footer + pad`, plus a second gap and the list when
-    /// there are rows (with no rows the column holds one gap, not two). The list
-    /// is already capped at `max_rows`, so no separate card cap is needed.
+    /// rows exist. The list is capped at `max_rows`, so the card needs no cap.
     pub fn content_h(&self, rows: usize) -> f32 {
         let base = PAD + SEARCH_H + GAP + FOOTER_H + PAD;
         if rows == 0 {
@@ -127,10 +124,8 @@ impl Layout {
         (index < count).then_some(index)
     }
 
-    /// The blur region covering the card's rounded rect. A rect cannot carry a
-    /// radius, so the corners are 2px scanline bands inset by
-    /// `r - sqrt(r² - (r - dy)²)`, taken at each band's top so no rect pokes
-    /// outside the rounded edge.
+    /// The blur region covering the card's rounded rect, as 2px scanline bands
+    /// inset by `r - sqrt(r² - (r - dy)²)` so no rect pokes past the edge.
     pub fn blur_rects(&self, surface: (u32, u32), card_height: f32) -> Vec<BlurRect> {
         // Floor to 4px so an in-flight reflow does not commit a region per frame.
         let height = ((card_height / 4.0).floor() * 4.0).max(4.0);
