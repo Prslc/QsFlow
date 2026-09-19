@@ -110,7 +110,7 @@ impl State {
             fractional: None,
             visible: false,
             entrance_started: false,
-            reduce_motion: std::env::var_os("QSFLOW_REDUCED_MOTION").is_some(),
+            reduce_motion: std::env::var_os("WAYRUN_REDUCED_MOTION").is_some(),
             hovered: None,
             cursor: None,
             pointer_on_card: false,

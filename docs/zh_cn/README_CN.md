@@ -1,6 +1,6 @@
 <div align="center">
 
-# QsFlow
+# WayRun
 
 <img src="../../images/application_default.png" alt="appicon" width="150" height="150"><br>
 
@@ -10,14 +10,14 @@
 
 ## 概述
 
-QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `qsflow`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，用
+WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `wayrun`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，用
 [tiny-skia](https://github.com/RazrFalcon/tiny-skia) 把卡片、列表与动画直接光栅化进 `wl_shm` 缓冲，因此不需要 GPU 栈，也不依赖任何 GUI 工具包；内核负责插件注册表、JSON-RPC 协议与使用历史库。
 
 ## 截图
 
 | 亮色主题 — 高频使用项 | 暗色主题 — 模糊应用搜索（`android`） |
 |------------------------|-------------------------------------|
-| ![QsFlow — 亮色主题](../../images/launcher.png) | ![QsFlow — 暗色主题](../../images/launcher-search.png) |
+| ![WayRun — 亮色主题](../../images/launcher.png) | ![WayRun — 暗色主题](../../images/launcher-search.png) |
 
 ## 功能特性
 
@@ -47,16 +47,16 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 ## 快速开始
 
 ```bash
-git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow
+git clone https://github.com/Prslc/WayRun.git
+cd WayRun
 cargo build --release
-ln -s "$(pwd)/target/release/qsflow" ~/.local/bin/qsflow
+ln -s "$(pwd)/target/release/wayrun" ~/.local/bin/wayrun
 ```
 
 然后在混成器配置中绑定快捷键（如 `Alt+Space`）来启动：
 
 ```bash
-qsflow
+wayrun
 ```
 
 启动器以全屏覆盖方式打开，带调暗背景与居中卡片。默认的按热键拉起流程下，
@@ -65,42 +65,42 @@ qsflow
 ## 常驻模式（可选 —— 零冷启动）
 
 默认每次按热键都会重新拉起壳与 Rust 内核。要让启动器即刻弹出，让一个常驻进程
-保持存活，通过 unix socket（`$XDG_RUNTIME_DIR/qsflow.sock`）切换表面：
+保持存活，通过 unix socket（`$XDG_RUNTIME_DIR/wayrun.sock`）切换表面：
 
 ```ini
-# ~/.config/systemd/user/qsflow-launcher.service
+# ~/.config/systemd/user/wayrun-launcher.service
 [Unit]
-Description=QsFlow launcher (resident)
+Description=WayRun launcher (resident)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/you/.local/bin/qsflow
+ExecStart=/home/you/.local/bin/wayrun
 Restart=always
 RestartSec=2
 # 让启动器执行的命令也能看到 ~/.local/bin
 Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # WAYLAND_DISPLAY/DISPLAY 由图形会话导入；这里只设 XDG_RUNTIME_DIR（uid 无关的 %t）
 Environment=XDG_RUNTIME_DIR=%t
-# 常驻模式：隐藏启动，用 `qsflow toggle` 切换
-Environment=QSFLOW_RESIDENT=1
+# 常驻模式：隐藏启动，用 `wayrun toggle` 切换
+Environment=WAYRUN_RESIDENT=1
 
 [Install]
 WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now qsflow-launcher
+systemctl --user enable --now wayrun-launcher
 # niri 热键 —— 切换而非重新拉起：
-#   Alt+Space { spawn-sh "qsflow toggle"; }
+#   Alt+Space { spawn-sh "wayrun toggle"; }
 ```
 
 动词为 `open` / `close` / `toggle` / `status`，都发给常驻实例持有的这个 socket；
-`status` 打印 `visible` 或 `hidden`。`QSFLOW_RESIDENT=1` 选中常驻模式（隐藏启动、
-关闭即隐藏）；不带该变量时，直接 `qsflow` 保持旧行为——启动即弹出、关闭即退出，
+`status` 打印 `visible` 或 `hidden`。`WAYRUN_RESIDENT=1` 选中常驻模式（隐藏启动、
+关闭即隐藏）；不带该变量时，直接 `wayrun` 保持旧行为——启动即弹出、关闭即退出，
 因此手动/开发路径与 systemd 服务相互独立。恢复：`systemctl --user disable --now
-qsflow-launcher` 并还原绑定的启动方式。
+wayrun-launcher` 并还原绑定的启动方式。
 
 
 ## 使用说明
@@ -125,10 +125,10 @@ qsflow-launcher` 并还原绑定的启动方式。
 
 ## 配置
 
-首次运行时，`~/.config/qsflow/plugins.toml` 会自动生成：
+首次运行时，`~/.config/wayrun/plugins.toml` 会自动生成：
 
 ```toml
-# ~/.config/qsflow/plugins.toml
+# ~/.config/wayrun/plugins.toml
 [[plugins]]
 id = "app-search"
 keyword = ""       # 留空 = 无前缀
@@ -144,13 +144,13 @@ keyword = "s"
 ```
 
 调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
-条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。主机可以手写；[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) 工作区提供了一套 Python 框架、示例插件与 `template/` 模板，可复制起步。
+条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。主机可以手写；[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) 工作区提供了一套 Python 框架、示例插件与 `template/` 模板，可复制起步。
 
 主题色默认从 `~/.config/gtk-4.0/dank-colors.css` 读取，读取失败则使用内置默认值。
 
 ## JSON-RPC 2.0
 
-`qsflow --core` 在 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
+`wayrun --core` 在 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
 与启动器文本协议混用：方法 `search`、`top`、`select`、`forget`、`run`、`resolve_icon`、
 `list_plugins`、`theme`、`ping`。完整协议与结果项 schema 见
 [zh_cn/jsonrpc.md](jsonrpc.md)。

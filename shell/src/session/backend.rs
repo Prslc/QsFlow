@@ -108,7 +108,7 @@ pub fn start(tx: Sender<BackendEvent>) {
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
-            eprintln!("qsflow: cannot start the core: {error}");
+            eprintln!("wayrun: cannot start the core: {error}");
             let _ = tx.send(BackendEvent::CoreExited);
             return;
         }

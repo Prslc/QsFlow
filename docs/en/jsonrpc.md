@@ -1,13 +1,13 @@
 # JSON-RPC 2.0
 
-The `qsflow-core` backend also speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
+The `wayrun-core` backend also speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
 over the same stdin/stdout. Lines that parse to an object with
 `"jsonrpc":"2.0"` and a `method` are handled as RPC requests and can be mixed
 with the launcher's text protocol. Responses are newline-delimited JSON on
 stdout.
 
 ```sh
-printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | qsflow-core
+printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun-core
 # -> {"jsonrpc":"2.0","result":[...],"id":1}
 ```
 
@@ -75,7 +75,7 @@ Called on the core's stdin, it answers with the current registry:
 When a `plugins.toml` entry declares `command`, the core spawns the host and
 calls `list_plugins` once to discover identity. A Python framework and example
 hosts that speak this contract live in the
-[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) workspace; the
+[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) workspace; the
 response `result` is an array of objects:
 
 | Key | Type | Meaning |

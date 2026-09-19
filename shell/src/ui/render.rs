@@ -223,7 +223,7 @@ pub fn draw(
     icons: &mut IconCache,
     now: Instant,
 ) {
-    let timing = std::env::var_os("QSFLOW_TIMING").is_some();
+    let timing = std::env::var_os("WAYRUN_TIMING").is_some();
     let mut marks: Vec<(&str, Instant)> = Vec::new();
     let mut mark = |name: &'static str| {
         if timing {
@@ -318,7 +318,7 @@ pub fn draw(
 
     if timing && marks.len() > 1 {
         let mut previous = marks[0].1;
-        let mut line = String::from("qsflow: draw");
+        let mut line = String::from("wayrun: draw");
         for (name, at) in &marks[1..] {
             line.push_str(&format!(" {}={:?}", name, at.duration_since(previous)));
             previous = *at;
@@ -804,7 +804,7 @@ fn round_rect(rect: Rect, radius: f32) -> Option<Path> {
     builder.finish()
 }
 
-/// A micro-benchmark for the software rasteriser, run by `qsflow bench`.
+/// A micro-benchmark for the software rasteriser, run by `wayrun bench`.
 pub fn bench() {
     use std::time::Instant;
 

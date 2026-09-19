@@ -98,7 +98,7 @@ pub struct Shell {
     app: Launcher,
     resident: bool,
     timing: bool,
-    /// `QSFLOW_IME_LOG=1`: every text-input event and the state `done` left
+    /// `WAYRUN_IME_LOG=1`: every text-input event and the state `done` left
     /// behind. The preedit path cannot be driven from here (`wtype` never
     /// reaches fcitx5), so a report is only diagnosable from this.
     ime_log: bool,
@@ -172,9 +172,9 @@ impl Shell {
             requested_icons: HashSet::new(),
             text: TextEngine::new(),
             app: Launcher::new(),
-            resident: std::env::var_os("QSFLOW_RESIDENT").is_some(),
-            timing: std::env::var_os("QSFLOW_TIMING").is_some(),
-            ime_log: std::env::var_os("QSFLOW_IME_LOG").is_some(),
+            resident: std::env::var_os("WAYRUN_RESIDENT").is_some(),
+            timing: std::env::var_os("WAYRUN_TIMING").is_some(),
+            ime_log: std::env::var_os("WAYRUN_IME_LOG").is_some(),
             started: Instant::now(),
             open_at: None,
             last_present: None,

@@ -1,15 +1,15 @@
 [package]
-name = "qsflow-shell"
+name = "wayrun-shell"
 version = "0.1.0"
 edition = "2024"
 
 # One artifact: the shell includes the core and re-runs itself with `--core`.
 [[bin]]
-name = "qsflow"
+name = "wayrun"
 path = "src/main.rs"
 
 [dependencies]
-qsflow-core = { path = "../core" }
+wayrun-core = { path = "../core" }
 calloop = "0.14"
 calloop-wayland-source = "0.4"
 cosmic-text = "0.15"

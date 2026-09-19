@@ -170,7 +170,7 @@ impl Shell {
 
     pub fn ime_event(&mut self, event: zwp_text_input_v3::Event) {
         if self.ime_log {
-            eprintln!("qsflow: ime event {event:?}");
+            eprintln!("wayrun: ime event {event:?}");
         }
 
         match event {
@@ -229,7 +229,7 @@ impl Shell {
 
         if self.ime_log {
             eprintln!(
-                "qsflow: ime done -> query={:?} caret={} preedit={:?}",
+                "wayrun: ime done -> query={:?} caret={} preedit={:?}",
                 self.app.query, self.app.caret, self.app.preedit
             );
         }

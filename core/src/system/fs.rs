@@ -46,11 +46,11 @@ fn find_in_xdg_data(sub_path: &str) -> Option<String> {
     let mut dirs: Vec<PathBuf> = env::var("XDG_DATA_DIRS")
         .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
         .split(':')
-        .map(|s| PathBuf::from(s).join("qsflow"))
+        .map(|s| PathBuf::from(s).join("wayrun"))
         .collect();
 
     if let Ok(home) = env::var("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/qsflow"));
+        dirs.push(PathBuf::from(home).join(".local/share/wayrun"));
     }
 
     for dir in &dirs {

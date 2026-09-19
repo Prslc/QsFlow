@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn a_png_icon_is_decoded_and_drawn_inside_its_box() {
-        let path = red_png("qsflow-icon-test.png");
+        let path = red_png("wayrun-icon-test.png");
         let mut cache = IconCache::new();
         let mut target = Pixmap::new(34, 34).unwrap();
 
@@ -195,7 +195,7 @@ mod tests {
         // `resvg` is built without `text`/`system-fonts`; path-only SVGs, which
         // is what every theme and plugin icon is, must still render.
         let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
-        let path = std::env::temp_dir().join("qsflow-icon-test.svg");
+        let path = std::env::temp_dir().join("wayrun-icon-test.svg");
         std::fs::write(&path, svg).unwrap();
 
         let mut cache = IconCache::new();

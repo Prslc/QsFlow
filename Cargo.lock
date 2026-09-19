@@ -1740,53 +1740,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qsflow-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "dirs",
- "fasteval",
- "freedesktop-desktop-entry",
- "gio",
- "itertools",
- "notify",
- "nucleo",
- "reqwest",
- "rusqlite",
- "rustc-hash 2.1.3",
- "serde",
- "serde_json",
- "sha2",
- "strum",
- "tempfile",
- "tokio",
- "toml",
- "uuid",
- "walkdir",
-]
-
-[[package]]
-name = "qsflow-shell"
-version = "0.1.0"
-dependencies = [
- "calloop",
- "calloop-wayland-source",
- "cosmic-text",
- "env_logger",
- "libc",
- "log",
- "qsflow-core",
- "resvg",
- "serde",
- "serde_json",
- "smithay-client-toolkit",
- "tiny-skia",
- "wayland-client",
- "wayland-protocols",
-]
-
-[[package]]
 name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3224,6 +3177,53 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be"
 dependencies = [
  "pkg-config",
+]
+
+[[package]]
+name = "wayrun-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs",
+ "fasteval",
+ "freedesktop-desktop-entry",
+ "gio",
+ "itertools",
+ "notify",
+ "nucleo",
+ "reqwest",
+ "rusqlite",
+ "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
+ "sha2",
+ "strum",
+ "tempfile",
+ "tokio",
+ "toml",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
+name = "wayrun-shell"
+version = "0.1.0"
+dependencies = [
+ "calloop",
+ "calloop-wayland-source",
+ "cosmic-text",
+ "env_logger",
+ "libc",
+ "log",
+ "resvg",
+ "serde",
+ "serde_json",
+ "smithay-client-toolkit",
+ "tiny-skia",
+ "wayland-client",
+ "wayland-protocols",
+ "wayrun-core",
 ]
 
 [[package]]

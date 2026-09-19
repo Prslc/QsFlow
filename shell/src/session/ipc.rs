@@ -35,13 +35,13 @@ pub static VISIBLE: AtomicBool = AtomicBool::new(false);
 /// accept thread, the client so a wedged daemon cannot hang the keybind.
 const TIMEOUT: Duration = Duration::from_secs(2);
 
-/// `$XDG_RUNTIME_DIR/qsflow.sock`, which is also the single-instance guard: the
+/// `$XDG_RUNTIME_DIR/wayrun.sock`, which is also the single-instance guard: the
 /// daemon binds it before touching Wayland.
 pub fn socket_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    dir.join("qsflow.sock")
+    dir.join("wayrun.sock")
 }
 
 /// Bind the listener (which is also the single-instance guard) and spawn the
@@ -53,7 +53,7 @@ pub fn serve(tx: Sender<Command>) -> std::io::Result<()> {
     if UnixStream::connect(&path).is_ok() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AddrInUse,
-            format!("another qsflow is listening on {}", path.display()),
+            format!("another wayrun is listening on {}", path.display()),
         ));
     }
     let _ = std::fs::remove_file(&path);
@@ -105,10 +105,10 @@ fn handle(stream: UnixStream, tx: Sender<Command>) {
     let _ = writer.flush();
 }
 
-/// The client end: `qsflow open|close|toggle|status`.
+/// The client end: `wayrun open|close|toggle|status`.
 pub fn client(verb: &str) -> std::process::ExitCode {
     let Ok(mut stream) = UnixStream::connect(socket_path()) else {
-        eprintln!("qsflow: no daemon listening on {}", socket_path().display());
+        eprintln!("wayrun: no daemon listening on {}", socket_path().display());
         return std::process::ExitCode::FAILURE;
     };
 

@@ -20,20 +20,20 @@ fn main() -> std::process::ExitCode {
     let invoked_as = args.next().unwrap_or_default();
     let rest: Vec<String> = args.collect();
 
-    // The shell re-execs this binary with `--core`; a `qsflow-core` symlink
+    // The shell re-execs this binary with `--core`; a `wayrun-core` symlink
     // keeps the documented stdin/JSON-RPC entry point working.
     let as_core = std::path::Path::new(&invoked_as)
         .file_name()
-        .is_some_and(|name| name == "qsflow-core");
+        .is_some_and(|name| name == "wayrun-core");
     if as_core
         || rest
             .iter()
             .any(|arg| arg == "--core" || arg == "--list-plugins")
     {
-        return match qsflow_core::run() {
+        return match wayrun_core::run() {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("qsflow: {error}");
+                eprintln!("wayrun: {error}");
                 std::process::ExitCode::FAILURE
             }
         };
@@ -55,14 +55,14 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("qsflow: {error}");
+            eprintln!("wayrun: {error}");
             std::process::ExitCode::FAILURE
         }
     }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let resident = std::env::var_os("QSFLOW_RESIDENT").is_some();
+    let resident = std::env::var_os("WAYRUN_RESIDENT").is_some();
 
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init::<Shell>(&conn)?;

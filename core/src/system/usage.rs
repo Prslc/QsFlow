@@ -7,8 +7,8 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 use crate::system::fs::get_home;
 
 fn db_path() -> Result<PathBuf> {
-    let dir = get_home()?.join(".local/share/qsflow");
-    std::fs::create_dir_all(&dir).context("Failed to create qsflow data directory")?;
+    let dir = get_home()?.join(".local/share/wayrun");
+    std::fs::create_dir_all(&dir).context("Failed to create wayrun data directory")?;
     Ok(dir.join("usage.db"))
 }
 
@@ -31,7 +31,7 @@ fn open_conn() -> Result<Connection> {
 /// query calls `get_top`, and re-opening the database file each time was
 /// pure overhead.
 static DB: LazyLock<Mutex<Connection>> =
-    LazyLock::new(|| Mutex::new(open_conn().expect("failed to open qsflow usage database")));
+    LazyLock::new(|| Mutex::new(open_conn().expect("failed to open wayrun usage database")));
 
 /// Run `f` on the shared connection, surviving lock poisoning.
 fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
@@ -359,7 +359,7 @@ mod tests {
         let conn = test_conn();
         for (title, on_click, ephemeral) in [
             ("Clipboard", r#"copy:{"text": "clip"}"#, false),
-            ("github hit", "https://github.com/Prslc/QsFlow", true),
+            ("github hit", "https://github.com/Prslc/WayRun", true),
         ] {
             record_with(
                 &conn,
@@ -375,7 +375,7 @@ mod tests {
         // A URL the host did not mark, plus a launch, a command and a desktop
         // action, are all re-launchable targets.
         for (title, on_click) in [
-            ("Prslc/QsFlow", "https://github.com/Prslc/QsFlow"),
+            ("Prslc/WayRun", "https://github.com/Prslc/WayRun"),
             ("Firefox", "launch:firefox.desktop"),
             ("btop", "run:btop"),
             ("New Window", "action:firefox.desktop:new-window"),
@@ -393,7 +393,7 @@ mod tests {
             .filter_map(|item| item["title"].as_str().map(str::to_owned))
             .collect();
         titles.sort();
-        assert_eq!(titles, ["Firefox", "New Window", "Prslc/QsFlow", "btop"]);
+        assert_eq!(titles, ["Firefox", "New Window", "Prslc/WayRun", "btop"]);
     }
 
     #[test]

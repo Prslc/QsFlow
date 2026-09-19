@@ -1,11 +1,11 @@
 # JSON-RPC 2.0
 
-`qsflow-core` 后端还支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
+`wayrun-core` 后端还支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
 经由同一条 stdin/stdout。凡解析为含 `"jsonrpc":"2.0"` 与 `method` 的对象行，都会
 作为 RPC 请求处理，并与启动器的文本协议混用。响应为 stdout 上以换行分隔的 JSON。
 
 ```sh
-printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | qsflow-core
+printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun-core
 # -> {"jsonrpc":"2.0","result":[...],"id":1}
 ```
 
@@ -66,7 +66,7 @@ scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要�
 
 当 `plugins.toml` 条目声明 `command` 时，core 拉起主机并调用一次 `list_plugins`
 以发现身份。遵循此契约的 Python 框架与示例主机见
-[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) 工作区；响应 `result`
+[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) 工作区；响应 `result`
 为对象数组：
 
 | 键 | 类型 | 含义 |

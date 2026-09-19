@@ -16,7 +16,7 @@ use crate::ui::{geom, render};
 
 use super::{Shell, scale};
 
-const NAMESPACE: &str = "QsFlow";
+const NAMESPACE: &str = "WayRun";
 
 impl Shell {
     // ---- surface lifecycle -------------------------------------------------
@@ -84,7 +84,7 @@ impl Shell {
         let (physical_w, physical_h) = self.physical_size();
         self.ensure_buffers(physical_w, physical_h);
         if self.timing {
-            eprintln!("qsflow: open at +{:?}", self.started.elapsed());
+            eprintln!("wayrun: open at +{:?}", self.started.elapsed());
         }
 
         // A layer surface must be committed once with no buffer attached before
@@ -205,7 +205,7 @@ impl Shell {
                 wl_shm::Format::Argb8888
             };
             eprintln!(
-                "qsflow: wl_shm formats {formats:?} -> {:?}",
+                "wayrun: wl_shm formats {formats:?} -> {:?}",
                 self.shm_format
             );
         }
@@ -310,25 +310,25 @@ impl Shell {
             let now = Instant::now();
             match self.last_present.take() {
                 Some(previous) => eprintln!(
-                    "qsflow: frame +{:?} (draw+blit)",
+                    "wayrun: frame +{:?} (draw+blit)",
                     now.duration_since(previous)
                 ),
-                None => eprintln!("qsflow: frame (first)"),
+                None => eprintln!("wayrun: frame (first)"),
             }
             self.last_present = Some(now);
         }
 
-        // `QSFLOW_SNAPSHOT=<path>` writes the buffer as drawn, once per show:
+        // `WAYRUN_SNAPSHOT=<path>` writes the buffer as drawn, once per show:
         // the only way to tell what the shell produced from what the compositor
         // did with it.
-        if let Some(path) = std::env::var_os("QSFLOW_SNAPSHOT")
+        if let Some(path) = std::env::var_os("WAYRUN_SNAPSHOT")
             && !self.first_frame_logged
         {
             let pixmap = self.pixmap.as_ref();
             if let Some(pixmap) = pixmap {
                 let _ = pixmap.save_png(&path);
                 eprintln!(
-                    "qsflow: snapshot {}x{} at scale {} -> {}",
+                    "wayrun: snapshot {}x{} at scale {} -> {}",
                     pixmap.width(),
                     pixmap.height(),
                     self.app.scale_factor(),
@@ -343,7 +343,7 @@ impl Shell {
                 && let Some(at) = self.open_at
             {
                 eprintln!(
-                    "qsflow: first frame {}us ({}x{} at scale {})",
+                    "wayrun: first frame {}us ({}x{} at scale {})",
                     at.elapsed().as_micros(),
                     physical_w,
                     physical_h,
@@ -589,7 +589,7 @@ impl LayerShellHandler for Shell {
 
         if self.timing {
             eprintln!(
-                "qsflow: configure {width}x{height} at +{:?}",
+                "wayrun: configure {width}x{height} at +{:?}",
                 self.started.elapsed()
             );
         }

@@ -166,12 +166,12 @@ async fn rpc_call_within(
         Ok(Ok(output)) => output,
         Ok(Err(err)) => {
             // The core has no logging crate; stderr reaches the unit's journal.
-            eprintln!("qsflow-core: external host {command} failed: {err}");
+            eprintln!("wayrun-core: external host {command} failed: {err}");
             return None;
         }
         Err(_) => {
             eprintln!(
-                "qsflow-core: external host {command} overran {}ms and was killed",
+                "wayrun-core: external host {command} overran {}ms and was killed",
                 limit.as_millis()
             );
             return None;
@@ -197,7 +197,7 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
     });
     let Some(response) = rpc_call(command, &request).await else {
         eprintln!(
-            "qsflow-core: external host {command} did not answer list_plugins; its plugins stay unregistered"
+            "wayrun-core: external host {command} did not answer list_plugins; its plugins stay unregistered"
         );
         return Vec::new();
     };

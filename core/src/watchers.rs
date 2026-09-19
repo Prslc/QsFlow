@@ -67,13 +67,13 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
     Some(watcher)
 }
 
-/// Watch `~/.config/qsflow/plugins.toml` and reload the plugin registry on
+/// Watch `~/.config/wayrun/plugins.toml` and reload the plugin registry on
 /// change (resident mode would otherwise keep the config read at startup
 /// forever). Debounced: editors typically fire several events per save.
 pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
     let path = crate::system::fs::get_home()
         .ok()?
-        .join(".config/qsflow/plugins.toml");
+        .join(".config/wayrun/plugins.toml");
     let handle = tokio::runtime::Handle::current();
     let watch_path = path.clone();
     let now = std::time::Instant::now();

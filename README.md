@@ -1,6 +1,6 @@
 <div align="center">
 
-# QsFlow
+# WayRun
 
 <img src="images/application_default.png" alt="App Icon" width="150" height="150"><br>
 
@@ -10,10 +10,10 @@ English | [Chinese](docs/zh_cn/README_CN.md)
 
 ## Overview
 
-QsFlow is a Wayland-native application launcher and quick-search tool for Linux.
+WayRun is a Wayland-native application launcher and quick-search tool for Linux.
 Type to search installed apps, Firefox bookmarks, web suggestions, and
 inline math — all from a single floating overlay. It ships as one Rust binary,
-`qsflow`, which runs as the overlay shell or, with `--core`, as the backend
+`wayrun`, which runs as the overlay shell or, with `--core`, as the backend
 service. The shell owns a `wlr-layer-shell` surface and rasterises its own card,
 list and animations with
 [tiny-skia](https://github.com/RazrFalcon/tiny-skia) into a `wl_shm` buffer, so
@@ -24,7 +24,7 @@ registry, the JSON-RPC protocol and the usage database.
 
 | Light theme — most-used items | Dark theme — fuzzy app search (`android`) |
 |-----------------------------------|-------------------------------------|
-| ![QsFlow — light theme](images/launcher.png) | ![QsFlow — dark theme](images/launcher-search.png) |
+| ![WayRun — light theme](images/launcher.png) | ![WayRun — dark theme](images/launcher-search.png) |
 
 ## Features
 
@@ -57,16 +57,16 @@ registry, the JSON-RPC protocol and the usage database.
 ## Quick Start
 
 ```bash
-git clone https://github.com/Prslc/QsFlow.git
-cd QsFlow
+git clone https://github.com/Prslc/WayRun.git
+cd WayRun
 cargo build --release
-ln -s "$(pwd)/target/release/qsflow" ~/.local/bin/qsflow
+ln -s "$(pwd)/target/release/wayrun" ~/.local/bin/wayrun
 ```
 
 Bind a hotkey (e.g. Alt+Space) to launch the shell:
 
 ```bash
-qsflow
+wayrun
 ```
 
 The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
@@ -77,18 +77,18 @@ resident mode (below) the hotkey toggles the surface and dismiss hides it.
 
 By default each hotkey press re-spawns the shell and its Rust core. To pop the
 launcher up instantly, keep one resident process alive and toggle the surface
-over a unix socket (`$XDG_RUNTIME_DIR/qsflow.sock`):
+over a unix socket (`$XDG_RUNTIME_DIR/wayrun.sock`):
 
 ```ini
-# ~/.config/systemd/user/qsflow-launcher.service
+# ~/.config/systemd/user/wayrun-launcher.service
 [Unit]
-Description=QsFlow launcher (resident)
+Description=WayRun launcher (resident)
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/you/.local/bin/qsflow
+ExecStart=/home/you/.local/bin/wayrun
 # the shell exits 0 on a core crash, which is a *clean* exit — never "on-failure"
 Restart=always
 RestartSec=2
@@ -98,25 +98,25 @@ Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
 # compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
 # no hardcoded display number or uid.
 Environment=XDG_RUNTIME_DIR=%t
-# resident mode: start hidden, toggle via `qsflow toggle`
-Environment=QSFLOW_RESIDENT=1
+# resident mode: start hidden, toggle via `wayrun toggle`
+Environment=WAYRUN_RESIDENT=1
 
 [Install]
 WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now qsflow-launcher
+systemctl --user enable --now wayrun-launcher
 # niri hotkey — toggle instead of spawn:
-#   Alt+Space { spawn-sh "qsflow toggle"; }
+#   Alt+Space { spawn-sh "wayrun toggle"; }
 ```
 
 The verbs are `open` / `close` / `toggle` / `status`, spoken to the socket the
 resident instance owns; `status` prints `visible` or `hidden`.
-`QSFLOW_RESIDENT=1` selects resident mode (start hidden, dismiss hides); without
-it a plain `qsflow` shows on launch and quits on dismiss, so the manual/dev
+`WAYRUN_RESIDENT=1` selects resident mode (start hidden, dismiss hides); without
+it a plain `wayrun` shows on launch and quits on dismiss, so the manual/dev
 path is independent of the systemd service. To revert,
-`systemctl --user disable --now qsflow-launcher` and restore the
+`systemctl --user disable --now wayrun-launcher` and restore the
 spawn-per-hotkey binding.
 
 
@@ -142,10 +142,10 @@ spawn-per-hotkey binding.
 
 ## Configuration
 
-On first run, `~/.config/qsflow/plugins.toml` is generated automatically:
+On first run, `~/.config/wayrun/plugins.toml` is generated automatically:
 
 ```toml
-# ~/.config/qsflow/plugins.toml
+# ~/.config/wayrun/plugins.toml
 [[plugins]]
 id = "app-search"
 keyword = ""       # empty = no prefix
@@ -169,7 +169,7 @@ spawns it, relays `search`, and discovers the plugin's identity from the
 host's `list_plugins` response; both the identity `icon` and result `icon`
 fields accept the `papirus:` scheme (resolved to an absolute Papirus path).
 Hosts can be written by hand; the
-[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) workspace ships a
+[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) workspace ships a
 Python framework, example plugins, and a `template/` to copy from.
 
 Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
@@ -177,7 +177,7 @@ built-in defaults).
 
 ## JSON-RPC 2.0
 
-`qsflow --core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over
+`wayrun --core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over
 stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
 `select`, `forget`, `run`, `resolve_icon`, `list_plugins`, `theme`, `ping`. The
 full protocol spec and the result-item (schema) contract are in

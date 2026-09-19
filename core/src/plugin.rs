@@ -114,7 +114,7 @@ struct CachedHost {
 
 impl HostCache {
     fn path() -> Option<std::path::PathBuf> {
-        dirs::cache_dir().map(|dir| dir.join("qsflow/plugin-hosts.json"))
+        dirs::cache_dir().map(|dir| dir.join("wayrun/plugin-hosts.json"))
     }
 
     fn load() -> Self {
@@ -325,7 +325,7 @@ fn load_or_default() -> Config {
     let mut config: Config = toml::from_str(DEFAULT_CONFIG).expect("invalid default config");
 
     if let Ok(home) = crate::system::fs::get_home() {
-        let path = home.join(".config/qsflow/plugins.toml");
+        let path = home.join(".config/wayrun/plugins.toml");
 
         // first run: write default config
         if !path.exists() {
@@ -637,7 +637,7 @@ mod tests {
             [[plugins]]
             id = "ext"
             keyword = "e"
-            command = "/nonexistent/qsflow-test-host"
+            command = "/nonexistent/wayrun-test-host"
             "#,
         );
         let entries = build_entries(&config);
