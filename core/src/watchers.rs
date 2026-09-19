@@ -13,18 +13,12 @@ fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Pat
     }
 }
 
-/// The dank-colors.css path the theme is read from (None if `$HOME` unknown).
-fn theme_css_path() -> Option<std::path::PathBuf> {
-    let home = crate::system::fs::get_home().ok()?;
-    Some(home.join(".config/gtk-4.0/dank-colors.css"))
-}
-
-/// Watch `dank-colors.css` so a GTK theme change is picked up live even while
+/// Watch the DMS palette file so a theme change is picked up live even while
 /// the core is resident (which otherwise reads the theme once at start). On a
 /// change it reloads the theme and re-emits a `{"type":"theme",...}` message to
 /// the UI over the same mpsc; the UI rebinds its colors and re-renders.
 pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatcher> {
-    let path = theme_css_path()?;
+    let path = crate::system::theme::dms_colors_path()?;
     let tx_theme = tx.clone();
     let watch_path = path.clone();
 
