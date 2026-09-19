@@ -77,10 +77,10 @@ resident mode the hotkey toggles the surface and dismiss hides it.
 ## Documentation
 
 - [Usage](docs/en/usage.md) — prefixes, keybindings, and the clipboard.
-- [Resident mode](docs/en/resident.md) — the systemd unit and the IPC verbs.
-- [Theme](docs/en/theme.md) — the system theme and `theme.toml` (colors, blur,
+- [Resident mode](docs/en/resident.md) — the systemd unit and the IPC commands.
+- [Theme](docs/en/theme.md) — the system palette and `theme.toml` (colors, blur,
   layout, typography, motion).
-- [Config](docs/en/config.md) — `config.toml` (search engine, timeouts, caps).
+- [Config](docs/en/config.md) — `config.toml` (search engine, font family).
 - [Plugins](docs/en/plugins.md) — `plugins.toml`, the built-ins, and external
   JSON-RPC hosts.
 - [JSON-RPC 2.0](docs/en/jsonrpc.md) — the wire protocol and the result schema.
@@ -88,6 +88,7 @@ resident mode the hotkey toggles the surface and dismiss hides it.
 ## Credit
 
 - **[Wox](https://github.com/wox-launcher/wox)** — the launcher this is inspired by.
-- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** / **[cosmic-text](https://github.com/pop-os/cosmic-text)** — software rasterisation and text shaping for the overlay.
+- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** — software rasterisation for the overlay.
+- **[cosmic-text](https://github.com/pop-os/cosmic-text)** — text shaping for the overlay.
 - **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland layer-shell client plumbing.
 - **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — the icon theme.

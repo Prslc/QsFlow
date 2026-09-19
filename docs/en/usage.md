@@ -50,7 +50,7 @@ the launcher-level **Pin to top** / **Unpin** and **Remove from history**.
 
 While the panel is open, `↑`/`↓` (and the wheel) move through it, `Enter` runs
 the highlighted command, and `Esc` or `Shift+Enter` closes it. Typing closes the
-panel and returns to the results.
+panel and returns to the field.
 
 ## Pinned results
 

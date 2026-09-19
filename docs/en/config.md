@@ -22,5 +22,5 @@ only what you want to change.
 The shell reads `family` at startup, so a change takes effect on the next launch
 (`systemctl --user restart wayrun-launcher`). cosmic-text falls back per glyph
 for anything the family lacks, so a family covering only the scripts you read
-keeps the fonts you never draw out of memory. Text and icon sizes are
-`theme.toml`'s `[font]` section and apply live.
+keeps the fonts you never draw out of memory. The interface size is `theme.toml`'s
+`[font].size` and applies live.

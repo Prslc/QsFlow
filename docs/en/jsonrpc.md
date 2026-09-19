@@ -43,7 +43,7 @@ plugin removes the todo. The answer says whether anything was really dropped:
 `true` when a history row was deleted **or** a host that owns the row answered
 without an error, `false` otherwise. A built-in provider has nothing to forget,
 and a host without a `forget` method answers `-32601`, which counts as "not
-mine" — the UI keeps such a row in the list rather than claiming a deletion
+mine" — the shell keeps such a row in the list rather than claiming a deletion
 nobody made. The host walk runs in a task of its own, so a slow or wedged host
 cannot hold the stdin loop; its reply simply lands later, carrying its `id`.
 
@@ -59,7 +59,7 @@ Unknown methods return `-32601`; malformed requests `-32600`; bad params
 `-32602`.
 
 `resolve_icon` resolves any icon spec — an absolute path, a theme icon name, or
-the `papirus:` scheme below — to the absolute path the launcher UI renders. It
+the `papirus:` scheme below — to the absolute path the shell renders. It
 is meant for external plugin hosts that build icons dynamically (e.g. a
 `list_plugins` identity) without hard-coding theme paths. An absent or
 non-string `name` returns `-32602`.
@@ -134,7 +134,7 @@ and `actions`/`badge` only when set:
 | `on_click` | string \| null | action bound to Enter; see the schemes below |
 | `icon` | string \| null | absolute path to an icon image; see [Icon specs](#icon-specs) |
 | `ephemeral` | bool | when true, selecting this row is not recorded in usage history |
-| `actions` | array | optional secondary commands for the UI's `Shift+Enter` panel |
+| `actions` | array | optional secondary commands for the shell's `Shift+Enter` panel |
 | `badge` | string \| null | optional status glyph at the row's right edge (a pin for a pinned row) |
 
 An `actions` entry is `{"title": string, "on_click": string, "icon"?: string}`,
@@ -142,7 +142,7 @@ with the same icon-spec resolution as a row's `icon`. The core attaches
 the launcher-level pin/unpin and history-removal entries, the owning built-in
 provider adds its type-specific ones (a file reveal, a `[Desktop Action …]`
 group, a copy-link), and a host's own entries are kept after them. External hosts
-may emit `actions` directly on a result; the UI renders them without knowing the
+may emit `actions` directly on a result; the shell renders them without knowing the
 scheme. The panel-only schemes are `pin:{"scope","item"}`,
 `unpin:{"scope","on_click"}`, `forget:<on_click>` and `reveal:<uri>`; every row
 scheme (`run:`, `launch:`, `copy:`, `action:`, a URL) also works.
@@ -154,7 +154,7 @@ scheme (`run:`, `launch:`, `copy:`, `action:`, a URL) also works.
 | `run:<shell cmd>` | execute a shell command (system commands, clipboard) |
 | `launch:<desktop-id>` | launch an app by desktop id (app-search) |
 | `copy:{"text":"…"}` | write the text to the Wayland clipboard (translate copy) |
-| `action:<desktop-id>:<action-id>` | run a desktop action; the UI forwards it as the `action` verb (app-search emits one row per action, DMS-style) |
+| `action:<desktop-id>:<action-id>` | run a desktop action; the shell forwards it as the `action` command (app-search emits one row per action, DMS-style) |
 | bare URL / `file:` / `mailto:` URI | opened by the core with GLib `g_app_info_launch_default_for_uri` |
 
 File URIs are percent-encoded, so paths with spaces or non-ASCII characters
@@ -171,12 +171,12 @@ and external host alike.
 
 ### Icon specs
 
-The launcher UI renders icons as `file://` + path, so every `icon` the core
+The shell renders icons as `file://` + path, so every `icon` the core
 emits is an absolute path. **External plugin hosts** (a `plugins.toml` entry
 with `command`) may return a theme icon name, a `papirus:` spec or an absolute
 path — in any result-item `icon` field (`search` results and `top` default views
 alike) and in the `list_plugins` identity `icon` — and the core resolves it
-before the item reaches the UI:
+before the item reaches the shell:
 
 | Spec | Resolution |
 |------|------------|

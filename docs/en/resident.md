@@ -36,7 +36,7 @@ systemctl --user enable --now wayrun-launcher
 #   Alt+Space { spawn-sh "wayrun toggle"; }
 ```
 
-The verbs are `open` / `close` / `toggle` / `status`, spoken to the socket the
+The commands are `open` / `close` / `toggle` / `status`, spoken to the socket the
 resident instance owns; `status` prints `visible` or `hidden`. `WAYRUN_RESIDENT=1`
 selects resident mode (start hidden, dismiss hides); without it a plain `wayrun`
 shows on launch and quits on dismiss, so the manual/dev path is independent of

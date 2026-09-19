@@ -2,14 +2,16 @@
 
 How WayRun is coloured and what `~/.config/wayrun/theme.toml` controls.
 
-Two layers, applied in order:
+Two layers:
 
-1. **System theme** — the core reads it and sends it to the shell.
-2. **`theme.toml`** — the shell applies its overrides on top.
+1. **System palette** — the core reads DMS's `dms-colors.json` and sends the role
+   colours and the active `mode` to the shell over the IPC stream.
+2. **`theme.toml`** — the shell reads it and applies its overrides to those roles.
 
-Both are watched. A change applies live; nothing restarts.
+The two files are watched by the core and the shell respectively; either edit
+applies live, nothing restarts.
 
-## System theme
+## System palette
 
 On a DankMaterialShell desktop the core reads the Material You palette DMS
 generated with matugen:
@@ -32,8 +34,8 @@ Roles are mapped like this:
 | `container` | `surface_container_high` |
 
 The shell currently draws with `primary`, `fg` and `container`; `bg` and
-`on_primary` are carried for completeness. The core also sends the resolved
-`mode`, which selects `theme.toml`'s per-mode colour tables.
+`on_primary` are carried but unused. The core also sends the active `mode`, which
+the shell uses to pick `theme.toml`'s per-mode colour table.
 
 Without DMS the built-in dark palette is used, with `mode = "dark"`. Support for
 the freedesktop appearance portal (`org.freedesktop.appearance`: `color-scheme`
@@ -58,9 +60,9 @@ pair being its alpha. An unparseable value is skipped and the default stays.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `primary` | system theme | Accent: selection tint, accent bar, panel header. |
-| `fg` | system theme | Text, icons, field and hint tints. |
-| `container` | system theme | Card fill. |
+| `primary` | system palette | Accent: selection tint, accent bar, panel header. |
+| `fg` | system palette | Text, icons, field and hint tints. |
+| `container` | system palette | Card fill. |
 | `follow_system` | `false` | Ignore the base roles **and** every surface below; track the system palette entirely. |
 
 `[colors]` is the shared set; `[colors.dark]` and `[colors.light]` override it
@@ -104,9 +106,9 @@ fg = "#c0caf5"
 fg = "#1f2430"
 ```
 
-The active mode is the one the core resolved (the DMS `mode`, and `dark` when
-there is no system theme), so the tables follow a live light/dark switch with no
-restart. A key the active table does not set keeps the `[colors]` value.
+The active mode is the one the core resolved (the DMS `mode`, and `dark` when the
+system palette is unavailable), so the tables follow a live light/dark switch with
+no restart. A key the active table does not set keeps the `[colors]` value.
 
 ### `[blur]`
 

@@ -2,16 +2,16 @@
 
 WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 
-分两层，按顺序应用：
+分两层：
 
-1. **系统主题** —— 由 core 读取后发给壳。
-2. **`theme.toml`** —— 壳在其上叠加本地覆盖。
+1. **系统调色板** —— 后端读取 DMS 的 `dms-colors.json`，把角色色值和当前 `mode` 经 IPC 发给前端。
+2. **`theme.toml`** —— 前端读取，并在系统角色上叠加本地覆盖。
 
-两者都会被监听，修改后实时生效，无需重启。
+两个文件分别由后端和前端监听，改动都实时生效，无需重启。
 
-## 系统主题
+## 系统调色板
 
-在 DankMaterialShell 桌面上，core 读取 DMS 用 matugen 生成的 Material You 调色板：
+在 DankMaterialShell 桌面上，后端读取 DMS 用 matugen 生成的 Material You 调色板：
 
 ```
 ~/.cache/DankMaterialShell/dms-colors.json
@@ -29,8 +29,8 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 | `fg` | `on_surface` |
 | `container` | `surface_container_high` |
 
-壳目前实际使用 `primary`、`fg`、`container`；`bg` 与 `on_primary` 一并透传以备后用。
-core 还会发送解析后的 `mode`，用于选取 `theme.toml` 的按模式颜色表。
+前端目前实际使用 `primary`、`fg`、`container`；`bg` 与 `on_primary` 一并携带但未用。
+后端还发送当前 `mode`，前端据此选取 `theme.toml` 的按模式颜色表。
 
 没有 DMS 时使用内置深色调色板（`mode = "dark"`）。面向 GNOME / KDE 的 freedesktop appearance portal
 （`org.freedesktop.appearance` 的 `color-scheme` 与 `accent-color`，即 GTK/libadwaita 的方案）支持已在计划中。
@@ -40,7 +40,7 @@ core 还会发送解析后的 `mode`，用于选取 `theme.toml` 的按模式颜
 所有 section 与键均为可选。缺省键保留默认值，无法解析的文件被忽略，越界值会被 clamp。
 文件被监听，修改后无需重启即可生效。
 
-首次运行壳时会写入一份带注释的 `~/.config/wayrun/theme.toml` 模板。模板里所有键都被注释掉，
+前端首次运行时会写入一份带注释的 `~/.config/wayrun/theme.toml` 模板。模板里所有键都被注释掉，
 因此它把可选项列在字段旁，却不会把当前默认值钉死在文件里；只取消注释你想改的键即可。
 
 ### `[colors]`
@@ -50,9 +50,9 @@ core 还会发送解析后的 `mode`，用于选取 `theme.toml` 的按模式颜
 
 | 键 | 默认值 | 含义 |
 | --- | --- | --- |
-| `primary` | 系统主题 | 强调色：选中底色、强调条、面板标题。 |
-| `fg` | 系统主题 | 文字、图标、搜索框与提示的底色。 |
-| `container` | 系统主题 | 卡片填充。 |
+| `primary` | 系统调色板 | 强调色：选中底色、强调条、面板标题。 |
+| `fg` | 系统调色板 | 文字、图标、搜索框与提示的底色。 |
+| `container` | 系统调色板 | 卡片填充。 |
 | `follow_system` | `false` | 忽略基础角色**及**下面全部表面，完全跟随系统调色板。 |
 
 `[colors]` 是共享层；`[colors.dark]` 与 `[colors.light]` 按模式在其上覆盖（见下）。
@@ -92,13 +92,13 @@ fg = "#c0caf5"
 fg = "#1f2430"
 ```
 
-生效模式由 core 解析（DMS 的 `mode`；无系统主题时为 `dark`），因此切换亮暗会实时跟随，无需重启。
+生效模式由后端解析（DMS 的 `mode`；系统调色板不可用时为 `dark`），因此切换亮暗会实时跟随，无需重启。
 当前模式的表里没写的键，仍取 `[colors]` 的值。
 
 ### `[blur]`
 
-壳本身不模糊任何像素。它只绘制一张半透明卡片；当合成器支持
-`ext-background-effect-v1` 时，壳把卡片的圆角矩形作为区域交给合成器，由合成器模糊其背后的内容，
+前端本身不模糊任何像素。它只绘制一张半透明卡片；当合成器支持
+`ext-background-effect-v1` 时，前端把卡片的圆角矩形作为区域交给合成器，由合成器模糊其背后的内容，
 这就是磨砂观感的来源。合成器若没有该协议，会忽略该区域，此设置也就没有可见效果。
 
 在 niri 上还需要额外一条规则。对于客户端通过 `ext-background-effect` 发起的请求，niri 会**默认自动开启 xray**，

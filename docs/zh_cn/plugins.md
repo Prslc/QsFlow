@@ -1,7 +1,7 @@
 # 插件
 
 `~/.config/wayrun/plugins.toml` 是插件注册表。首次运行时自动生成（即 `core/default-plugins.toml` 的副本），
-并且会被监听，修改后无需重启 core 即可生效。
+并且会被监听，修改后无需重启后端即可生效。
 
 ## 条目字段
 
@@ -47,11 +47,11 @@ enabled = true
 
 ## 结果动作
 
-结果行可以携带次级命令，显示在壳的 `Shift+Enter` 二级菜单中。菜单由拥有该行的插件定义，
-而非壳，因此不同类型的菜单各不相同：`file-search`/`path-search` 提供“在文件管理器中显示”，
+结果行可以携带次级命令，显示在前端的 `Shift+Enter` 二级菜单中。菜单由拥有该行的插件定义，
+而非前端，因此不同类型的菜单各不相同：`file-search`/`path-search` 提供“在文件管理器中显示”，
 `app-search` 列出该条目的 `[Desktop Action …]`，`web-search` 与 Firefox 插件提供“复制链接”，
 没有自带动作的插件至少也有启动器级别的项（置顶/取消置顶、从历史中移除）。外部主机可以在
-结果项上输出自己的 `actions` 数组，core 会把它们排在内置项之后。见
+结果项上输出自己的 `actions` 数组，后端会把它们排在内置项之后。见
 [jsonrpc.md](jsonrpc.md#结果项) 的 `actions` 字段。
 
 ## 外部主机
@@ -59,10 +59,10 @@ enabled = true
 `command` 指向一个 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token，按 `PATH` 解析或写绝对路径，
 不含参数、无 shell 语法（脚本需 shebang + 执行位）。
 
-core 每次查询都会重新拉起主机（一次请求后关闭其 stdin），并受 5s 超时约束，因此主机卡死只会消耗本次截止时间，
+后端每次查询都会重新启动主机（一次请求后关闭其 stdin），并受 5s 超时约束，因此主机卡死只会消耗本次截止时间，
 不会拖垮会话。主机经 `list_plugins` 上报的身份会按文件的 `(mtime, size)` 缓存，因此后续启动不会为未变的主机再次 fork。
 
-身份 `icon` 与每条结果的 `icon` 都接受绝对路径、`papirus:` 规范或主题图标名；core 会在结果行到达壳之前把所有规范解析为绝对路径。
+身份 `icon` 与每条结果的 `icon` 都接受绝对路径、`papirus:` 规范或主题图标名；后端会在结果行到达前端之前把所有规范解析为绝对路径。
 
 主机可以手写。[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) 工作区提供了一套 Python 框架、
 示例插件与 `template/` 模板，可复制起步。主机协议是 [jsonrpc.md](jsonrpc.md) 中记录的 JSON-RPC 子集：
