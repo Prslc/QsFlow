@@ -29,7 +29,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -59,7 +59,7 @@ jobs:
     name: Test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -84,7 +84,7 @@ jobs:
     name: Build (release)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -104,3 +104,10 @@ jobs:
 
       - name: cargo build --release
         run: cargo build --release --locked
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: wayrun-x86_64-unknown-linux-gnu
+          path: target/release/wayrun
+          if-no-files-found: error
