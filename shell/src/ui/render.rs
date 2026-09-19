@@ -14,7 +14,7 @@ const TITLE_SIZE: f32 = 14.0;
 const SUMMARY_SIZE: f32 = 12.0;
 const SUGGESTION_SIZE: f32 = 11.0;
 pub const QUERY_SIZE: f32 = 18.0;
-const ICON_SIZE: f32 = 30.0;
+pub const ICON_SIZE: f32 = 30.0;
 /// The search field's inner insets: the container's 14, the magnifier's 22, the
 /// row's 12px spacing and the input's own 8. The IME needs it to place the
 /// caret rectangle.
@@ -209,6 +209,18 @@ impl Rect {
         self.y + self.h / 2.0
     }
 
+    /// The search field inside a card of top-left `(x, y)` and width `w`: inset
+    /// by `PAD`, one `SEARCH_H` tall. The drawn field and the IME's `caret_box`
+    /// both build it here so they cannot drift.
+    fn field_at(x: f32, y: f32, w: f32) -> Self {
+        Self {
+            x: x + geom::PAD,
+            y: y + geom::PAD,
+            w: w - 2.0 * geom::PAD,
+            h: geom::SEARCH_H,
+        }
+    }
+
     /// The same rectangle in the target's pixels. `round_rect` builds paths in
     /// the pixmap's coordinate space, so every rect handed to it has to be
     /// scaled, not just radii and strokes.
@@ -304,12 +316,7 @@ pub fn draw(
     );
 
     mark("card");
-    let field = Rect {
-        x: card.x + geom::PAD,
-        y: card.y + geom::PAD,
-        w: card.w - 2.0 * geom::PAD,
-        h: geom::SEARCH_H,
-    };
+    let field = Rect::field_at(card.x, card.y, card.w);
     canvas.fill_round(pixmap, field, 9.0, state.fade(theme.fg, 0.08, now));
 
     mark("shapes");
@@ -485,12 +492,11 @@ fn draw_query(
 /// caret and the rectangle the IME is told about must not drift apart.
 fn caret_box(state: &State, text: &mut TextEngine) -> (Rect, f32) {
     let surface = state.surface;
-    let field = Rect {
-        x: geom::card_x(surface) + geom::PAD,
-        y: geom::card_top(surface) + geom::PAD,
-        w: geom::card_w(surface) - 2.0 * geom::PAD,
-        h: geom::SEARCH_H,
-    };
+    let field = Rect::field_at(
+        geom::card_x(surface),
+        geom::card_top(surface),
+        geom::card_w(surface),
+    );
     let scale = state.scale_factor();
     let before = text.shape(state.before_caret(), QUERY_SIZE * scale, Weight::MEDIUM);
     let area = text_area(field);
@@ -775,12 +781,10 @@ fn draw_footer(
         format!("{} results", state.rows.len())
     };
 
-    let y = geom::rows_top(surface)
-        + if empty {
-            0.0
-        } else {
-            geom::list_h(state.rows.len()) + geom::GAP
-        };
+    // The footer is the last band of the card, derived from the same height the
+    // card itself animates to.
+    let y =
+        geom::card_top(surface) + geom::content_h(state.rows.len()) - geom::PAD - geom::FOOTER_H;
     let size = SUGGESTION_SIZE * canvas.scale;
     let left = geom::card_x(surface) + geom::PAD;
 
@@ -845,14 +849,17 @@ fn round_rect(rect: Rect, radius: f32) -> Option<Path> {
 
 /// A micro-benchmark for the software rasteriser, run by `wayrun bench`.
 pub fn bench() {
-    use std::time::Instant;
-
     let mut pixmap = Pixmap::new(1920, 1080).unwrap();
     let repeats = 20;
 
     let at = Instant::now();
     for _ in 0..repeats {
-        pixmap.fill(Color::from_rgba8(0, 0, 0, 76));
+        pixmap.fill(Color::from_rgba8(
+            0,
+            0,
+            0,
+            (geom::DIM_ALPHA * 255.0).round() as u8,
+        ));
     }
     println!("pixmap.fill (2.07M px): {:?}/frame", at.elapsed() / repeats);
 
@@ -932,6 +939,11 @@ mod tests {
         Pixmap::new(64, 64).unwrap()
     }
 
+    /// The 8-bit alpha the dim writes, derived from the one constant.
+    fn dim_u8() -> u8 {
+        (geom::DIM_ALPHA * 255.0).round() as u8
+    }
+
     #[test]
     fn a_long_query_scrolls_so_the_caret_stays_in_the_field() {
         let field = Rect {
@@ -968,10 +980,14 @@ mod tests {
         assert_eq!(pixmap.pixel(32, 40).unwrap().alpha(), 255);
 
         // 0.30 dim over transparent, the same value the backdrop has
-        canvas.restore_dim_below(&mut pixmap, 32.0, (64, 64), 0.30);
+        canvas.restore_dim_below(&mut pixmap, 32.0, (64, 64), geom::DIM_ALPHA);
 
         let below = pixmap.pixel(32, 40).unwrap();
-        assert_eq!(below.alpha(), 77, "the band is the dim, not the content");
+        assert_eq!(
+            below.alpha(),
+            dim_u8(),
+            "the band is the dim, not the content"
+        );
         assert_eq!((below.red(), below.green(), below.blue()), (0, 0, 0));
         // and everything above the band is untouched
         assert_eq!(pixmap.pixel(32, 31).unwrap().alpha(), 255);
@@ -1021,10 +1037,18 @@ mod tests {
         canvas.fill_all(&mut pixmap, [255, 255, 255, 255]);
 
         // the band starts at logical 10, i.e. buffer row 20
-        canvas.restore_dim_below(&mut pixmap, 10.0, (64, 64), 0.30);
+        canvas.restore_dim_below(&mut pixmap, 10.0, (64, 64), geom::DIM_ALPHA);
         assert_eq!(pixmap.pixel(32, 19).unwrap().alpha(), 255, "above the band");
-        assert_eq!(pixmap.pixel(32, 20).unwrap().alpha(), 77, "first band row");
-        assert_eq!(pixmap.pixel(32, 63).unwrap().alpha(), 77, "last band row");
+        assert_eq!(
+            pixmap.pixel(32, 20).unwrap().alpha(),
+            dim_u8(),
+            "first band row"
+        );
+        assert_eq!(
+            pixmap.pixel(32, 63).unwrap().alpha(),
+            dim_u8(),
+            "last band row"
+        );
     }
 
     #[test]
@@ -1075,7 +1099,7 @@ mod tests {
         // Above the card only the dim exists; a clear under the dim would show
         // up as alpha 0.
         let pixel = pixmap.pixel(0, 0).unwrap();
-        assert_eq!(pixel.alpha(), 77, "the dim is the base");
+        assert_eq!(pixel.alpha(), dim_u8(), "the dim is the base");
         assert_eq!((pixel.red(), pixel.green(), pixel.blue()), (0, 0, 0));
     }
 
@@ -1154,10 +1178,10 @@ mod tests {
         let canvas = Canvas { scale: 1.0 };
         let mut pixmap = pixmap();
         canvas.fill_all(&mut pixmap, [255, 255, 255, 255]);
-        canvas.restore_dim_below(&mut pixmap, 0.0, (64, 64), 0.30);
+        canvas.restore_dim_below(&mut pixmap, 0.0, (64, 64), geom::DIM_ALPHA);
         // every row is the dim, including the first one
         for y in [0, 1, 63] {
-            assert_eq!(pixmap.pixel(32, y).unwrap().alpha(), 77, "y={y}");
+            assert_eq!(pixmap.pixel(32, y).unwrap().alpha(), dim_u8(), "y={y}");
         }
     }
 }

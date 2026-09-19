@@ -305,7 +305,7 @@ impl Shell {
             BackendEvent::Results(items) => {
                 let now = Instant::now();
                 self.app.apply_results(items, now);
-                let size = (30.0 * self.app.scale_factor()).round() as u32;
+                let size = (crate::ui::render::ICON_SIZE * self.app.scale_factor()).round() as u32;
                 let paths: Vec<String> = self
                     .app
                     .rows
