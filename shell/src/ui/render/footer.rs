@@ -108,7 +108,7 @@ pub(super) fn draw_footer(
     let center_y = top + geom::FOOTER_H / 2.0;
     let left = layout.card_x(surface) + geom::PAD;
     let right = layout.card_x(surface) + layout.card_w(surface) - geom::PAD;
-    let font_size = state.appearance.font.suggestion_size;
+    let font_size = state.appearance.font.suggestion();
     let label_size = font_size * canvas.scale;
     let key_size = (font_size - 1.0).max(6.0) * canvas.scale;
 
@@ -127,17 +127,17 @@ pub(super) fn draw_footer(
     let mut x = left;
     for hint in hints {
         if hint.key.is_empty() {
-            let (color, alpha) = if no_match {
-                (state.theme.primary, 0.7)
+            let color = if no_match {
+                state.fade(state.theme.primary, 0.7, now)
             } else {
-                (state.theme.fg, state.appearance.footer_alpha)
+                state.fade_rgba(state.surfaces.footer, now)
             };
             let shaped = text.shape(hint.label, label_size, Weight::NORMAL);
             let height = shaped.height / canvas.scale;
             text.draw(
                 pixmap,
                 &shaped,
-                state.fade(color, alpha, now),
+                color,
                 canvas.px(x),
                 canvas.px(center_y - height / 2.0),
                 None,
@@ -178,7 +178,7 @@ pub(super) fn draw_footer(
         text.draw(
             pixmap,
             &label,
-            state.fade(state.theme.fg, state.appearance.footer_alpha, now),
+            state.fade_rgba(state.surfaces.footer, now),
             canvas.px(x + cap_w + KEY_LABEL_GAP),
             canvas.px(center_y - label.height / canvas.scale / 2.0),
             None,
@@ -206,7 +206,7 @@ pub(super) fn draw_footer(
         text.draw(
             pixmap,
             shaped,
-            state.fade(state.theme.fg, 0.55, now),
+            state.fade_rgba(state.surfaces.muted, now),
             canvas.px(x + KEYCAP_PAD_X),
             canvas.px(center_y - height / 2.0),
             None,

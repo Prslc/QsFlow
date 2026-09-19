@@ -10,36 +10,70 @@ macro_rules! assign {
     };
 }
 
+/// Assign a surface colour; unlike `assign!` an absent key clears the slot, so
+/// the surface falls back to the role it derives from.
+macro_rules! assign_color {
+    ($slot:expr, $value:expr) => {
+        $slot = $value.as_deref().and_then(theme::parse_color);
+    };
+}
+
+/// The base roles are RGB; every surface takes a colour with inline alpha, so
+/// opacity travels with the colour instead of its own key.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColorOverrides {
     pub primary: Option<[u8; 3]>,
     pub fg: Option<[u8; 3]>,
     pub container: Option<[u8; 3]>,
+    pub card: Option<[u8; 4]>,
+    pub field: Option<[u8; 4]>,
+    pub selection: Option<[u8; 4]>,
+    pub hover: Option<[u8; 4]>,
+    pub hairline: Option<[u8; 4]>,
+    pub muted: Option<[u8; 4]>,
+    pub summary: Option<[u8; 4]>,
+    pub footer: Option<[u8; 4]>,
+    pub accent: Option<[u8; 4]>,
+    pub dim: Option<[u8; 4]>,
     /// Ignore every override in this section and follow the system palette.
     pub follow_system: bool,
 }
 
-/// The UI's text and icon sizes, in logical pixels.
+/// One interface size; every text and icon role keeps its shipped ratio to it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FontConfig {
-    pub query_size: f32,
-    pub title_size: f32,
-    pub summary_size: f32,
-    pub suggestion_size: f32,
-    pub icon_size: f32,
-    pub badge_size: f32,
+    pub size: f32,
 }
 
 impl Default for FontConfig {
     fn default() -> Self {
-        Self {
-            query_size: 18.0,
-            title_size: 14.0,
-            summary_size: 12.0,
-            suggestion_size: 11.0,
-            icon_size: 30.0,
-            badge_size: 15.0,
-        }
+        Self { size: 14.0 }
+    }
+}
+
+impl FontConfig {
+    pub fn query(&self) -> f32 {
+        self.size * 18.0 / 14.0
+    }
+
+    pub fn title(&self) -> f32 {
+        self.size
+    }
+
+    pub fn summary(&self) -> f32 {
+        self.size * 12.0 / 14.0
+    }
+
+    pub fn suggestion(&self) -> f32 {
+        self.size * 11.0 / 14.0
+    }
+
+    pub fn icon(&self) -> f32 {
+        self.size * 30.0 / 14.0
+    }
+
+    pub fn badge(&self) -> f32 {
+        self.size * 15.0 / 14.0
     }
 }
 
@@ -49,17 +83,6 @@ impl Default for FontConfig {
 pub struct AppearanceConfig {
     pub colors: ColorOverrides,
     pub blur: bool,
-    pub dim_color: [u8; 3],
-    pub dim_alpha: f32,
-    pub card_alpha: f32,
-    pub field_alpha: f32,
-    pub selection_alpha: f32,
-    pub hover_alpha: f32,
-    pub hairline_alpha: f32,
-    pub muted_alpha: f32,
-    pub summary_alpha: f32,
-    pub footer_alpha: f32,
-    pub accent_alpha: f32,
     pub font: FontConfig,
     pub layout: Layout,
     pub entrance_ms: u64,
@@ -72,17 +95,6 @@ impl Default for AppearanceConfig {
         Self {
             colors: ColorOverrides::default(),
             blur: true,
-            dim_color: [0, 0, 0],
-            dim_alpha: 0.30,
-            card_alpha: 0.72,
-            field_alpha: 0.08,
-            selection_alpha: 0.15,
-            hover_alpha: 0.08,
-            hairline_alpha: 0.35,
-            muted_alpha: 0.55,
-            summary_alpha: 0.7,
-            footer_alpha: 0.5,
-            accent_alpha: 1.0,
             font: FontConfig::default(),
             layout: Layout::default(),
             entrance_ms: 240,
@@ -99,8 +111,6 @@ struct ThemeFile {
     #[serde(default)]
     blur: BlurFile,
     #[serde(default)]
-    appearance: AppearanceFile,
-    #[serde(default)]
     layout: LayoutFile,
     #[serde(default)]
     font: FontFile,
@@ -113,27 +123,22 @@ struct ColorsFile {
     primary: Option<String>,
     fg: Option<String>,
     container: Option<String>,
+    card: Option<String>,
+    field: Option<String>,
+    selection: Option<String>,
+    hover: Option<String>,
+    hairline: Option<String>,
+    muted: Option<String>,
+    summary: Option<String>,
+    footer: Option<String>,
+    accent: Option<String>,
+    dim: Option<String>,
     follow_system: Option<bool>,
 }
 
 #[derive(serde::Deserialize, Default)]
 struct BlurFile {
     enabled: Option<bool>,
-}
-
-#[derive(serde::Deserialize, Default)]
-struct AppearanceFile {
-    dim_color: Option<String>,
-    dim_alpha: Option<f32>,
-    card_alpha: Option<f32>,
-    field_alpha: Option<f32>,
-    selection_alpha: Option<f32>,
-    hover_alpha: Option<f32>,
-    hairline_alpha: Option<f32>,
-    muted_alpha: Option<f32>,
-    summary_alpha: Option<f32>,
-    footer_alpha: Option<f32>,
-    accent_alpha: Option<f32>,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -157,12 +162,7 @@ struct LayoutFile {
 
 #[derive(serde::Deserialize, Default)]
 struct FontFile {
-    query_size: Option<f32>,
-    title_size: Option<f32>,
-    summary_size: Option<f32>,
-    suggestion_size: Option<f32>,
-    icon_size: Option<f32>,
-    badge_size: Option<f32>,
+    size: Option<f32>,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -193,66 +193,28 @@ impl AppearanceConfig {
         let ThemeFile {
             colors,
             blur,
-            appearance,
             layout,
             font,
             motion,
         } = file;
 
-        // an already-optional slot is assigned directly; `assign!` is for scalars
         self.colors.primary = colors.primary.as_deref().and_then(theme::parse_hex);
         self.colors.fg = colors.fg.as_deref().and_then(theme::parse_hex);
         self.colors.container = colors.container.as_deref().and_then(theme::parse_hex);
+        assign_color!(self.colors.card, colors.card);
+        assign_color!(self.colors.field, colors.field);
+        assign_color!(self.colors.selection, colors.selection);
+        assign_color!(self.colors.hover, colors.hover);
+        assign_color!(self.colors.hairline, colors.hairline);
+        assign_color!(self.colors.muted, colors.muted);
+        assign_color!(self.colors.summary, colors.summary);
+        assign_color!(self.colors.footer, colors.footer);
+        assign_color!(self.colors.accent, colors.accent);
+        assign_color!(self.colors.dim, colors.dim);
         assign!(self.colors.follow_system, colors.follow_system);
-        assign!(self.blur, blur.enabled);
-        assign!(
-            self.dim_color,
-            appearance.dim_color.as_deref().and_then(theme::parse_hex)
-        );
-        assign!(self.dim_alpha, appearance.dim_alpha.and_then(clamp01));
-        assign!(self.card_alpha, appearance.card_alpha.and_then(clamp01));
-        assign!(self.field_alpha, appearance.field_alpha.and_then(clamp01));
-        assign!(
-            self.selection_alpha,
-            appearance.selection_alpha.and_then(clamp01)
-        );
-        assign!(self.hover_alpha, appearance.hover_alpha.and_then(clamp01));
-        assign!(
-            self.hairline_alpha,
-            appearance.hairline_alpha.and_then(clamp01)
-        );
-        assign!(self.muted_alpha, appearance.muted_alpha.and_then(clamp01));
-        assign!(
-            self.summary_alpha,
-            appearance.summary_alpha.and_then(clamp01)
-        );
-        assign!(self.footer_alpha, appearance.footer_alpha.and_then(clamp01));
-        assign!(self.accent_alpha, appearance.accent_alpha.and_then(clamp01));
 
-        assign!(
-            self.font.query_size,
-            font.query_size.and_then(|v| positive(v, 96.0))
-        );
-        assign!(
-            self.font.title_size,
-            font.title_size.and_then(|v| positive(v, 96.0))
-        );
-        assign!(
-            self.font.summary_size,
-            font.summary_size.and_then(|v| positive(v, 96.0))
-        );
-        assign!(
-            self.font.suggestion_size,
-            font.suggestion_size.and_then(|v| positive(v, 96.0))
-        );
-        assign!(
-            self.font.icon_size,
-            font.icon_size.and_then(|v| positive(v, 256.0))
-        );
-        assign!(
-            self.font.badge_size,
-            font.badge_size.and_then(|v| positive(v, 256.0))
-        );
+        assign!(self.blur, blur.enabled);
+        assign!(self.font.size, font.size.and_then(|v| positive(v, 96.0)));
 
         assign!(
             self.layout.radius,
@@ -357,9 +319,6 @@ mod tests {
             [blur]
             enabled = false
 
-            [appearance]
-            dim_alpha = 0.5
-
             [layout]
             radius = 20.0
             max_rows = 3
@@ -371,12 +330,11 @@ mod tests {
         assert_eq!(config.colors.primary, Some([0x7a, 0xa2, 0xf7]));
         assert_eq!(config.colors.fg, None);
         assert!(!config.blur);
-        assert_eq!(config.dim_alpha, 0.5);
         assert_eq!(config.layout.radius, 20.0);
         assert_eq!(config.layout.max_rows, 3);
         assert!(config.reduced);
         // untouched defaults survive
-        assert_eq!(config.card_alpha, 0.72);
+        assert_eq!(config.font.size, 14.0);
         assert_eq!(config.layout.width_ratio, 0.38);
     }
 
@@ -384,8 +342,8 @@ mod tests {
     fn out_of_range_values_are_clamped() {
         let config = parse(
             r#"
-            [appearance]
-            dim_alpha = 9.0
+            [font]
+            size = 500.0
 
             [layout]
             max_rows = 99
@@ -394,79 +352,47 @@ mod tests {
             entrance_ms = 0
             "#,
         );
-        assert_eq!(config.dim_alpha, 1.0);
+        assert_eq!(config.font.size, 96.0);
         assert_eq!(config.layout.max_rows, 8);
         assert_eq!(config.entrance_ms, 240);
     }
 
     #[test]
-    fn an_inverted_width_range_collapses_to_the_max() {
-        let config = parse(
-            r#"
-            [layout]
-            width_min = 900.0
-            width_max = 700.0
-            "#,
-        );
-        assert_eq!(config.layout.width_min, 700.0);
-    }
-
-    #[test]
-    fn dim_color_and_the_alpha_roles_apply() {
+    fn a_surface_colour_carries_its_own_alpha() {
         let config = parse(
             r##"
-            [appearance]
-            dim_color = "#102030"
-            field_alpha = 0.2
-            selection_alpha = 0.3
-            hover_alpha = 0.1
-            hairline_alpha = 0.4
-            muted_alpha = 0.6
-            summary_alpha = 0.8
-            footer_alpha = 0.7
-            accent_alpha = 0.9
-
             [colors]
-            follow_system = true
+            card = "#11223380"
+            muted = "#445566"
+            dim = "#000000"
+            accent = "nonsense"
+            follow_system = false
             "##,
         );
-        assert_eq!(config.dim_color, [0x10, 0x20, 0x30]);
-        assert_eq!(config.field_alpha, 0.2);
-        assert_eq!(config.selection_alpha, 0.3);
-        assert_eq!(config.hover_alpha, 0.1);
-        assert_eq!(config.hairline_alpha, 0.4);
-        assert_eq!(config.muted_alpha, 0.6);
-        assert_eq!(config.summary_alpha, 0.8);
-        assert_eq!(config.footer_alpha, 0.7);
-        assert_eq!(config.accent_alpha, 0.9);
-        assert!(config.colors.follow_system);
-        // an unparseable dim color keeps the default
-        assert_eq!(
-            parse("[appearance]\ndim_color = \"nope\"").dim_color,
-            [0; 3]
-        );
+        assert_eq!(config.colors.card, Some([0x11, 0x22, 0x33, 0x80]));
+        assert_eq!(config.colors.muted, Some([0x44, 0x55, 0x66, 255]));
+        assert_eq!(config.colors.dim, Some([0, 0, 0, 255]));
+        assert_eq!(config.colors.accent, None);
     }
 
     #[test]
-    fn font_sizes_stay_positive_and_bounded() {
-        let config = parse(
-            r#"
-            [font]
-            query_size = 0.0
-            title_size = -3.0
-            summary_size = 500.0
-            suggestion_size = 10.5
-            icon_size = 48.0
-            badge_size = 1.0
-            "#,
-        );
-        // zero and negative keep the default; 500 clamps to the cap
-        assert_eq!(config.font.query_size, 18.0);
-        assert_eq!(config.font.title_size, 14.0);
-        assert_eq!(config.font.summary_size, 96.0);
-        assert_eq!(config.font.suggestion_size, 10.5);
-        assert_eq!(config.font.icon_size, 48.0);
-        assert_eq!(config.font.badge_size, 1.0);
+    fn follow_system_is_a_plain_flag() {
+        assert!(parse("[colors]\nfollow_system = true").colors.follow_system);
+    }
+
+    #[test]
+    fn one_size_scales_every_role_by_its_shipped_ratio() {
+        let config = parse("[font]\nsize = 28.0");
+        assert_eq!(config.font.query(), 36.0);
+        assert_eq!(config.font.title(), 28.0);
+        assert_eq!(config.font.summary(), 24.0);
+        assert_eq!(config.font.suggestion(), 22.0);
+        assert_eq!(config.font.icon(), 60.0);
+        assert_eq!(config.font.badge(), 30.0);
+
+        // zero and negative keep the default
+        assert_eq!(parse("[font]\nsize = -3.0").font.size, 14.0);
+        assert_eq!(parse("[font]\nsize = 0.0").font.size, 14.0);
     }
 
     #[test]

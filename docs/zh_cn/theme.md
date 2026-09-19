@@ -44,18 +44,33 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 
 ### `[colors]`
 
-对系统主题做逐字段覆盖。值为 `#rrggbb` 或 `#rgb`；无法解析时跳过，保留系统颜色。
+先三个基础角色，再由它们派生出各个表面（surface）。基础角色为 `#rrggbb` 或 `#rgb`；
+表面为 `#rrggbb`、`#rgb`、`#rrggbbaa` 或 `#rgba`，末尾一对是它的 alpha。无法解析的值会被跳过并保留默认。
 
-| 键 | 默认值 |
-| --- | --- |
-| `primary` | 系统主题 |
-| `fg` | 系统主题 |
-| `container` | 系统主题 |
-| `follow_system` | `false` |
+| 键 | 默认值 | 含义 |
+| --- | --- | --- |
+| `primary` | 系统主题 | 强调色：选中底色、强调条、面板标题。 |
+| `fg` | 系统主题 | 文字、图标、搜索框与提示的底色。 |
+| `container` | 系统主题 | 卡片填充。 |
+| `follow_system` | `false` | 忽略基础角色**及**下面全部表面，完全跟随系统调色板。 |
 
-覆盖与动态取色的关系是逐字段的：设了哪个角色，该角色就不再跟随系统调色板；没设的角色继续实时跟随，
-因此 matugen / DMS 换色时其余部分仍会更新。`follow_system = true` 会忽略上面三个颜色、完全跟随
-系统调色板，便于临时挂起覆盖而不必删掉配置。整段不写等同于纯动态取色。
+表面的默认值是"对应角色 + 既定 alpha"；只有确实想改某个表面时才写该键，alpha 一并写在颜色里。
+
+| 键 | 派生自 | 默认值（alpha） |
+| --- | --- | --- |
+| `card` | `container` | `#24283bb8`（0.72）卡片填充 |
+| `field` | `fg` | `#c0caf514`（0.08）搜索框 |
+| `selection` | `primary` | `#7aa2f726`（0.15）选中行底色 |
+| `hover` | `primary` | `#7aa2f714`（0.08）悬停行底色 |
+| `hairline` | 白色 | `#ffffff59`（0.35）1px 卡片描边 |
+| `muted` | `fg` | `#c0caf58c`（0.55）占位符、放大镜、✕ 与提示 |
+| `summary` | `fg` | `#c0caf5b3`（0.70）结果行摘要 |
+| `footer` | `fg` | `#c0caf580`（0.50）底部提示文字 |
+| `accent` | `primary` | `#7aa2f7`（1.0）选中行强调条 |
+| `dim` | — | `#0000004d`（0.30）背景压暗 |
+
+覆盖是逐字段的：设了哪个角色，该角色就不再跟随系统调色板；没设的角色继续实时跟随，
+因此 matugen / DMS 换色时其余部分仍会更新。整段不写等同于纯动态取色。
 
 ### `[blur]`
 
@@ -81,27 +96,11 @@ layer-rule {
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | 是否向合成器声明背景模糊区域。`false` 时不再声明，背景保持清晰；卡片的半透明填充不变。 |
 
-### `[appearance]`
-
-| 键 | 类型 | 默认值 | 范围 | 含义 |
-| --- | --- | --- | --- | --- |
-| `dim_color` | 颜色 | `#000000` | `#rrggbb` | 背景压暗的颜色。 |
-| `dim_alpha` | float | `0.30` | 0–1 | 卡片下方背景的暗化程度。 |
-| `card_alpha` | float | `0.72` | 0–1 | 卡片填充透明度。越低越透，磨砂感越强。 |
-| `field_alpha` | float | `0.08` | 0–1 | 搜索框在卡片上的填充透明度。 |
-| `selection_alpha` | float | `0.15` | 0–1 | 选中行的底色透明度。 |
-| `hover_alpha` | float | `0.08` | 0–1 | 悬停行的底色透明度。 |
-| `hairline_alpha` | float | `0.35` | 0–1 | 卡片描边透明度。 |
-| `accent_alpha` | float | `1.0` | 0–1 | 选中行强调条的透明度。 |
-| `muted_alpha` | float | `0.55` | 0–1 | 占位符、放大镜、✕ 与按键提示。 |
-| `summary_alpha` | float | `0.7` | 0–1 | 结果行摘要文字。 |
-| `footer_alpha` | float | `0.5` | 0–1 | 底部提示文字。 |
-
 ### `[layout]`
 
 | 键 | 类型 | 默认值 | 范围 | 含义 |
 | --- | --- | --- | --- | --- |
-| `radius` | float | `16.0` | ≥ 0 | 卡片圆角。内层圆角会随之收缩，避免越界。 |
+| `radius` | float | `16.0` | ≥ 0 | 卡片圆角。`0` 即直角；内层圆角会随之收缩，避免越界。 |
 | `field_radius` | float | 派生（9.0） | ≥ 0 | 搜索框圆角；默认由 `radius` 派生，仍受卡片圆角限制。 |
 | `row_radius` | float | 派生（8.0） | ≥ 0 | 结果行底色圆角。 |
 | `chip_radius` | float | 派生（6.0） | ≥ 0 | 关键词 chip 圆角。 |
@@ -121,17 +120,13 @@ layer-rule {
 
 ### `[font]`
 
-文字与图标的逻辑像素尺寸。字体族**不在这里**：它属于文本 shaping，位于 `config.toml` 的
-`[font].family`。
+界面尺寸，逻辑像素。每个角色按既定比例从它缩放（查询 1.286×、标题 1×、摘要 0.857×、
+提示 0.786×、图标 2.143×、徽标 1.071×）。字体族**不在这里**：它属于文本 shaping，
+位于 `config.toml` 的 `[font].family`。
 
 | 键 | 类型 | 默认值 | 范围 | 含义 |
 | --- | --- | --- | --- | --- |
-| `query_size` | float | `18.0` | 1–96 | 查询文本与占位符。 |
-| `title_size` | float | `14.0` | 1–96 | 结果行标题。 |
-| `summary_size` | float | `12.0` | 1–96 | 结果行摘要。 |
-| `suggestion_size` | float | `11.0` | 1–96 | 底部提示、面板标题与关键词 chip。 |
-| `icon_size` | float | `30.0` | 1–256 | 结果行图标框。 |
-| `badge_size` | float | `15.0` | 1–256 | 行的状态徽标。 |
+| `size` | float | `14.0` | 1–96 | 结果行标题；其余角色由它缩放。 |
 
 ### `[motion]`
 
@@ -151,21 +146,12 @@ fg = "#c0caf5"
 container = "#24283b"
 follow_system = false
 
+# 表面默认派生自基础角色；写在这里的会连 alpha 一起覆盖
+card = "#24283bcc"
+muted = "#c0caf5a0"
+
 [blur]
 enabled = true
-
-[appearance]
-dim_color = "#000000"
-dim_alpha = 0.30
-card_alpha = 0.72
-field_alpha = 0.08
-selection_alpha = 0.15
-hover_alpha = 0.08
-hairline_alpha = 0.35
-accent_alpha = 1.0
-muted_alpha = 0.55
-summary_alpha = 0.7
-footer_alpha = 0.5
 
 [layout]
 radius = 16.0
@@ -185,12 +171,7 @@ offset_y = 0.0
 max_rows = 5
 
 [font]
-query_size = 18.0
-title_size = 14.0
-summary_size = 12.0
-suggestion_size = 11.0
-icon_size = 30.0
-badge_size = 15.0
+size = 14.0
 
 [motion]
 entrance_ms = 240

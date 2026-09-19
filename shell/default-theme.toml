@@ -1,30 +1,31 @@
 # ~/.config/wayrun/theme.toml — every key is optional; commented keys keep the default.
 
 [colors]
-# primary = "#7aa2f7"        # override this role; omit it to follow the system theme
-# fg = "#c0caf5"
-# container = "#24283b"
-# follow_system = false      # true ignores the overrides and tracks the system palette
+# Three base roles the surfaces derive from; alpha is inline (#RRGGBBAA).
+# primary = "#7aa2f7"        # accent: selection tint, accent bar, panel header
+# fg = "#c0caf5"             # text, icons, field and hint tints
+# container = "#24283b"      # card fill
+# follow_system = false      # true ignores every override and tracks the system palette
+
+# Optional per-surface colours, `#RRGGBB` or `#RRGGBBAA`. The default is the role
+# above at the shown alpha, so these are only for intentional changes.
+# card = "#24283bb8"         # card fill (container at 0.72)
+# field = "#c0caf514"        # search field (fg at 0.08)
+# selection = "#7aa2f726"    # selected row tint (primary at 0.15)
+# hover = "#7aa2f714"        # hovered row tint (primary at 0.08)
+# hairline = "#ffffff59"     # 1px card border
+# muted = "#c0caf58c"        # placeholder, magnifier, ✕ and hints (fg at 0.55)
+# summary = "#c0caf5b3"      # row summary (fg at 0.70)
+# footer = "#c0caf580"       # footer hint text (fg at 0.50)
+# accent = "#7aa2f7"         # selected row accent bar (primary)
+# dim = "#0000004d"          # backdrop dim
 
 [blur]
 # enabled = true             # declare the card's rounded rect as a blur region
 
-[appearance]
-# dim_color = "#000000"      # backdrop dim colour
-# dim_alpha = 0.30           # backdrop dim alpha
-# card_alpha = 0.72          # card fill alpha; lower is more see-through
-# field_alpha = 0.08         # search field fill
-# selection_alpha = 0.15     # selected row tint
-# hover_alpha = 0.08         # hovered row tint
-# hairline_alpha = 0.35      # card border opacity
-# accent_alpha = 1.0         # selected row accent bar
-# muted_alpha = 0.55         # placeholder, magnifier, ✕ and key hints
-# summary_alpha = 0.7        # row summary
-# footer_alpha = 0.5         # footer hint
-
 [layout]
-# radius = 16.0              # card corner radius
-# field_radius = 9.0         # inner radii; capped by the card radius
+# radius = 16.0              # card corner radius; 0 is square corners
+# field_radius = 9.0         # inner radii; each follows the card radius down
 # row_radius = 8.0
 # chip_radius = 6.0
 # hairline_width = 1.0       # card border width
@@ -40,12 +41,8 @@
 # max_rows = 5               # visible result rows
 
 [font]
-# query_size = 18.0          # text and icon sizes; the family is in config.toml
-# title_size = 14.0
-# summary_size = 12.0
-# suggestion_size = 11.0
-# icon_size = 30.0
-# badge_size = 15.0
+# size = 14.0                # interface size; every role scales by its shipped
+#                            # ratio (the family is in config.toml)
 
 [motion]
 # entrance_ms = 240          # opacity fade when shown

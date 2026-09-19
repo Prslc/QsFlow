@@ -1,6 +1,7 @@
 use crate::config::ColorOverrides;
 use wayrun_core::wire::ThemeConfig;
 
+/// The three base roles every surface derives from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
     pub primary: [u8; 3],
@@ -55,7 +56,103 @@ impl Theme {
     }
 }
 
-/// `#rrggbb` (or `#rgb`), nothing else.
+const CARD_ALPHA: f32 = 0.72;
+const FIELD_ALPHA: f32 = 0.08;
+const SELECTION_ALPHA: f32 = 0.15;
+const HOVER_ALPHA: f32 = 0.08;
+const HAIRLINE_ALPHA: f32 = 0.35;
+const MUTED_ALPHA: f32 = 0.55;
+const SUMMARY_ALPHA: f32 = 0.7;
+const FOOTER_ALPHA: f32 = 0.5;
+const ACCENT_ALPHA: f32 = 1.0;
+
+/// The backdrop dim's shipped colour and alpha, overridden by `[colors].dim`.
+pub const DEFAULT_DIM: [u8; 4] = [0, 0, 0, alpha_u8(0.3)];
+
+/// The per-surface colours the renderer draws: a base role at its shipped alpha
+/// by default, or the `theme.toml` override with its own inline alpha.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Surfaces {
+    pub card: [u8; 4],
+    pub field: [u8; 4],
+    pub selection: [u8; 4],
+    pub hover: [u8; 4],
+    pub hairline: [u8; 4],
+    pub muted: [u8; 4],
+    pub summary: [u8; 4],
+    pub footer: [u8; 4],
+    pub accent: [u8; 4],
+    pub dim: [u8; 4],
+}
+
+impl Surfaces {
+    /// `follow_system` ignores every override, so the surfaces track the system
+    /// palette the way the base roles do.
+    pub fn resolve(theme: Theme, colors: &ColorOverrides) -> Self {
+        let mut surfaces = Self::derive(theme);
+        if colors.follow_system {
+            return surfaces;
+        }
+        if let Some(color) = colors.card {
+            surfaces.card = color;
+        }
+        if let Some(color) = colors.field {
+            surfaces.field = color;
+        }
+        if let Some(color) = colors.selection {
+            surfaces.selection = color;
+        }
+        if let Some(color) = colors.hover {
+            surfaces.hover = color;
+        }
+        if let Some(color) = colors.hairline {
+            surfaces.hairline = color;
+        }
+        if let Some(color) = colors.muted {
+            surfaces.muted = color;
+        }
+        if let Some(color) = colors.summary {
+            surfaces.summary = color;
+        }
+        if let Some(color) = colors.footer {
+            surfaces.footer = color;
+        }
+        if let Some(color) = colors.accent {
+            surfaces.accent = color;
+        }
+        if let Some(color) = colors.dim {
+            surfaces.dim = color;
+        }
+        surfaces
+    }
+
+    fn derive(theme: Theme) -> Self {
+        Self {
+            card: tint(theme.container, CARD_ALPHA),
+            field: tint(theme.fg, FIELD_ALPHA),
+            selection: tint(theme.primary, SELECTION_ALPHA),
+            hover: tint(theme.primary, HOVER_ALPHA),
+            hairline: [255, 255, 255, alpha_u8(HAIRLINE_ALPHA)],
+            muted: tint(theme.fg, MUTED_ALPHA),
+            summary: tint(theme.fg, SUMMARY_ALPHA),
+            footer: tint(theme.fg, FOOTER_ALPHA),
+            accent: tint(theme.primary, ACCENT_ALPHA),
+            dim: DEFAULT_DIM,
+        }
+    }
+}
+
+fn tint(rgb: [u8; 3], alpha: f32) -> [u8; 4] {
+    [rgb[0], rgb[1], rgb[2], alpha_u8(alpha)]
+}
+
+/// Rounds to the nearest 8-bit alpha; `round` is not const.
+const fn alpha_u8(alpha: f32) -> u8 {
+    (alpha * 255.0 + 0.5) as u8
+}
+
+/// `#rrggbb` (or `#rgb`), nothing else: the base roles are RGB, the surfaces in
+/// `[colors]` take the alpha-carrying [`parse_color`] instead.
 pub fn parse_hex(spec: &str) -> Option<[u8; 3]> {
     let hex = spec.trim().strip_prefix('#')?;
     if !hex.is_ascii() {
@@ -73,6 +170,28 @@ pub fn parse_hex(spec: &str) -> Option<[u8; 3]> {
             };
             Some([one(0)?, one(1)?, one(2)?])
         }
+        _ => None,
+    }
+}
+
+/// `#rrggbb`, `#rgb`, `#rrggbbaa` or `#rgba`; a missing alpha is opaque.
+pub fn parse_color(spec: &str) -> Option<[u8; 4]> {
+    let hex = spec.trim().strip_prefix('#')?;
+    if !hex.is_ascii() {
+        return None;
+    }
+
+    let byte = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).ok();
+    let nibble = |at: usize| {
+        u8::from_str_radix(&hex[at..at + 1], 16)
+            .ok()
+            .map(|v| v * 17)
+    };
+    match hex.len() {
+        6 => Some([byte(0)?, byte(2)?, byte(4)?, 255]),
+        8 => Some([byte(0)?, byte(2)?, byte(4)?, byte(6)?]),
+        3 => Some([nibble(0)?, nibble(1)?, nibble(2)?, 255]),
+        4 => Some([nibble(0)?, nibble(1)?, nibble(2)?, nibble(3)?]),
         _ => None,
     }
 }
@@ -106,6 +225,16 @@ mod tests {
     }
 
     #[test]
+    fn a_colour_carries_its_alpha_but_a_role_does_not() {
+        assert_eq!(parse_color("#112233").unwrap(), [0x11, 0x22, 0x33, 255]);
+        assert_eq!(parse_color("#1234").unwrap(), [0x11, 0x22, 0x33, 0x44]);
+        assert_eq!(parse_color("#11223380").unwrap(), [0x11, 0x22, 0x33, 0x80]);
+        // a base role is RGB-only, so an eight-digit spec is not a role colour
+        assert!(parse_hex("#11223380").is_none());
+        assert!(parse_color("nonsense").is_none());
+    }
+
+    #[test]
     fn overrides_win_field_by_field() {
         let system = Theme {
             primary: [1, 2, 3],
@@ -114,9 +243,8 @@ mod tests {
         };
         let colors = ColorOverrides {
             primary: Some([0xaa, 0xbb, 0xcc]),
-            fg: None,
             container: Some([0x11, 0x22, 0x33]),
-            follow_system: false,
+            ..ColorOverrides::default()
         };
         let theme = Theme::overlay(system, &colors);
         assert_eq!(theme.primary, [0xaa, 0xbb, 0xcc]);
@@ -135,8 +263,33 @@ mod tests {
             primary: Some([0xaa, 0xbb, 0xcc]),
             fg: Some([0x11, 0x22, 0x33]),
             container: Some([0x44, 0x55, 0x66]),
+            card: Some([0, 0, 0, 0]),
             follow_system: true,
+            ..ColorOverrides::default()
         };
         assert_eq!(Theme::overlay(system, &colors), system);
+        let surfaces = Surfaces::resolve(system, &colors);
+        assert_eq!(surfaces.card, tint(system.container, CARD_ALPHA));
+    }
+
+    #[test]
+    fn a_surface_derives_from_its_role_or_takes_the_override() {
+        let theme = Theme::default();
+        let derived = Surfaces::resolve(theme, &ColorOverrides::default());
+        assert_eq!(derived.card, tint(theme.container, CARD_ALPHA));
+        assert_eq!(derived.muted, tint(theme.fg, MUTED_ALPHA));
+        assert_eq!(derived.accent, tint(theme.primary, ACCENT_ALPHA));
+        assert_eq!(derived.dim, DEFAULT_DIM);
+
+        let colors = ColorOverrides {
+            card: parse_color("#010203cc"),
+            accent: parse_color("#040506"),
+            ..ColorOverrides::default()
+        };
+        let overridden = Surfaces::resolve(theme, &colors);
+        assert_eq!(overridden.card, [1, 2, 3, 0xcc]);
+        assert_eq!(overridden.accent, [4, 5, 6, 255]);
+        // an untouched surface still derives
+        assert_eq!(overridden.field, tint(theme.fg, FIELD_ALPHA));
     }
 }

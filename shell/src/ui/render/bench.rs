@@ -2,8 +2,6 @@ use std::time::Instant;
 
 use tiny_skia::{Color, FillRule, Pixmap, Transform};
 
-use crate::config::AppearanceConfig;
-
 use super::canvas::{Canvas, Rect, round_rect};
 
 /// A micro-benchmark for the software rasteriser, run by `wayrun bench`.
@@ -13,12 +11,7 @@ pub fn bench() {
 
     let at = Instant::now();
     for _ in 0..repeats {
-        pixmap.fill(Color::from_rgba8(
-            0,
-            0,
-            0,
-            (AppearanceConfig::default().dim_alpha * 255.0).round() as u8,
-        ));
+        pixmap.fill(Color::from_rgba8(0, 0, 0, crate::ui::theme::DEFAULT_DIM[3]));
     }
     println!("pixmap.fill (2.07M px): {:?}/frame", at.elapsed() / repeats);
 

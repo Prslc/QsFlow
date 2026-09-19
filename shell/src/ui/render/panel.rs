@@ -31,7 +31,7 @@ pub(super) fn draw_actions(
     let width = layout.card_w(surface) - 2.0 * geom::PAD;
 
     if let Some(title) = state.menu_parent_title() {
-        let size = font.suggestion_size * canvas.scale;
+        let size = font.suggestion() * canvas.scale;
         let shaped = text.fit(title, size, Weight::BOLD, width * canvas.scale);
         let y = layout.rows_top(surface);
         let clip = [
@@ -78,15 +78,15 @@ pub(super) fn draw_actions(
                 path,
                 (
                     canvas.px(icon_x),
-                    canvas.px(rect.center_y() - font.icon_size / 2.0),
+                    canvas.px(rect.center_y() - font.icon() / 2.0),
                 ),
-                (font.icon_size * canvas.scale).round() as u32,
+                (font.icon() * canvas.scale).round() as u32,
                 state.entrance(now),
                 theme.fg,
             );
         }
 
-        let labels_x = icon_x + font.icon_size + 12.0;
+        let labels_x = icon_x + font.icon() + 12.0;
         let enter = selected.then(|| text.shape(ENTER_GLYPH, 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
@@ -94,7 +94,7 @@ pub(super) fn draw_actions(
         let labels_max = (rect.right() - 10.0 - labels_x - enter_w).max(0.0);
         let title = text.fit(
             &action.title,
-            font.title_size * canvas.scale,
+            font.title() * canvas.scale,
             Weight::NORMAL,
             labels_max * canvas.scale,
         );
@@ -118,7 +118,7 @@ pub(super) fn draw_actions(
             text.draw(
                 pixmap,
                 check,
-                state.fade(theme.primary, state.appearance.muted_alpha, now),
+                state.fade(theme.primary, state.muted_alpha(), now),
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,
                 None,

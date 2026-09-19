@@ -53,25 +53,25 @@ pub(super) fn draw_list(
                 pixmap,
                 path,
                 canvas.px(icon_x),
-                canvas.px(rect.center_y() - font.icon_size / 2.0),
-                (font.icon_size * canvas.scale).round() as u32,
+                canvas.px(rect.center_y() - font.icon() / 2.0),
+                (font.icon() * canvas.scale).round() as u32,
                 state.entrance(now),
             );
         }
 
-        let labels_x = icon_x + font.icon_size + 12.0;
+        let labels_x = icon_x + font.icon() + 12.0;
         // The selected row's ↵ hint and the pinned badge are part of the layout:
         // the labels must leave room for both.
         let enter = selected.then(|| text.shape(ENTER_GLYPH, 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
             .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);
-        let badge_w = row.badge.as_deref().map_or(0.0, |_| font.badge_size + 8.0);
+        let badge_w = row.badge.as_deref().map_or(0.0, |_| font.badge() + 8.0);
         let labels_max = (rect.right() - 10.0 - labels_x - enter_w - badge_w).max(0.0);
 
         let title = text.fit(
             &row.title,
-            font.title_size * canvas.scale,
+            font.title() * canvas.scale,
             Weight::BOLD,
             labels_max * canvas.scale,
         );
@@ -79,7 +79,7 @@ pub(super) fn draw_list(
         let summary = row.summary.as_deref().map(|summary| {
             text.fit(
                 summary,
-                font.summary_size * canvas.scale,
+                font.summary() * canvas.scale,
                 Weight::NORMAL,
                 labels_max * canvas.scale,
             )
@@ -115,7 +115,7 @@ pub(super) fn draw_list(
             text.draw(
                 pixmap,
                 summary,
-                state.fade(theme.fg, appearance.summary_alpha, now),
+                state.fade_rgba(state.surfaces.summary, now),
                 canvas.px(labels_x),
                 canvas.px(labels_top + title_h + 2.0),
                 Some(clip),
@@ -126,7 +126,7 @@ pub(super) fn draw_list(
             text.draw(
                 pixmap,
                 check,
-                state.fade(theme.primary, appearance.muted_alpha, now),
+                state.fade(theme.primary, state.muted_alpha(), now),
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,
                 None,
@@ -134,15 +134,15 @@ pub(super) fn draw_list(
         }
 
         if let Some(path) = row.badge.as_deref() {
-            let x = rect.right() - 10.0 - enter_w - font.badge_size;
+            let x = rect.right() - 10.0 - enter_w - font.badge();
             icons.draw_tinted(
                 pixmap,
                 path,
                 (
                     canvas.px(x),
-                    canvas.px(rect.center_y() - font.badge_size / 2.0),
+                    canvas.px(rect.center_y() - font.badge() / 2.0),
                 ),
-                (font.badge_size * canvas.scale).round() as u32,
+                (font.badge() * canvas.scale).round() as u32,
                 state.entrance(now),
                 theme.primary,
             );

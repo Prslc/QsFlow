@@ -32,8 +32,8 @@ pub(super) fn draw_row_chrome(
     let appearance = &state.appearance;
     let layout = appearance.layout;
     let background = match (selected, hovered) {
-        (true, _) => Some(state.fade(state.theme.primary, appearance.selection_alpha, now)),
-        (false, true) => Some(state.fade(state.theme.primary, appearance.hover_alpha, now)),
+        (true, _) => Some(state.fade_rgba(state.surfaces.selection, now)),
+        (false, true) => Some(state.fade_rgba(state.surfaces.hover, now)),
         (false, false) => None,
     };
     if let Some(background) = background {
@@ -50,7 +50,7 @@ pub(super) fn draw_row_chrome(
                 h: layout.accent_height,
             },
             layout.accent_radius(),
-            state.fade(state.theme.primary, appearance.accent_alpha, now),
+            state.fade_rgba(state.surfaces.accent, now),
         );
     }
 }
@@ -75,10 +75,9 @@ pub fn draw(
         scale: state.scale_factor(),
     };
     let surface = state.surface;
-    let theme = state.theme;
     let appearance = &state.appearance;
     let layout = appearance.layout;
-    let dim_rgb = appearance.dim_color;
+    let dim_rgb = state.dim_color();
 
     let card = Rect {
         x: layout.card_x(surface),
@@ -129,7 +128,7 @@ pub fn draw(
             h: card.h - 2.0,
         },
         layout.radius - 1.0,
-        state.fade(theme.container, appearance.card_alpha, now),
+        state.fade_rgba(state.surfaces.card, now),
     );
     canvas.stroke_round(
         pixmap,
@@ -141,7 +140,7 @@ pub fn draw(
         },
         layout.hairline_radius(),
         layout.hairline_width,
-        state.fade([255, 255, 255], appearance.hairline_alpha, now),
+        state.fade_rgba(state.surfaces.hairline, now),
     );
 
     mark("card");
@@ -150,7 +149,7 @@ pub fn draw(
         pixmap,
         field,
         layout.field_radius(),
-        state.fade(theme.fg, appearance.field_alpha, now),
+        state.fade_rgba(state.surfaces.field, now),
     );
 
     mark("shapes");

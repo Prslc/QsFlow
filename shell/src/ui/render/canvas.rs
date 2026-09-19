@@ -264,10 +264,10 @@ pub(super) fn pixmap() -> Pixmap {
     Pixmap::new(64, 64).unwrap()
 }
 
-/// The 8-bit alpha the dim writes, derived from the one constant.
+/// The 8-bit alpha the dim writes, derived from the shipped surface colour.
 #[cfg(test)]
 pub(super) fn dim_u8() -> u8 {
-    (crate::config::AppearanceConfig::default().dim_alpha * 255.0).round() as u8
+    crate::ui::theme::DEFAULT_DIM[3]
 }
 
 #[cfg(test)]
@@ -288,7 +288,7 @@ mod tests {
             &mut pixmap,
             32.0,
             (64, 64),
-            crate::config::AppearanceConfig::default().dim_alpha,
+            dim_u8() as f32 / 255.0,
             [0, 0, 0],
         );
 
@@ -351,7 +351,7 @@ mod tests {
             &mut pixmap,
             10.0,
             (64, 64),
-            crate::config::AppearanceConfig::default().dim_alpha,
+            dim_u8() as f32 / 255.0,
             [0, 0, 0],
         );
         assert_eq!(pixmap.pixel(32, 19).unwrap().alpha(), 255, "above the band");
@@ -402,7 +402,7 @@ mod tests {
             &mut pixmap,
             0.0,
             (64, 64),
-            crate::config::AppearanceConfig::default().dim_alpha,
+            dim_u8() as f32 / 255.0,
             [0, 0, 0],
         );
         // every row is the dim, including the first one

@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use crate::config::AppearanceConfig;
-use crate::ui::theme::Theme;
+use crate::ui::theme::{Surfaces, Theme};
 use wayrun_core::wire::{ActionItem, ResultItem};
 
 /// Launch dismissals wait this long before the surface goes away.
@@ -77,6 +77,8 @@ pub struct State {
     pub appearance: AppearanceConfig,
     /// The effective theme: `system_theme` with `appearance.colors` on top.
     pub theme: Theme,
+    /// The per-surface colours derived from `theme` and the colour overrides.
+    pub surfaces: Surfaces,
     /// The layer surface's logical size.
     pub surface: (u32, u32),
     /// The integer buffer scale `wl_surface` reports, used when the compositor
@@ -119,6 +121,7 @@ impl State {
         let reduced_env = std::env::var_os("WAYRUN_REDUCED_MOTION").is_some();
         let reduce_motion = reduced_env || appearance.reduced;
         let theme = Theme::default();
+        let surfaces = Surfaces::resolve(theme, &appearance.colors);
         let card = appearance.layout.content_h(0);
         Self {
             query: String::new(),
@@ -132,6 +135,7 @@ impl State {
             system_theme: theme,
             appearance,
             theme,
+            surfaces,
             surface: (1920, 1080),
             scale: 1,
             fractional: None,
@@ -172,6 +176,7 @@ impl State {
 
     fn refresh_theme(&mut self) {
         self.theme = Theme::overlay(self.system_theme, &self.appearance.colors);
+        self.surfaces = Surfaces::resolve(self.theme, &self.appearance.colors);
     }
 
     /// The buffer scale to render at: the compositor's fractional ratio when
@@ -206,10 +211,25 @@ impl State {
         self.card_from + (to - self.card_from) * ease_out_cubic(t)
     }
 
-    /// The backdrop dim's current alpha (0 → the config's `dim_alpha`), not a
+    /// The backdrop dim's current alpha (0 → the surface's alpha), not a
     /// progress fraction.
     pub fn dim_alpha(&self, now: Instant) -> f32 {
-        self.appearance.dim_alpha * self.entrance(now)
+        (self.surfaces.dim[3] as f32 / 255.0) * self.entrance(now)
+    }
+
+    /// The backdrop dim's colour, its alpha handled by [`Self::dim_alpha`].
+    pub fn dim_color(&self) -> [u8; 3] {
+        [
+            self.surfaces.dim[0],
+            self.surfaces.dim[1],
+            self.surfaces.dim[2],
+        ]
+    }
+
+    /// The muted text alpha, shared by the `fg`-tinted hints and the `primary`
+    /// `⏎` markers, which take the same alpha over a different role.
+    pub fn muted_alpha(&self) -> f32 {
+        self.surfaces.muted[3] as f32 / 255.0
     }
 
     /// The card's fill alpha for the entrance's opacity fade.
@@ -236,6 +256,11 @@ impl State {
             color[2],
             ((alpha * self.entrance(now)).clamp(0.0, 1.0) * 255.0).round() as u8,
         ]
+    }
+
+    /// A resolved surface colour, whose own inline alpha rides the entrance.
+    pub fn fade_rgba(&self, color: [u8; 4], now: Instant) -> [u8; 4] {
+        self.fade([color[0], color[1], color[2]], color[3] as f32 / 255.0, now)
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -932,6 +957,7 @@ mod tests {
         assert_eq!(state.theme.primary, [1, 2, 3]);
         assert_eq!(state.theme.fg, [0x10, 0x20, 0x30]);
         assert_eq!(state.theme.container, [7, 8, 9]);
+        assert_eq!(state.surfaces.dim, crate::ui::theme::DEFAULT_DIM);
         assert_eq!(state.card_to, state.appearance.layout.content_h(0));
     }
 
