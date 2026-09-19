@@ -1,0 +1,53 @@
+# ~/.config/wayrun/theme.toml — every key is optional; commented keys keep the default.
+
+[colors]
+# primary = "#7aa2f7"        # override this role; omit it to follow the system theme
+# fg = "#c0caf5"
+# container = "#24283b"
+# follow_system = false      # true ignores the overrides and tracks the system palette
+
+[blur]
+# enabled = true             # declare the card's rounded rect as a blur region
+
+[appearance]
+# dim_color = "#000000"      # backdrop dim colour
+# dim_alpha = 0.30           # backdrop dim alpha
+# card_alpha = 0.72          # card fill alpha; lower is more see-through
+# field_alpha = 0.08         # search field fill
+# selection_alpha = 0.15     # selected row tint
+# hover_alpha = 0.08         # hovered row tint
+# hairline_alpha = 0.35      # card border opacity
+# accent_alpha = 1.0         # selected row accent bar
+# muted_alpha = 0.55         # placeholder, magnifier, ✕ and key hints
+# summary_alpha = 0.7        # row summary
+# footer_alpha = 0.5         # footer hint
+
+[layout]
+# radius = 16.0              # card corner radius
+# field_radius = 9.0         # inner radii; capped by the card radius
+# row_radius = 8.0
+# chip_radius = 6.0
+# hairline_width = 1.0       # card border width
+# accent_width = 3.0         # selected row accent bar width
+# accent_height = 28.0
+# width_ratio = 0.38         # card width as a fraction of the output width
+# width_min = 560.0
+# width_max = 760.0
+# top_ratio = 0.28           # card top as a fraction of the output height
+# align = "center"           # left / center / right
+# offset_x = 0.0             # nudge after the width and anchor resolve
+# offset_y = 0.0
+# max_rows = 5               # visible result rows
+
+[font]
+# query_size = 18.0          # text and icon sizes; the family is in config.toml
+# title_size = 14.0
+# summary_size = 12.0
+# suggestion_size = 11.0
+# icon_size = 30.0
+# badge_size = 15.0
+
+[motion]
+# entrance_ms = 240          # opacity fade when shown
+# reflow_ms = 150            # card height animation
+# reduced = false            # start both animations at their end state

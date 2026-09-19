@@ -1,7 +1,7 @@
-# ~/.config/wayrun/config.toml — every key is optional; the defaults are shown.
+# ~/.config/wayrun/config.toml — every key is optional; commented keys keep the default.
 
 [web_search]
-engine = "google"
+# engine = "google"             # suggestion backend: google or duckduckgo
 
 [font]
-family = "Source Han Sans CN"
+# family = "Source Han Sans CN" # primary shaping family; a change needs a restart

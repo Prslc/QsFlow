@@ -505,9 +505,9 @@ impl State {
         if self.delete_selection() {
             return;
         }
-        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
-            self.query.remove(previous.0);
-            self.caret = previous.0;
+        if let Some(at) = prev_boundary(&self.query, self.caret) {
+            self.query.remove(at);
+            self.caret = at;
         }
     }
 
@@ -529,7 +529,7 @@ impl State {
 
         let mut budget = before as usize;
         while budget > 0 {
-            let Some((at, _)) = self.query[..self.caret].char_indices().next_back() else {
+            let Some(at) = prev_boundary(&self.query, self.caret) else {
                 break;
             };
             let len = self.caret - at;
@@ -542,10 +542,9 @@ impl State {
 
         let mut budget = after as usize;
         while budget > 0 {
-            let Some(next) = self.query[self.caret..].chars().next() else {
+            let Some(len) = next_char_len(&self.query, self.caret) else {
                 break;
             };
-            let len = next.len_utf8();
             if len > budget {
                 break;
             }
@@ -574,8 +573,8 @@ impl State {
             return;
         }
         self.anchor = None;
-        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
-            self.caret = previous.0;
+        if let Some(at) = prev_boundary(&self.query, self.caret) {
+            self.caret = at;
         }
     }
 
@@ -586,8 +585,8 @@ impl State {
             return;
         }
         self.anchor = None;
-        if let Some(next) = self.query[self.caret..].chars().next() {
-            self.caret += next.len_utf8();
+        if let Some(len) = next_char_len(&self.query, self.caret) {
+            self.caret += len;
         }
     }
 
@@ -595,15 +594,15 @@ impl State {
     /// shift was first held.
     pub fn extend_left(&mut self) {
         self.anchor.get_or_insert(self.caret);
-        if let Some(previous) = self.query[..self.caret].char_indices().next_back() {
-            self.caret = previous.0;
+        if let Some(at) = prev_boundary(&self.query, self.caret) {
+            self.caret = at;
         }
     }
 
     pub fn extend_right(&mut self) {
         self.anchor.get_or_insert(self.caret);
-        if let Some(next) = self.query[self.caret..].chars().next() {
-            self.caret += next.len_utf8();
+        if let Some(len) = next_char_len(&self.query, self.caret) {
+            self.caret += len;
         }
     }
 
@@ -742,6 +741,20 @@ fn ease_out_quint(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(5)
 }
 
+/// The byte index where the character before `at` starts; `at` must be a char
+/// boundary, and the start of the text has nothing before it.
+fn prev_boundary(text: &str, at: usize) -> Option<usize> {
+    text[..at]
+        .char_indices()
+        .next_back()
+        .map(|(index, _)| index)
+}
+
+/// The UTF-8 length of the character at `at`, or `None` at the end.
+fn next_char_len(text: &str, at: usize) -> Option<usize> {
+    text[at..].chars().next().map(char::len_utf8)
+}
+
 /// What an action-panel row's `on_click` means. The launcher-level `pin:` and
 /// `unpin:` carry a JSON payload; the rest reuse the row schemes.
 #[derive(Debug, Clone, PartialEq)]
@@ -864,6 +877,20 @@ mod tests {
         let mut state = State::new();
         state.surface = (1920, 1080);
         state
+    }
+
+    #[test]
+    fn boundaries_are_char_steps_not_bytes() {
+        let text = "aé中";
+        assert_eq!(prev_boundary(text, text.len()), Some(3));
+        assert_eq!(prev_boundary(text, 3), Some(1));
+        assert_eq!(prev_boundary(text, 1), Some(0));
+        assert_eq!(prev_boundary(text, 0), None);
+
+        assert_eq!(next_char_len(text, 0), Some(1));
+        assert_eq!(next_char_len(text, 1), Some(2));
+        assert_eq!(next_char_len(text, 3), Some(3));
+        assert_eq!(next_char_len(text, text.len()), None);
     }
 
     #[test]

@@ -120,4 +120,18 @@ mod tests {
     fn a_blank_family_keeps_the_default() {
         assert_eq!(parse("[font]\nfamily = \"  \"").font, Font::default());
     }
+
+    #[test]
+    fn the_shipped_template_comments_out_every_key() {
+        for line in super::super::DEFAULT_TEMPLATE.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            assert!(line.starts_with('['), "uncommented key: {line}");
+        }
+
+        // commented keys are absent, so the whole file is the built-in defaults
+        assert_eq!(parse(super::super::DEFAULT_TEMPLATE), Config::default());
+    }
 }

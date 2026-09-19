@@ -45,6 +45,10 @@ Every section and every key is optional. An absent key keeps the default, an
 unparseable file is ignored, and out-of-range values are clamped. The file is
 watched, so an edit applies without restarting.
 
+The first shell run writes `~/.config/wayrun/theme.toml` as a commented template.
+Every key in it is commented out, so it lists the options inline without pinning
+their current defaults; uncomment only what you want to change.
+
 ### `[colors]`
 
 Per-field override of the system theme. Values are `#rrggbb` or `#rgb`; an

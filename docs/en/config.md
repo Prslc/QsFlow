@@ -3,7 +3,9 @@
 `~/.config/wayrun/config.toml` holds core behaviour. It is generated on the
 first run as a copy of `core/default-config.toml` and is watched, so an edit is
 picked up without restarting the core. Every key is optional: a missing file or
-key keeps the built-in default shown here.
+key keeps the built-in default shown here. The generated file comments every key
+out, so it lists the options without pinning their current defaults; uncomment
+only what you want to change.
 
 ## `[web_search]`
 
