@@ -33,26 +33,16 @@ registry, the JSON-RPC protocol and the usage database.
 
 ## Features
 
-- **Fuzzy app launcher** — search `.desktop` entries across XDG data dirs
-  (name, GenericName, Keywords — plus each desktop action as its own row).
-- **Proper app launching** — desktop apps open via the GLib `GAppInfo` registry
-  (`g_app_info_launch`, honouring Exec quoting, field codes, env and
-  `DBusActivatable` single-instance) rather than `Exec=` re-parsed through a
-  shell.
-- **Files & paths** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home; open in the default app.
-- **Clipboard history** — search and paste from `cliphist` via `c`.
-- **System commands** — `lock`, `reboot`, `shutdown`, `suspend`, `logout`.
-- **Run commands** — fuzzy-search `$PATH` executables via `r` and run them (with args).
-- **Window switcher** — switch to any open niri window via `w`.
-- **Firefox bookmarks & history** — reads a copy of the newest profile's
-  `places.sqlite` (avoiding a lock on the live database).
-- **Web search** — Google suggestions (`s`).
-- **Inline tools** — calculator.
-- **Usage history** — frequent items on empty input; `Delete` removes an entry.
-- **Dynamic theming** — follows DankMaterialShell's Material You palette, with
-  optional per-field overrides and layout/blur/motion knobs in `theme.toml`.
-- **Plugin system** — TOML registry; enable, disable, reorder, or remap keywords.
-- **Icon resolution** — Papirus, Breeze, Adwaita, hicolor + Flatpak; cached per session.
+- **Launcher** — fuzzy `.desktop` search across XDG data dirs, launched through
+  the GLib `GAppInfo` registry (Exec quoting, field codes, `DBusActivatable`),
+  with Flatpak and themed icons resolved per row.
+- **Quick search** — files and paths, Firefox bookmarks and history, clipboard
+  history, web suggestions, `$PATH` commands, open niri windows, system commands,
+  and inline math.
+- **Usage history** — most-used items on an empty query; `Delete` forgets one.
+- **Themeable** — follows DankMaterialShell's Material You palette, with
+  `theme.toml` overrides for colors, blur, layout and motion.
+- **Extensible** — a TOML plugin registry plus external JSON-RPC hosts.
 
 ## Requirements
 
@@ -96,10 +86,7 @@ Full user docs live in [`docs/en/`](docs/en/); the Chinese editions are in
 
 ## Credit
 
-WayRun is inspired by [Wox](https://github.com/wox-launcher/wox). It is built on
-the Rust Wayland ecosystem — in particular
-[smithay-client-toolkit](https://github.com/Smithay/client-toolkit) for the
-layer-shell plumbing, [tiny-skia](https://github.com/RazrFalcon/tiny-skia) for
-rasterisation, and [cosmic-text](https://github.com/pop-os/cosmic-text) for text
-shaping. Icons come from the
-[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) theme.
+- **[Wox](https://github.com/wox-launcher/wox)** — the launcher this is inspired by.
+- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** / **[cosmic-text](https://github.com/pop-os/cosmic-text)** — software rasterisation and text shaping for the overlay.
+- **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland layer-shell client plumbing.
+- **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — the icon theme.

@@ -26,23 +26,14 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ## 功能特性
 
-- **模糊应用启动器** — 搜索 XDG 数据目录中的 `.desktop` 条目
-  （Name、GenericName、Keywords，以及每条 desktop action 作为独立结果行）。
-- **规范的应用启动** — 桌面应用经 GLib `GAppInfo` 注册表启动
-  （`g_app_info_launch`，正确处理 Exec 引号、字段码、环境变量与
-  `DBusActivatable` 单例），而非把 `Exec=` 交给 shell 重新解析。
-- **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 与主目录，直接打开结果。
-- **剪贴板历史** — 通过 `c` 前缀搜索并粘贴 `cliphist` 记录。
-- **系统命令** — `lock`、`reboot`、`shutdown`、`suspend`、`logout`。
-- **命令运行** — 通过 `r` 前缀模糊搜索 `$PATH` 可执行文件并运行（可带参数）。
-- **窗口切换** — 通过 `w` 前缀切换到任一打开的 niri 窗口。
-- **Firefox 书签与历史** — 读取最新配置目录 `places.sqlite` 的副本（避免锁定正在使用的数据库）。
-- **网页搜索** — Google 搜索建议（`s`）。
-- **内联工具** — 即时计算。
+- **应用启动** — 跨 XDG 数据目录的 `.desktop` 模糊搜索，经 GLib `GAppInfo`
+  启动（正确处理 Exec 引号、字段码与 `DBusActivatable`），并逐行解析 Flatpak 与主题图标。
+- **快速搜索** — 文件与路径、Firefox 书签与历史、剪贴板历史、网页建议、`$PATH`
+  命令、打开的 niri 窗口、系统命令，以及即时计算。
 - **使用历史** — 留空时展示高频项，按 `Delete` 删除。
-- **动态主题** — 跟随 DankMaterialShell 的 Material You 调色板，并可在 `theme.toml` 中逐字段覆盖配色，以及调整布局/模糊/动效。
-- **插件系统** — TOML 注册表，可启用、禁用、调整顺序或修改前缀。
-- **图标解析** — Papirus、Breeze、Adwaita、hicolor 及 Flatpak；会话内缓存。
+- **可主题化** — 跟随 DankMaterialShell 的 Material You 调色板，并可用
+  `theme.toml` 覆盖配色、模糊、布局与动效。
+- **可扩展** — TOML 插件注册表，以及外部 JSON-RPC 主机。
 
 ## 环境要求
 
@@ -82,8 +73,7 @@ wayrun
 
 ## 致谢
 
-WayRun 的设计灵感来自 [Wox](https://github.com/wox-launcher/wox)。它建立在 Rust Wayland 生态之上——
-[smithay-client-toolkit](https://github.com/Smithay/client-toolkit) 负责 layer-shell 管线，
-[tiny-skia](https://github.com/RazrFalcon/tiny-skia) 负责光栅化，
-[cosmic-text](https://github.com/pop-os/cosmic-text) 负责文本整形。
-图标来自 [Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) 主题。
+- **[Wox](https://github.com/wox-launcher/wox)** —— 本启动器的灵感来源。
+- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** 与 **[cosmic-text](https://github.com/pop-os/cosmic-text)** —— 覆盖层的软件光栅化与文本整形。
+- **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** —— Wayland layer-shell 客户端管线。
+- **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** —— 图标主题。
