@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::LazyLock;
 
 use anyhow::Result;
-use rustc_hash::FxHashSet as HashSet;
+use std::collections::HashSet;
 
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;

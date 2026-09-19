@@ -9,7 +9,7 @@ pub mod system;
 pub mod web;
 pub mod window;
 
-use rustc_hash::FxHashMap as HashMap;
+use std::collections::HashMap;
 
 use crate::plugin::Plugin;
 use crate::wire::{ActionItem, ResultItem};

@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap as HashMap;
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use crate::system::xdg;

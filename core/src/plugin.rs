@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap as HashMap;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
