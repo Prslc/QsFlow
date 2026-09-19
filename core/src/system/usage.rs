@@ -209,12 +209,16 @@ fn purge_with(conn: &Connection) -> Result<()> {
 fn get_top_with(conn: &Connection, limit: i32) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn
         .prepare("SELECT item_json FROM usage ORDER BY count DESC, last_used_at DESC LIMIT ?1")?;
-    let rows = stmt.query_map([limit], |row| {
-        let json: String = row.get(0)?;
-        Ok(serde_json::from_str(&json).unwrap_or_default())
-    })?;
+    let rows = stmt.query_map([limit], |row| row.get::<_, String>(0))?;
 
-    Ok(rows.filter_map(Result::ok).collect())
+    // A corrupt row, or one with no `title` at all, is skipped, never emitted
+    // as `null`: `title` is required on the wire, so one bad entry would make
+    // the shell reject the whole history array. An empty title is a real row.
+    Ok(rows
+        .filter_map(Result::ok)
+        .filter_map(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .filter(|value| value.get("title").and_then(|t| t.as_str()).is_some())
+        .collect())
 }
 
 #[cfg(test)]
@@ -253,6 +257,26 @@ mod tests {
         let items = get_top_with(&conn, 10).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["title"], "Firefox");
+    }
+
+    #[test]
+    fn a_corrupt_or_titleless_row_does_not_poison_the_history() {
+        let conn = test_conn();
+        record_with(&conn, r#"{"title":"Good","on_click":"run:good"}"#).unwrap();
+        conn.execute(
+            "INSERT INTO usage (key, on_click, item_json) VALUES ('bad', 'run:bad', 'not json')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO usage (key, on_click, item_json) VALUES ('empty', 'run:empty', '{\"on_click\":\"run:empty\"}')",
+            [],
+        )
+        .unwrap();
+
+        let items = get_top_with(&conn, 10).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["title"], "Good");
     }
 
     #[test]
