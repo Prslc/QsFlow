@@ -1,12 +1,13 @@
 use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::compositor::{CompositorHandler, FrameCallbackData, Region};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShellHandler, LayerSurface, LayerSurfaceConfigure,
 };
-use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use tiny_skia::Pixmap;
 use wayland_client::protocol::{wl_output, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
@@ -14,7 +15,7 @@ use wayland_client::{Connection, QueueHandle};
 use crate::session::{backend, ipc};
 use crate::ui::{geom, render};
 
-use super::{Shell, scale};
+use super::{Damage, Shell, scale};
 
 const NAMESPACE: &str = "WayRun";
 
@@ -132,6 +133,11 @@ impl Shell {
         self.pool = None;
         self.pixmap = None;
         self.caret_patch = None;
+        self.buffers = [None, None];
+        self.buffer_stale = [Damage::EMPTY, Damage::EMPTY];
+        self.buffer_next = 0;
+        self.pending_damage = Damage::EMPTY;
+        self.buffer_physical = (0, 0);
         // Free the decoded icons and the resolution caches: the resident shell
         // sits hidden between shows and these grow with every distinct payload.
         self.icons.clear();
@@ -166,11 +172,34 @@ impl Shell {
         )
     }
 
-    /// The pixmaps and the shared-memory pool for a physical size.
+    /// Choose the shared-memory format once, from what `wl_shm` advertises.
+    fn choose_format(&mut self) {
+        if self.format_chosen {
+            return;
+        }
+        self.format_chosen = true;
+        let formats = self.shm.formats().to_vec();
+        // `ABGR8888` is byte-for-byte the premultiplied RGBA that tiny-skia
+        // produces; the mandatory `ARGB8888` needs a per-pixel R/B swap.
+        self.shm_format = if formats.contains(&wl_shm::Format::Abgr8888) {
+            wl_shm::Format::Abgr8888
+        } else {
+            wl_shm::Format::Argb8888
+        };
+        eprintln!(
+            "wayrun: wl_shm formats {formats:?} -> {:?}",
+            self.shm_format
+        );
+    }
+
+    /// The retained pixmap, the shared-memory pool and the two persistent
+    /// buffers for a physical size. Recreating the pixmap or a size change
+    /// invalidates both buffers and the whole frame.
     fn ensure_buffers(&mut self, physical_w: u32, physical_h: u32) -> bool {
         if physical_w == 0 || physical_h == 0 {
             return false;
         }
+        self.choose_format();
 
         let sized = |pixmap: &Option<Pixmap>| {
             pixmap
@@ -180,37 +209,51 @@ impl Shell {
         if !sized(&self.pixmap) {
             self.pixmap = Pixmap::new(physical_w, physical_h);
             self.caret_patch = None;
-            // Two full-output frames: one that the compositor is showing and one
-            // being assembled. The pool doubles on demand, so this is the bound
-            // of a frame-callback-paced present, not a hard cap.
+            // Room for two full-output buffers. Each persistent buffer takes a
+            // slot; the pool grows on demand, so this is the bound of a
+            // frame-callback-paced present, not a hard cap.
             self.pool =
                 SlotPool::new(physical_w as usize * physical_h as usize * 4 * 2, &self.shm).ok();
             // A fresh pixmap holds nothing; the whole frame has to be laid down.
             self.needs_full = true;
         }
 
-        self.pixmap.is_some() && self.pool.is_some()
+        if self.buffer_physical != (physical_w, physical_h)
+            || self.buffers.iter().any(Option::is_none)
+        {
+            self.buffers = [None, None];
+            self.buffer_physical = (physical_w, physical_h);
+            self.buffer_stale = [Damage::FULL, Damage::FULL];
+            self.buffer_next = 0;
+            self.pending_damage = Damage::FULL;
+            self.needs_full = true;
+            let len = physical_w as usize * physical_h as usize * 4;
+            for slot in 0..self.buffers.len() {
+                self.buffers[slot] = self.new_buffer(len, physical_w, physical_h);
+            }
+        }
+
+        self.pixmap.is_some() && self.pool.is_some() && self.buffers.iter().all(Option::is_some)
+    }
+
+    /// One persistent buffer over a fresh slot.
+    fn new_buffer(&mut self, len: usize, physical_w: u32, physical_h: u32) -> Option<Buffer> {
+        let format = self.shm_format;
+        let pool = self.pool.as_mut()?;
+        let slot = pool.new_slot(len).ok()?;
+        pool.create_buffer_in(
+            &slot,
+            physical_w as i32,
+            physical_h as i32,
+            (physical_w * 4) as i32,
+            format,
+        )
+        .ok()
     }
 
     pub(super) fn present(&mut self, now: Instant) {
         if self.layer.is_none() || !self.configured {
             return;
-        }
-
-        if !self.format_chosen {
-            self.format_chosen = true;
-            let formats = self.shm.formats().to_vec();
-            // `ABGR8888` is byte-for-byte the premultiplied RGBA that tiny-skia
-            // produces; the mandatory `ARGB8888` needs a per-pixel R/B swap.
-            self.shm_format = if formats.contains(&wl_shm::Format::Abgr8888) {
-                wl_shm::Format::Abgr8888
-            } else {
-                wl_shm::Format::Argb8888
-            };
-            eprintln!(
-                "wayrun: wl_shm formats {formats:?} -> {:?}",
-                self.shm_format
-            );
         }
 
         let (physical_w, physical_h) = self.physical_size();
@@ -241,9 +284,28 @@ impl Shell {
                 full,
             );
         }
-        // Remember where the card ended, so the next settled repaint can erase a
-        // card that shrank.
-        self.app.last_card_bottom = geom::card_top(self.app.surface) + self.app.card_height(now);
+
+        // What the frame just changed, in physical pixels. A settled repaint is
+        // the card rectangle, spanned by the union of the previous and current
+        // bottoms so a shrink is covered too.
+        let surface_size = self.app.surface;
+        let scale = self.app.scale_factor();
+        let top = geom::card_top(surface_size);
+        let new_bottom = top + self.app.card_height(now);
+        let damage = if full {
+            Damage::FULL
+        } else {
+            let base_bottom = new_bottom.max(self.app.last_card_bottom);
+            Damage::rect(
+                (geom::card_x(surface_size) * scale).floor() as i32 - 1,
+                (top * scale).floor() as i32 - 1,
+                (geom::card_w(surface_size) * scale).ceil() as i32 + 2,
+                ((base_bottom - top) * scale).ceil() as i32 + 3,
+            )
+        };
+        self.pending_damage.add(damage);
+        self.app.last_card_bottom = new_bottom;
+
         // Capture the caret-free pixels before drawing the caret, so a blink
         // can restore them without a second frame pixmap.
         self.capture_caret_patch();
@@ -255,38 +317,70 @@ impl Shell {
         // commit that should carry it, or the first frame goes unblurred.
         self.sync_blur();
 
-        self.blit();
+        if !self.blit() {
+            self.needs_present = true;
+        }
     }
 
-    /// Copy the drawn frame into a shared-memory buffer and commit it.
-    fn blit(&mut self) {
+    /// Copy the damaged region of the retained frame into a free shared-memory
+    /// buffer, damage only that region and commit. Reusing a buffer keeps the
+    /// undamaged pixels from its previous upload, so a small change costs a
+    /// small copy and the compositor only recomposites the damage.
+    fn blit(&mut self) -> bool {
         if !self.configured {
-            return;
+            return false;
         }
 
         let (physical_w, physical_h) = self.physical_size();
         let (width, height) = self.app.surface;
         let surface = {
             let Some(layer) = self.layer.as_ref() else {
-                return;
+                return false;
             };
             layer.wl_surface().clone()
         };
 
+        // A buffer the compositor has released; if neither is free, retry.
+        let Some(index) = self.free_buffer_index() else {
+            self.schedule_retry();
+            return false;
+        };
+
+        let damage = self.buffer_stale[index]
+            .union(self.pending_damage)
+            .clamped(physical_w, physical_h);
+        let Some(damage) = damage else {
+            // This buffer already matches the pixmap.
+            return true;
+        };
+
         let format = self.shm_format;
-        let stride = (physical_w * 4) as i32;
-        let Some(pixmap) = self.pixmap.as_ref() else {
-            return;
-        };
-        let Some(pool) = self.pool.as_mut() else {
-            return;
-        };
-        let Ok((buffer, canvas)) =
-            pool.create_buffer(physical_w as i32, physical_h as i32, stride, format)
-        else {
-            return;
-        };
-        copy_into(pixmap.data(), canvas, format);
+        {
+            let Some(pixmap) = self.pixmap.as_ref() else {
+                return false;
+            };
+            let Some(pool) = self.pool.as_mut() else {
+                return false;
+            };
+            let Some(buffer) = self.buffers[index].as_ref() else {
+                return false;
+            };
+            let Some(canvas) = buffer.canvas(pool) else {
+                return false;
+            };
+
+            if damage.full {
+                copy_into(pixmap.data(), canvas, format);
+            } else {
+                copy_rect(
+                    pixmap.data(),
+                    canvas,
+                    physical_w,
+                    (damage.x, damage.y, damage.w, damage.h),
+                    format,
+                );
+            }
+        }
 
         // With a fractional ratio the buffer is `logical × ratio` and the
         // viewport maps it back; the surface's own scale stays 1. Without one,
@@ -302,7 +396,7 @@ impl Shell {
         } else {
             surface.set_buffer_scale(self.app.scale.max(1));
         }
-        surface.damage_buffer(0, 0, physical_w as i32, physical_h as i32);
+        surface.damage_buffer(damage.x, damage.y, damage.w, damage.h);
 
         // The frame callback must be registered *before* the commit that it
         // should pace: niri takes the pending callback while processing the
@@ -315,13 +409,25 @@ impl Shell {
         surface.frame(&self.qh, FrameCallbackData(frame_surface));
         self.frame_pending = true;
 
+        let Some(buffer) = self.buffers[index].as_ref() else {
+            return false;
+        };
         if buffer.attach_to(&surface).is_err() {
-            return;
+            self.schedule_retry();
+            return false;
         }
         let Some(layer) = self.layer.as_ref() else {
-            return;
+            return false;
         };
         layer.commit();
+
+        // This buffer now matches the pixmap; the other is missing this frame's
+        // changes and catches up the next time it is written.
+        self.buffer_stale[index] = Damage::EMPTY;
+        let other = (index + 1) % self.buffers.len();
+        self.buffer_stale[other].add(self.pending_damage);
+        self.buffer_next = other;
+        self.pending_damage = Damage::EMPTY;
 
         if self.timing {
             let now = Instant::now();
@@ -370,6 +476,40 @@ impl Shell {
         }
 
         self.sync_ime_cursor();
+        true
+    }
+
+    /// The next buffer the compositor has released, starting from
+    /// [`Shell::buffer_next`].
+    fn free_buffer_index(&self) -> Option<usize> {
+        let start = self.buffer_next;
+        for offset in 0..self.buffers.len() {
+            let index = (start + offset) % self.buffers.len();
+            if let Some(buffer) = self.buffers[index].as_ref()
+                && !buffer.slot().has_active_buffers()
+            {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// Retry a deferred present shortly. Used when both buffers are still held
+    /// by the compositor: the frame callback usually wakes `pump`, but a
+    /// release can arrive on its own.
+    fn schedule_retry(&mut self) {
+        if self.retry_armed {
+            return;
+        }
+        self.retry_armed = true;
+        let _ = self.loop_handle.insert_source(
+            Timer::from_duration(Duration::from_millis(4)),
+            |_, _, state: &mut Shell| {
+                state.retry_armed = false;
+                state.pump();
+                TimeoutAction::Drop
+            },
+        );
     }
 
     /// A blink: repaint the caret over the restored patch and commit, without
@@ -379,7 +519,17 @@ impl Shell {
         if let Some(pixmap) = self.pixmap.as_mut() {
             render::draw_caret(pixmap, &self.app, &mut self.text, now);
         }
-        self.blit();
+        if let Some(patch) = self.caret_patch.as_ref() {
+            self.pending_damage.add(Damage::rect(
+                patch.x as i32,
+                patch.y as i32,
+                patch.w as i32,
+                patch.h as i32,
+            ));
+        }
+        if !self.blit() {
+            self.needs_present = true;
+        }
     }
 
     /// Save the pixels the caret covers: the frame without it, in a rect just
@@ -519,6 +669,47 @@ fn copy_into(source: &[u8], destination: &mut [u8], format: wl_shm::Format) {
     }
 }
 
+/// Copy `rect` (physical pixels, already clamped to the buffer) between two
+/// full buffers. `ARGB8888` is `ABGR8888` with R and B swapped per pixel.
+fn copy_rect(
+    source: &[u8],
+    destination: &mut [u8],
+    width: u32,
+    rect: (i32, i32, i32, i32),
+    format: wl_shm::Format,
+) {
+    let (x, y, w, h) = rect;
+    if w <= 0 || h <= 0 {
+        return;
+    }
+
+    let stride = width as usize * 4;
+    let row = w as usize * 4;
+    let first = y.max(0) as usize;
+    for line in first..(y + h) as usize {
+        let start = line * stride + x.max(0) as usize * 4;
+        let Some(source) = source.get(start..start + row) else {
+            break;
+        };
+        let Some(destination) = destination.get_mut(start..start + row) else {
+            break;
+        };
+
+        if format == wl_shm::Format::Abgr8888 {
+            destination.copy_from_slice(source);
+            continue;
+        }
+        let (destination, _) = destination.as_chunks_mut::<4>();
+        let (source, _) = source.as_chunks::<4>();
+        for (target, pixel) in destination.iter_mut().zip(source) {
+            target[0] = pixel[2];
+            target[1] = pixel[1];
+            target[2] = pixel[0];
+            target[3] = pixel[3];
+        }
+    }
+}
+
 impl CompositorHandler for Shell {
     fn scale_factor_changed(
         &mut self,
@@ -639,7 +830,7 @@ fn trim_allocator() {}
 
 #[cfg(test)]
 mod tests {
-    use super::{CaretPatch, copy_into};
+    use super::{CaretPatch, copy_into, copy_rect};
     use tiny_skia::Pixmap;
     use wayland_client::protocol::wl_shm;
 
@@ -672,6 +863,47 @@ mod tests {
 
         copy_into(&source, &mut destination, wl_shm::Format::Abgr8888);
         assert_eq!(destination, vec![0u8; 4]);
+    }
+
+    #[test]
+    fn a_region_copy_touches_only_its_rows() {
+        // A 4x3 buffer of distinct bytes; copy one 2-pixel row.
+        let source: Vec<u8> = (0..48).collect();
+        let mut destination = vec![0u8; 48];
+
+        copy_rect(
+            &source,
+            &mut destination,
+            4,
+            (1, 1, 2, 1),
+            wl_shm::Format::Abgr8888,
+        );
+
+        let stride = 16;
+        assert_eq!(
+            &destination[stride + 4..stride + 12],
+            &source[stride + 4..stride + 12]
+        );
+        assert!(destination[..stride].iter().all(|byte| *byte == 0));
+        assert!(destination[2 * stride..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn a_region_copy_swaps_red_and_blue_for_argb() {
+        // A 2x1 buffer; copy only the second pixel.
+        let source = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let mut destination = vec![0u8; 8];
+
+        copy_rect(
+            &source,
+            &mut destination,
+            2,
+            (1, 0, 1, 1),
+            wl_shm::Format::Argb8888,
+        );
+
+        assert_eq!(&destination[4..8], &[7, 6, 5, 8]);
+        assert_eq!(&destination[0..4], &[0, 0, 0, 0]);
     }
 
     #[test]

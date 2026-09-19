@@ -16,7 +16,7 @@ use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::SeatState;
 use smithay_client_toolkit::seat::keyboard::Modifiers;
 use smithay_client_toolkit::shell::wlr_layer::{LayerShell, LayerSurface};
-use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
@@ -38,6 +38,98 @@ use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 use crate::ui::theme;
 use crate::wayland::ime::Pending;
+
+/// A changed rectangle in physical buffer pixels. `full` means the whole buffer
+/// and ignores the numbers; a zero-size rect means nothing changed. Used both to
+/// repaint the retained frame and to keep the two shm buffers in step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Damage {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    full: bool,
+}
+
+impl Damage {
+    const EMPTY: Damage = Damage {
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        full: false,
+    };
+    const FULL: Damage = Damage {
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        full: true,
+    };
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Self {
+        if w <= 0 || h <= 0 {
+            Self::EMPTY
+        } else {
+            Self {
+                x,
+                y,
+                w,
+                h,
+                full: false,
+            }
+        }
+    }
+
+    fn is_empty(self) -> bool {
+        !self.full && (self.w <= 0 || self.h <= 0)
+    }
+
+    fn union(self, other: Self) -> Self {
+        if self.full || other.full {
+            return Self::FULL;
+        }
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return self;
+        }
+
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        let right = (self.x + self.w).max(other.x + other.w);
+        let bottom = (self.y + self.h).max(other.y + other.h);
+        Self {
+            x,
+            y,
+            w: right - x,
+            h: bottom - y,
+            full: false,
+        }
+    }
+
+    fn add(&mut self, other: Self) {
+        *self = self.union(other);
+    }
+
+    /// Intersect with a `width`×`height` buffer; `None` when nothing is left.
+    /// `full` becomes the whole buffer.
+    fn clamped(self, width: u32, height: u32) -> Option<Self> {
+        if self.is_empty() {
+            return None;
+        }
+        if self.full {
+            return Some(Self::rect(0, 0, width as i32, height as i32));
+        }
+
+        let x = self.x.max(0);
+        let y = self.y.max(0);
+        let right = (self.x + self.w).min(width as i32);
+        let bottom = (self.y + self.h).min(height as i32);
+        (right > x && bottom > y).then(|| Self::rect(x, y, right - x, bottom - y))
+    }
+}
 
 pub struct Shell {
     conn: Connection,
@@ -79,6 +171,19 @@ pub struct Shell {
     configured: bool,
     effect: Option<ExtBackgroundEffectSurfaceV1>,
     pool: Option<SlotPool>,
+    /// Two persistent shm buffers, reused across presents: an unchanged region
+    /// is neither copied nor re-uploaded. `buffer_stale[i]` is what the pixmap
+    /// has changed since buffer `i` was last written.
+    buffers: [Option<Buffer>; 2],
+    buffer_stale: [Damage; 2],
+    /// The buffer to write next, so the two alternate.
+    buffer_next: usize,
+    /// Pixmap changes not yet uploaded to any buffer.
+    pending_damage: Damage,
+    buffer_physical: (u32, u32),
+    /// A present was deferred because both buffers were still held by the
+    /// compositor; a short timer retries it.
+    retry_armed: bool,
     /// The frame as drawn. A blink does not keep a second full-size frame:
     /// it restores the pixels under the caret from `caret_patch` and redraws
     /// the caret alone.
@@ -164,6 +269,12 @@ impl Shell {
             configured: false,
             effect: None,
             pool: None,
+            buffers: [None, None],
+            buffer_stale: [Damage::EMPTY, Damage::EMPTY],
+            buffer_next: 0,
+            pending_damage: Damage::EMPTY,
+            buffer_physical: (0, 0),
+            retry_armed: false,
             pixmap: None,
             caret_patch: None,
             shm_format: wl_shm::Format::Argb8888,
@@ -401,3 +512,33 @@ impl ProvidesRegistryState for Shell {
 
 delegate_registry!(Shell);
 delegate_dispatch2!(Shell);
+
+#[cfg(test)]
+mod tests {
+    use super::Damage;
+
+    #[test]
+    fn damage_unions_and_clamps_to_the_buffer() {
+        assert_eq!(Damage::EMPTY.union(Damage::EMPTY), Damage::EMPTY);
+        assert_eq!(
+            Damage::EMPTY.union(Damage::rect(1, 2, 3, 4)),
+            Damage::rect(1, 2, 3, 4)
+        );
+        assert_eq!(Damage::FULL.union(Damage::rect(1, 2, 3, 4)), Damage::FULL);
+
+        // Two boxes become the box around both.
+        let a = Damage::rect(10, 10, 20, 20);
+        let b = Damage::rect(40, 5, 10, 40);
+        assert_eq!(a.union(b), Damage::rect(10, 5, 40, 40));
+
+        // Clamping trims to the buffer, drops what falls outside, and turns
+        // `full` into the whole buffer.
+        assert_eq!(
+            Damage::rect(-5, -5, 20, 20).clamped(8, 8),
+            Some(Damage::rect(0, 0, 8, 8))
+        );
+        assert_eq!(Damage::rect(100, 100, 5, 5).clamped(8, 8), None);
+        assert_eq!(Damage::FULL.clamped(8, 8), Some(Damage::rect(0, 0, 8, 8)));
+        assert_eq!(Damage::EMPTY.clamped(8, 8), None);
+    }
+}
