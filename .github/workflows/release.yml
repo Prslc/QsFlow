@@ -46,11 +46,27 @@ jobs:
           tar -czf "wayrun-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz" \
             -C target/release wayrun
 
+      - name: Extract release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            /^## \[/ { found = 0 }
+            found
+          ' CHANGELOG.md > RELEASE_NOTES.md
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 \
-            || gh release create "${{ github.ref_name }}" \
-              --title "WayRun ${{ github.ref_name }}" --generate-notes
+          if ! gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            if [ -s RELEASE_NOTES.md ]; then
+              gh release create "${{ github.ref_name }}" \
+                --title "WayRun ${{ github.ref_name }}" \
+                --notes-file RELEASE_NOTES.md
+            else
+              gh release create "${{ github.ref_name }}" \
+                --title "WayRun ${{ github.ref_name }}" --generate-notes
+            fi
+          fi
           gh release upload "${{ github.ref_name }}" wayrun-*.tar.gz --clobber
