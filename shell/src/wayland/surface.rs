@@ -492,7 +492,9 @@ fn copy_into(source: &[u8], destination: &mut [u8], format: wl_shm::Format) {
         return;
     }
 
-    for (target, pixel) in canvas.chunks_exact_mut(4).zip(source.chunks_exact(4)) {
+    let (canvas, _) = canvas.as_chunks_mut::<4>();
+    let (source, _) = source.as_chunks::<4>();
+    for (target, pixel) in canvas.iter_mut().zip(source) {
         target[0] = pixel[2];
         target[1] = pixel[1];
         target[2] = pixel[0];
