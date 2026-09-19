@@ -15,6 +15,8 @@ enum Request<'a> {
     Copy(&'a str),
     Open(&'a str),
     Launch(&'a str),
+    /// `action:<desktop-id>:<action-id>`.
+    Action(&'a str),
     /// Anything else is a query.
     Search(&'a str),
 }
@@ -35,6 +37,7 @@ impl<'a> Request<'a> {
             "copy" => Self::Copy(argument),
             "open" => Self::Open(argument),
             "launch" => Self::Launch(argument),
+            "action" => Self::Action(argument),
             _ => Self::Search(input),
         }
     }
@@ -116,6 +119,11 @@ pub async fn serve() -> Result<()> {
             Request::Copy(payload) => system::executor::copy_json(payload),
             Request::Open(uri) => system::executor::open_uri(uri),
             Request::Launch(id) => system::executor::launch_app(id),
+            Request::Action(spec) => {
+                if let Some((desktop_id, action_id)) = spec.split_once(':') {
+                    system::desktop_action::launch(desktop_id, action_id);
+                }
+            }
             Request::Search(query) => start_search(&tx, &mut search, query),
         }
     }
@@ -180,5 +188,21 @@ mod tests {
             Request::parse("selects x"),
             Request::Search("selects x")
         ));
+        // a desktop action is a verb, not a query
+        assert!(matches!(
+            Request::parse("action org.x:new-window"),
+            Request::Action("org.x:new-window")
+        ));
+    }
+
+    #[test]
+    fn a_desktop_action_splits_into_its_two_ids() {
+        let Request::Action(spec) = Request::parse("action org.gnome.Nautilus:new-window") else {
+            panic!("expected an action");
+        };
+        assert_eq!(
+            spec.split_once(':'),
+            Some(("org.gnome.Nautilus", "new-window"))
+        );
     }
 }
