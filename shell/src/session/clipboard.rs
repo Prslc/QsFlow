@@ -12,7 +12,6 @@ pub fn read(tx: Sender<(u64, Option<String>)>, generation: u64) {
     });
 }
 
-/// The blocking half, which is why it runs off the event loop.
 fn paste() -> Option<String> {
     let output = Command::new("wl-paste")
         .arg("--no-newline")

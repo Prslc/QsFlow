@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::SystemTime;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
 use tokio::task;
@@ -46,7 +46,7 @@ fn find_db() -> Result<PathBuf> {
 
     newest
         .map(|(_, path)| path)
-        .ok_or_else(|| anyhow::anyhow!("No Firefox profile with places.sqlite found"))
+        .context("finding a Firefox profile with places.sqlite")
 }
 
 async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {

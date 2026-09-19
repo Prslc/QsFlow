@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
-use dirs;
 use std::env;
 use std::path::PathBuf;
 
 pub fn get_home() -> Result<PathBuf> {
-    dirs::home_dir().context("Failed to get user HOME directory")
+    dirs::home_dir().context("finding the user HOME directory")
 }
 
 /// Flatpak apps live in `<installation>/exports/share`, which only reaches

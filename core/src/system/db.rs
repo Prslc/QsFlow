@@ -26,7 +26,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS usage (
 
 fn db_path() -> Result<PathBuf> {
     let dir = get_home()?.join(".local/share/wayrun");
-    std::fs::create_dir_all(&dir).context("Failed to create wayrun data directory")?;
+    std::fs::create_dir_all(&dir).context("creating the wayrun data directory")?;
     Ok(dir.join("usage.db"))
 }
 
@@ -38,7 +38,6 @@ fn open_conn() -> Result<Connection> {
     Ok(conn)
 }
 
-/// Whether `table` already has a column named `column`.
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let mut names = stmt.query_map([], |r| r.get::<_, String>(1))?;

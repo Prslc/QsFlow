@@ -56,11 +56,8 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let url = format!("https://suggestqueries.google.com/complete/search?client=firefox&q={query}");
     let response = reqwest::get(&url)
         .await
-        .context("Failed to fetch suggestions")?;
-    let json: Vec<serde_json::Value> = response
-        .json()
-        .await
-        .context("Failed to parse suggestions")?;
+        .context("fetching web suggestions")?;
+    let json: Vec<serde_json::Value> = response.json().await.context("parsing web suggestions")?;
 
     // one resolved engine icon shared by every row (header + suggestions)
     let icon = find_icon_path("google").unwrap_or_default();

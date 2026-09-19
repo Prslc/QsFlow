@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 
 use anyhow::Result;
 use freedesktop_desktop_entry::DesktopEntry;
-use gio::prelude::*;
+use gio::prelude::{AppInfoExt, IconExt};
 
 use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};

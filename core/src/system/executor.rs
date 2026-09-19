@@ -1,4 +1,4 @@
-use gio::prelude::*;
+use gio::prelude::{AppInfoExt, FileExt};
 use std::process;
 
 /// Run a shell command detached from the backend (system commands, …). Shell

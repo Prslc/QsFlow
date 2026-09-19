@@ -19,8 +19,8 @@ pub struct ColorOverrides {
     pub container: Option<[u8; 3]>,
 }
 
-/// The shell's appearance, loaded from `theme.toml`. Every default matches the
-/// constant the renderer used before the file existed.
+/// The shell's appearance, loaded from `theme.toml`. Every default equals the
+/// renderer's constant, so an unset field changes nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppearanceConfig {
     pub colors: ColorOverrides,

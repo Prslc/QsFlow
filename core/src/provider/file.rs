@@ -155,7 +155,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                 continue;
             }
 
-            // GLib builds the URI: raw paths are invalid for spaces/non-ASCII
+            // GLib builds the URI: raw paths are invalid for spaces/non-ASCII.
             let file_url = gio::File::for_path(&path).uri().to_string();
 
             let (title, icon) = if is_dir {
@@ -224,15 +224,15 @@ mod tests {
 
     #[test]
     fn the_home_roots_are_skipped_only_under_the_home_root() {
-        // depth 1 under `~`: walked as its own root, so skip it here
+        // depth 1 under `~`: walked as its own root, so skip it here.
         assert!(!keep_entry("Desktop", 1));
         assert!(!keep_entry("Documents", 1));
         assert!(!keep_entry("Downloads", 1));
-        // a same-named dir deeper, or one directly inside a root, is kept
+        // a same-named dir deeper, or one directly inside a root, is kept.
         assert!(keep_entry("Desktop", 2));
         assert!(keep_entry("Desktop", 0));
         assert!(keep_entry("Documents", 2));
-        // build caches and dotdirs are skipped anywhere
+        // build caches and dotdirs are skipped anywhere.
         assert!(!keep_entry(".config", 1));
         assert!(!keep_entry("node_modules", 1));
         assert!(!keep_entry("target", 3));
