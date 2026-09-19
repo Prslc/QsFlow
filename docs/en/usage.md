@@ -17,7 +17,7 @@ highlighted one.
 | `r <query>` | fuzzy-search `$PATH` executables and run one |
 | `w <query>` | switch focus to a matching open niri window |
 | `c <query>` | search clipboard history (cliphist) |
-| `s <query>` | Google suggestions |
+| `s <query>` | web search suggestions (engine set in `plugins.toml`) |
 | `?` | show keyword modes, default functions, and hints |
 | `lock` / `reboot` / `shutdown` | system commands |
 | `2 + 3` | inline calculator |

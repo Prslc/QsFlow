@@ -8,16 +8,81 @@ use anyhow::{Context, Result};
 
 use super::copy_url_action;
 
-pub struct WebSearch;
+/// One search backend. Every engine answers the Firefox-style suggest payload
+/// (`["query", ["suggestion", …]]`), so the parser is shared.
+struct Engine {
+    name: &'static str,
+    icon: &'static str,
+    ready: &'static str,
+    summary: &'static str,
+    /// Search page prefix; the percent-encoded query is appended.
+    search_url: &'static str,
+    /// Suggest endpoint without `q`, which `with_param` adds encoded.
+    suggest_url: &'static str,
+}
+
+const GOOGLE: Engine = Engine {
+    name: "Google",
+    icon: "google",
+    ready: "Search Google suggestions",
+    summary: "Search on Google",
+    search_url: "https://www.google.com/search?q=",
+    suggest_url: "https://suggestqueries.google.com/complete/search?client=firefox",
+};
+
+const DUCKDUCKGO: Engine = Engine {
+    name: "DuckDuckGo",
+    icon: "duckduckgo",
+    ready: "Search DuckDuckGo suggestions",
+    summary: "Search on DuckDuckGo",
+    search_url: "https://duckduckgo.com/?q=",
+    suggest_url: "https://duckduckgo.com/ac/?type=list",
+};
+
+fn resolve(engine: Option<&str>) -> &'static Engine {
+    match engine {
+        Some("duckduckgo") => &DUCKDUCKGO,
+        Some("google") | None => &GOOGLE,
+        Some(other) => {
+            eprintln!("wayrun-core: unknown search engine {other:?}; using google");
+            &GOOGLE
+        }
+    }
+}
+
+fn meta_of(engine: &Engine) -> Meta {
+    Meta {
+        id: "web-search",
+        name: engine.name,
+        icon: engine.icon,
+        ready: engine.ready,
+    }
+}
+
+/// The identity the registry lists for `web-search` without building the
+/// plugin, so a disabled entry still shows the configured engine.
+pub fn meta_for(engine: Option<&str>) -> Meta {
+    meta_of(resolve(engine))
+}
+
+pub struct WebSearch {
+    engine: &'static Engine,
+    meta: Meta,
+}
+
+impl WebSearch {
+    pub fn new(engine: Option<&str>) -> Self {
+        let engine = resolve(engine);
+        Self {
+            engine,
+            meta: meta_of(engine),
+        }
+    }
+}
 
 impl Plugin for WebSearch {
     fn meta(&self) -> &Meta {
-        &Meta {
-            id: "web-search",
-            name: "Web Search",
-            icon: "google",
-            ready: "Search Google suggestions",
-        }
+        &self.meta
     }
 
     fn search(
@@ -25,12 +90,7 @@ impl Plugin for WebSearch {
         query: &str,
         _full: &str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
-        let query = query.to_string();
-        Box::pin(async move {
-            tokio::task::spawn_blocking(move || do_search(&query))
-                .await
-                .unwrap_or_else(|e| Err(anyhow::Error::from(e)))
-        })
+        spawn(self.engine, query)
     }
 
     fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
@@ -38,12 +98,24 @@ impl Plugin for WebSearch {
     }
 }
 
-fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+fn spawn(
+    engine: &'static Engine,
+    query: &str,
+) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + 'static>> {
+    let query = query.to_string();
+    Box::pin(async move {
+        tokio::task::spawn_blocking(move || do_search(engine, &query))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::Error::from(e)))
+    })
+}
+
+fn do_search(engine: &Engine, query: &str) -> Result<Vec<ResultItem>> {
     if query.is_empty() {
         return Ok(vec![]);
     }
 
-    let response = minreq::get("https://suggestqueries.google.com/complete/search?client=firefox")
+    let response = minreq::get(engine.suggest_url)
         .with_param("q", query)
         .with_timeout(5)
         .send()
@@ -51,12 +123,12 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     let json: Vec<serde_json::Value> = response.json().context("parsing web suggestions")?;
 
     // one resolved engine icon shared by every row (header + suggestions)
-    let icon = find_icon_path("google").unwrap_or_default();
+    let icon = find_icon_path(engine.icon).unwrap_or_default();
 
     let mut results = vec![ResultItem {
         title: format!("Search: {query}"),
-        summary: Some("Search on Google".to_string()),
-        on_click: Some(format!("https://www.google.com/search?q={query}")),
+        summary: Some(engine.summary.to_string()),
+        on_click: Some(result_url(engine, query)),
         icon: Some(icon.clone()),
         ephemeral: true,
         actions: Vec::new(),
@@ -72,8 +144,8 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                 .filter_map(|item| item.as_str())
                 .map(|phrase| ResultItem {
                     title: phrase.to_string(),
-                    summary: Some("Search on Google".to_string()),
-                    on_click: Some(format!("https://www.google.com/search?q={phrase}")),
+                    summary: Some(engine.summary.to_string()),
+                    on_click: Some(result_url(engine, phrase)),
                     icon: Some(icon.clone()),
                     ephemeral: true,
                     actions: Vec::new(),
@@ -83,4 +155,35 @@ fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     }
 
     Ok(results)
+}
+
+/// The row's open target: a search page with the query percent-encoded, so a
+/// space or non-ASCII title stays a valid URI for the core's GLib `open`.
+fn result_url(engine: &Engine, query: &str) -> String {
+    format!("{}{}", engine.search_url, urlencoding::encode(query))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unknown_engine_falls_back_to_google() {
+        assert_eq!(resolve(None).name, "Google");
+        assert_eq!(resolve(Some("google")).name, "Google");
+        assert_eq!(resolve(Some("duckduckgo")).name, "DuckDuckGo");
+        assert_eq!(resolve(Some("nope")).name, "Google");
+    }
+
+    #[test]
+    fn each_engine_builds_its_own_search_url() {
+        assert_eq!(
+            result_url(&GOOGLE, "a b"),
+            "https://www.google.com/search?q=a%20b"
+        );
+        assert_eq!(
+            result_url(&DUCKDUCKGO, "a b"),
+            "https://duckduckgo.com/?q=a%20b"
+        );
+    }
 }

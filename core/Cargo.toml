@@ -18,6 +18,7 @@ serde_json = "1.0.149"
 tempfile = "3.26.0"
 tokio = { version = "1.50.0", features = ["full"] }
 toml = "1.1.2"
+urlencoding = "2"
 walkdir = "2.5.0"
 freedesktop-desktop-entry = { version = "0.8", default-features = false }
 minreq = { version = "3.0.0", default-features = false, features = ["https-native-tls", "json-using-serde", "urlencoding", "proxy"] }

@@ -18,6 +18,7 @@ enabled = true
 | `id` | yes | Which plugin this entry configures. A built-in id, or the id an external host reports. |
 | `keyword` | yes | The prefix that routes input to this plugin. `""` makes it a **default** provider. |
 | `enabled` | no | Defaults to `true`. `false` disables the plugin without removing the entry. |
+| `engine` | no | `web-search` only: `google` (default) or `duckduckgo`. Other plugins ignore it. |
 | `command` | no | An external JSON-RPC 2.0 host. See below. |
 
 Reorder entries to change priority. Unknown or removed ids are ignored. A
@@ -44,7 +45,7 @@ everything.
 | `runner` | `r` | Fuzzy `$PATH` executables; accepts arguments. |
 | `firefox-bookmarks` | `b` | Firefox bookmarks. |
 | `firefox-history` | `h` | Firefox history. |
-| `web-search` | `s` | Web search suggestions. |
+| `web-search` | `s` | Web search suggestions (Google, or DuckDuckGo via `engine`). |
 | `file-search` | `f` | Files under the home directory. |
 | `path-search` | `d` | Directories and paths. |
 | `clipboard` | `c` | Clipboard history. |

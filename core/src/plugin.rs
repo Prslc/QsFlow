@@ -23,6 +23,10 @@ struct PluginEntry {
     keyword: String,
     #[serde(default = "default_enabled")]
     enabled: bool,
+    /// Search backend for `web-search` (`google`/`duckduckgo`); ignored by
+    /// every other plugin. Unknown values fall back to google.
+    #[serde(default)]
+    engine: Option<String>,
     /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
     /// is NOT compiled into the core: it is spawned on demand, `search`
     /// requests are relayed verbatim, and its identity (name/icon/ready) is
@@ -216,6 +220,14 @@ fn build_entries(config: &Config) -> Vec<Entry> {
         if !p.enabled {
             continue;
         }
+        if p.id == "web-search" {
+            entries.push(Entry {
+                plugin: Box::new(crate::provider::web::WebSearch::new(p.engine.as_deref())),
+                keyword: p.keyword.clone(),
+                pending: None,
+            });
+            continue;
+        }
         if let Some(plugin) = map.remove(p.id.as_str()) {
             entries.push(Entry {
                 plugin,
@@ -353,7 +365,7 @@ fn load_or_default() -> Config {
 }
 
 /// Overlay a user config onto the shipped default. Known ids are updated
-/// (keyword/enabled, plus `command` when the user sets one); unknown ids are
+/// (keyword/enabled, plus `engine`/`command` when the user sets one); unknown ids are
 /// appended so external plugins can be declared purely from the user config
 /// without touching the core. Unknown ids without a host are still skipped at
 /// registry build.
@@ -363,6 +375,9 @@ fn merge_config(mut base: Config, user: Config) -> Config {
             Some(dp) => {
                 dp.keyword = up.keyword;
                 dp.enabled = up.enabled;
+                if up.engine.is_some() {
+                    dp.engine = up.engine;
+                }
                 if up.command.is_some() {
                     dp.command = up.command;
                 }
@@ -404,6 +419,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
             // Unknown ids without a host are ignored (per the config contract):
             // they are neither built-ins nor declared external plugins.
             p.command.is_some()
+                || p.id == "web-search"
                 || map.contains_key(p.id.as_str())
                 || reg.iter().any(|e| e.plugin.meta().id == p.id.as_str())
         })
@@ -411,6 +427,15 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
             let keyword = p.keyword.clone();
             if let Some(entry) = reg.iter().find(|e| e.plugin.meta().id == p.id.as_str()) {
                 let m = entry.plugin.meta();
+                (
+                    p.id.clone(),
+                    m.name.to_string(),
+                    m.icon.to_string(),
+                    keyword,
+                    p.enabled,
+                )
+            } else if p.id == "web-search" {
+                let m = crate::provider::web::meta_for(p.engine.as_deref());
                 (
                     p.id.clone(),
                     m.name.to_string(),
@@ -429,7 +454,13 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
                 )
             } else {
                 // disabled (or undiscoverable) external plugin: no host contact
-                (p.id.clone(), p.id.clone(), String::new(), keyword, p.enabled)
+                (
+                    p.id.clone(),
+                    p.id.clone(),
+                    String::new(),
+                    keyword,
+                    p.enabled,
+                )
             }
         })
         .collect()
@@ -711,6 +742,41 @@ mod tests {
         assert_eq!(merged.plugins[0].keyword, "calc");
         assert!(!merged.plugins[0].enabled);
         assert!(merged.plugins[0].command.is_none());
+    }
+
+    #[test]
+    fn default_config_picks_the_google_engine() {
+        let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        let web = config
+            .plugins
+            .iter()
+            .find(|p| p.id == "web-search")
+            .unwrap();
+        assert_eq!(web.engine.as_deref(), Some("google"));
+    }
+
+    #[test]
+    fn user_selects_the_search_engine() {
+        let base = parse(
+            r#"
+            [[plugins]]
+            id = "web-search"
+            keyword = "s"
+            engine = "google"
+            "#,
+        );
+        let user = parse(
+            r#"
+            [[plugins]]
+            id = "web-search"
+            keyword = "s"
+            engine = "duckduckgo"
+            "#,
+        );
+        assert_eq!(
+            merge_config(base, user).plugins[0].engine.as_deref(),
+            Some("duckduckgo")
+        );
     }
 
     #[test]

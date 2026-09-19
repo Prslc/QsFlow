@@ -52,7 +52,6 @@ pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
     m.insert("app-search", Box::new(application::AppSearch));
     m.insert("firefox-bookmarks", Box::new(firefox::FirefoxBookmarks));
     m.insert("firefox-history", Box::new(firefox::FirefoxHistory));
-    m.insert("web-search", Box::new(web::WebSearch));
     m.insert("file-search", Box::new(file::FileSearch));
     m.insert("path-search", Box::new(file::PathSearch));
     m.insert("clipboard", Box::new(clipboard::Clipboard));
