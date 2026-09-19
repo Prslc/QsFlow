@@ -28,14 +28,18 @@ fn open_conn() -> Result<Connection> {
 }
 
 /// One connection for the process lifetime: an empty query calls `get_top` on
-/// every keystroke.
-static DB: LazyLock<Mutex<Connection>> =
-    LazyLock::new(|| Mutex::new(open_conn().expect("failed to open wayrun usage database")));
+/// every keystroke. Opened lazily, and left unset after a failure so a later
+/// call retries: a missing `$HOME`, a read-only dir or a full disk must degrade
+/// history to empty rather than panic the core.
+static DB: LazyLock<Mutex<Option<Connection>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Run `f` on the shared connection, surviving lock poisoning.
 fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-    let guard = DB.lock().unwrap_or_else(PoisonError::into_inner);
-    f(&guard)
+    let mut guard = DB.lock().unwrap_or_else(PoisonError::into_inner);
+    if guard.is_none() {
+        *guard = Some(open_conn()?);
+    }
+    f(guard.as_ref().expect("opened just above"))
 }
 
 /// Migrate a database that lacks the `on_click` column, merging same-title
