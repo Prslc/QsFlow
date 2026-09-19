@@ -220,10 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn a_bundled_plugin_image_resolves() {
-        // `translate` ships only as `images/translate.png`, so the theme scan
-        // misses and the resource fallback is what finds it.
-        let path = find_icon_path("translate").unwrap();
-        assert!(path.ends_with("images/translate.png"), "{path}");
+    fn a_bundled_image_resolves_when_the_theme_misses() {
+        // No theme ships `application_default`, so the bundled `images/` copy is
+        // what answers.
+        let path = find_icon_path("application_default").unwrap();
+        assert!(path.ends_with("images/application_default.png"), "{path}");
     }
 }
