@@ -20,7 +20,9 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 ## 演示
 
-![WayRun —— 应用搜索、文件搜索、动态主题与书签](../../images/demo.gif)
+<p align="center">
+  <img src="../../images/demo.webp" alt="WayRun —— 应用搜索、文件搜索、动态主题与书签">
+</p>
 
 ## 功能特性
 

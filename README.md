@@ -27,7 +27,9 @@ registry, the JSON-RPC protocol and the usage database.
 
 ## Demo
 
-![WayRun — app search, file search, dynamic theming, and bookmarks](images/demo.gif)
+<p align="center">
+  <img src="images/demo.webp" alt="WayRun — app search, file search, dynamic theming, and bookmarks">
+</p>
 
 ## Features
 
