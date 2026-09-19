@@ -17,6 +17,33 @@ pub fn execute_command(cmd: &str) {
         .ok();
 }
 
+/// Join an argv into a `sh` command line, quoting the tokens that need it.
+/// The `run:` on_click path is parsed by a shell, so an argv that is safe as
+/// argv must be re-quoted before it becomes a command string.
+pub fn shell_join(argv: &[String]) -> String {
+    argv.iter()
+        .map(|token| shell_quote(token))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Quote one token for `sh` only when it contains something the shell would
+/// treat specially; a bare word stays readable.
+fn shell_quote(token: &str) -> String {
+    let safe = !token.is_empty()
+        && token.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b'_' | b'-' | b'.' | b'/' | b':' | b'@' | b'%' | b'+' | b'=' | b','
+                )
+        });
+    if safe {
+        return token.to_string();
+    }
+    format!("'{}'", token.replace('\'', r"'\''"))
+}
+
 /// Run an argv detached from the backend — no shell, because a `.desktop` file's
 /// `Exec=` already *is* argv: putting it through `sh -c` would make a `;` or a
 /// `$` inside one argument syntax again.
@@ -83,4 +110,39 @@ pub fn copy_json(payload: &str) {
 #[derive(serde::Deserialize)]
 struct CopyRequest {
     text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_join;
+
+    fn argv(tokens: &[&str]) -> Vec<String> {
+        tokens.iter().map(|t| t.to_string()).collect()
+    }
+
+    #[test]
+    fn safe_tokens_stay_bare() {
+        assert_eq!(
+            shell_join(&argv(&[
+                "niri",
+                "msg",
+                "action",
+                "focus-window",
+                "--id",
+                "42"
+            ])),
+            "niri msg action focus-window --id 42"
+        );
+    }
+
+    #[test]
+    fn unsafe_tokens_are_single_quoted() {
+        assert_eq!(shell_join(&argv(&["echo", "a b;c"])), "echo 'a b;c'");
+        assert_eq!(shell_join(&argv(&["echo", "it's"])), r"echo 'it'\''s'");
+    }
+
+    #[test]
+    fn an_empty_token_is_quoted_to_survive_the_shell() {
+        assert_eq!(shell_join(&argv(&["foo", ""])), "foo ''");
+    }
 }

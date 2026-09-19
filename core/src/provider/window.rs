@@ -1,15 +1,18 @@
+use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
-use serde::Deserialize;
 
 use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
+use crate::provider::rank_results;
+use crate::system::compositor::{self, Compositor, Window};
+use crate::system::executor::shell_join;
 use crate::system::icon::find_icon_path;
 
-pub struct Window;
+pub struct WindowPlugin;
 
-impl Plugin for Window {
+impl Plugin for WindowPlugin {
     fn meta(&self) -> &Meta {
         &Meta {
             id: "window",
@@ -30,116 +33,72 @@ impl Plugin for Window {
     }
 }
 
-#[derive(Deserialize)]
-struct WindowInfo {
-    id: u64,
-    title: String,
-    #[serde(default)]
-    app_id: Option<String>,
-    #[serde(default)]
-    workspace_id: Option<u64>,
-}
-
-/// List niri's windows via `niri msg -j windows` and fuzzy-match `title/app_id`
-/// against the query. `on_click` focuses the window by id through `niri msg
-/// action focus-window` (runs detached after the launcher exits).
+/// Fuzzy-match the query against every open window's title/app_id and emit a
+/// `run:` row that focuses the winner. The compositor backend is picked from
+/// the environment; without one the provider is simply empty.
 fn do_search(query: &str) -> Vec<ResultItem> {
-    let output = std::process::Command::new("niri")
-        .args(["msg", "-j", "windows"])
-        .output();
-    let Ok(output) = output else {
+    let Some(compositor) = compositor::detect() else {
         return Vec::new();
     };
-    if !output.status.success() {
+    let Ok(windows) = compositor.windows() else {
         return Vec::new();
-    }
-    let windows: Vec<WindowInfo> = match serde_json::from_slice(&output.stdout) {
-        Ok(w) => w,
-        Err(_) => return Vec::new(),
     };
 
     let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
     let pattern = nucleo::Utf32String::from(query.to_lowercase());
-
     let mut results: Vec<(u16, ResultItem)> = Vec::new();
 
-    for w in windows {
-        // Some apps leave the title empty (or untitled); fall back to app_id.
-        let label = if w.title.trim().is_empty() {
-            w.app_id.clone().unwrap_or_default()
-        } else {
-            w.title.clone()
-        };
-
-        let score = if query.is_empty() {
-            1
-        } else {
-            let label_utf32 = nucleo::Utf32String::from(label.to_lowercase());
-            let title_score = matcher
-                .fuzzy_match(label_utf32.slice(..), pattern.slice(..))
-                .unwrap_or(0);
-            let app_score = w
-                .app_id
-                .as_ref()
-                .and_then(|a| {
-                    let a_utf32 = nucleo::Utf32String::from(a.to_lowercase());
-                    matcher.fuzzy_match(a_utf32.slice(..), pattern.slice(..))
-                })
-                .unwrap_or(0);
-            title_score.max(app_score)
-        };
-
+    for window in windows {
+        let score = score_window(&window, query, &pattern, &mut matcher);
         if score > 0 {
-            let title = if label.is_empty() {
-                String::from("Untitled")
-            } else {
-                label.clone()
-            };
-            let summary = w.app_id.as_ref().map(|a| match w.workspace_id {
-                Some(ws) => format!("{a} · workspace {ws}"),
-                None => a.clone(),
-            });
-            results.push((
-                score,
-                ResultItem {
-                    title,
-                    summary,
-                    on_click: Some(format!("run:niri msg action focus-window --id {}", w.id)),
-                    icon: w
-                        .app_id
-                        .as_ref()
-                        .and_then(|a| find_icon_path(a))
-                        .or_else(|| Some(String::new())),
-                    ephemeral: true,
-                },
-            ));
+            results.push((score, row(compositor, window)));
         }
     }
 
-    crate::provider::rank_results(results, false, 50)
+    rank_results(results, false, 50)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::WindowInfo;
-
-    #[test]
-    fn parses_niri_window_json() {
-        let json = r#"[{"id":5,"title":"kitty","app_id":"kitty","workspace_id":1,"is_focused":false,"layout":{}}]"#;
-        let windows: Vec<WindowInfo> = serde_json::from_str(json).unwrap();
-        assert_eq!(windows.len(), 1);
-        let w = &windows[0];
-        assert_eq!(w.id, 5);
-        assert_eq!(w.title, "kitty");
-        assert_eq!(w.app_id.as_deref(), Some("kitty"));
-        assert_eq!(w.workspace_id, Some(1));
+fn score_window(
+    window: &Window,
+    query: &str,
+    pattern: &nucleo::Utf32String,
+    matcher: &mut nucleo::Matcher,
+) -> u16 {
+    if query.is_empty() {
+        return 1;
     }
+    let title = nucleo::Utf32String::from(window.title.to_lowercase());
+    let title_score = matcher
+        .fuzzy_match(title.slice(..), pattern.slice(..))
+        .unwrap_or(0);
+    let app_score = window
+        .app_id
+        .as_ref()
+        .and_then(|app| {
+            let app = nucleo::Utf32String::from(app.to_lowercase());
+            matcher.fuzzy_match(app.slice(..), pattern.slice(..))
+        })
+        .unwrap_or(0);
+    title_score.max(app_score)
+}
 
-    #[test]
-    fn tolerates_missing_optional_fields() {
-        let json = r#"[{"id":2,"title":"foo"}]"#;
-        let windows: Vec<WindowInfo> = serde_json::from_str(json).unwrap();
-        assert_eq!(windows[0].app_id, None);
-        assert_eq!(windows[0].workspace_id, None);
+fn row(compositor: &dyn Compositor, window: Window) -> ResultItem {
+    let summary = window.app_id.as_ref().map(|app| match &window.workspace {
+        Some(ws) => format!("{app} · workspace {ws}"),
+        None => app.clone(),
+    });
+    ResultItem {
+        title: window.title,
+        summary,
+        on_click: Some(format!(
+            "run:{}",
+            shell_join(&compositor.focus_argv(&window.id))
+        )),
+        icon: window
+            .app_id
+            .as_ref()
+            .and_then(|app| find_icon_path(app))
+            .or_else(|| Some(String::new())),
+        ephemeral: true,
     }
 }

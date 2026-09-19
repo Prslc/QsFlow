@@ -41,6 +41,6 @@ pub fn plugin_map() -> HashMap<&'static str, Box<dyn Plugin>> {
     m.insert("clipboard", Box::new(clipboard::Clipboard));
     m.insert("system-commands", Box::new(system::SystemCommands));
     m.insert("runner", Box::new(runner::Runner));
-    m.insert("window", Box::new(window::Window));
+    m.insert("window", Box::new(window::WindowPlugin));
     m
 }
