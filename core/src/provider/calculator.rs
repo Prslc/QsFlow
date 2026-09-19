@@ -11,11 +11,10 @@ pub struct Calculator;
 impl Plugin for Calculator {
     fn meta(&self) -> &Meta {
         &Meta {
-            id: "calc",
+            id: "calculator",
             name: "Calculator",
             icon: "calc",
             ready: "Enter a math expression",
-            keyword: "",
         }
     }
 

@@ -19,7 +19,6 @@ impl Plugin for WindowPlugin {
             name: "Window",
             icon: "window-duplicate",
             ready: "Switch open windows",
-            keyword: "w",
         }
     }
 

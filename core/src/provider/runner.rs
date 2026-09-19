@@ -19,7 +19,6 @@ impl Plugin for Runner {
             name: "Run Command",
             icon: "utilities-terminal",
             ready: "Run an executable on PATH",
-            keyword: "r",
         }
     }
 

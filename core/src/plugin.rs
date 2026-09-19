@@ -39,8 +39,6 @@ pub struct Meta {
     pub name: &'static str,
     pub icon: &'static str,
     pub ready: &'static str,
-    #[allow(dead_code)]
-    pub keyword: &'static str,
 }
 
 pub trait Plugin: Send + Sync {

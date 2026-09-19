@@ -101,7 +101,6 @@ impl Plugin for AppSearch {
             name: "Applications",
             icon: "application_default",
             ready: "Search installed applications",
-            keyword: "",
         }
     }
 

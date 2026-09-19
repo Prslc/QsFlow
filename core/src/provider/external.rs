@@ -77,7 +77,6 @@ impl External {
                 name: leak(name),
                 icon: leak(icon),
                 ready: leak(ready),
-                keyword: leak(id.to_string()),
             },
             command,
         }

@@ -15,7 +15,6 @@ impl Plugin for SystemCommands {
             name: "System Commands",
             icon: "system-shutdown",
             ready: "Search system commands",
-            keyword: "",
         }
     }
 

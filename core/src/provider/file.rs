@@ -25,7 +25,7 @@ fn file_icon(name: &str) -> &'static str {
 }
 
 macro_rules! search_plugin {
-    ($name:ident, $id:literal, $display:literal, $kw:literal, $matcher:ident, $ready:literal) => {
+    ($name:ident, $id:literal, $display:literal, $matcher:ident, $ready:literal) => {
         pub struct $name;
 
         impl Plugin for $name {
@@ -35,7 +35,6 @@ macro_rules! search_plugin {
                     name: $display,
                     icon: "folder",
                     ready: $ready,
-                    keyword: $kw,
                 }
             }
 
@@ -61,7 +60,6 @@ search_plugin!(
     FileSearch,
     "file-search",
     "Files",
-    "f",
     match_name,
     "Search files by name"
 );
@@ -69,7 +67,6 @@ search_plugin!(
     PathSearch,
     "path-search",
     "Paths",
-    "d",
     match_path,
     "Search files by path"
 );
