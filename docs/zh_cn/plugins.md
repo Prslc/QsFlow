@@ -9,14 +9,14 @@
 [[plugins]]
 id = "runner"
 keyword = "r"
-enable = true
+enabled = true
 ```
 
 | 字段 | 必填 | 含义 |
 | --- | --- | --- |
 | `id` | 是 | 该条目配置的插件。可以是内置 id，也可以是外部主机上报的 id。 |
 | `keyword` | 是 | 路由到该插件的前缀。`""` 表示它是**默认**提供者。 |
-| `enable` | 否 | 默认 `true`。设为 `false` 可禁用而不删除条目。 |
+| `enabled` | 否 | 默认 `true`。设为 `false` 可禁用而不删除条目。 |
 | `command` | 否 | 外部 JSON-RPC 2.0 主机，见下文。 |
 
 调整条目顺序即可改变优先级。未识别或已删除的 id 会被忽略。内置 id 且未写 `command` 时使用编译进的插件；

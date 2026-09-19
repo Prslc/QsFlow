@@ -10,14 +10,14 @@ picked up without restarting the core.
 [[plugins]]
 id = "runner"
 keyword = "r"
-enable = true
+enabled = true
 ```
 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | yes | Which plugin this entry configures. A built-in id, or the id an external host reports. |
 | `keyword` | yes | The prefix that routes input to this plugin. `""` makes it a **default** provider. |
-| `enable` | no | Defaults to `true`. `false` disables the plugin without removing the entry. |
+| `enabled` | no | Defaults to `true`. `false` disables the plugin without removing the entry. |
 | `command` | no | An external JSON-RPC 2.0 host. See below. |
 
 Reorder entries to change priority. Unknown or removed ids are ignored. A

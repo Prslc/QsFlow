@@ -1,12 +1,12 @@
 [[plugins]]
 id = "calculator"
 keyword = ""
-enable = true
+enabled = true
 
 [[plugins]]
 id = "system-commands"
 keyword = ""
-enable = true
+enabled = true
 
 [[plugins]]
 id = "app-search"
@@ -15,7 +15,7 @@ keyword = ""
 [[plugins]]
 id = "runner"
 keyword = "r"
-enable = true
+enabled = true
 
 [[plugins]]
 id = "firefox-bookmarks"
@@ -44,4 +44,4 @@ keyword = "c"
 [[plugins]]
 id = "window"
 keyword = "w"
-enable = true
+enabled = true

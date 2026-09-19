@@ -21,8 +21,8 @@ struct Config {
 struct PluginEntry {
     id: String,
     keyword: String,
-    #[serde(default = "default_enable")]
-    enable: bool,
+    #[serde(default = "default_enabled")]
+    enabled: bool,
     /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
     /// is NOT compiled into the core: it is spawned on demand, `search`
     /// requests are relayed verbatim, and its identity (name/icon/ready) is
@@ -31,7 +31,7 @@ struct PluginEntry {
     command: Option<String>,
 }
 
-const fn default_enable() -> bool {
+const fn default_enabled() -> bool {
     true
 }
 
@@ -213,7 +213,7 @@ fn build_entries(config: &Config) -> Vec<Entry> {
     let cache = HostCache::load();
 
     for p in &config.plugins {
-        if !p.enable {
+        if !p.enabled {
             continue;
         }
         if let Some(plugin) = map.remove(p.id.as_str()) {
@@ -353,7 +353,7 @@ fn load_or_default() -> Config {
 }
 
 /// Overlay a user config onto the shipped default. Known ids are updated
-/// (keyword/enable, plus `command` when the user sets one); unknown ids are
+/// (keyword/enabled, plus `command` when the user sets one); unknown ids are
 /// appended so external plugins can be declared purely from the user config
 /// without touching the core. Unknown ids without a host are still skipped at
 /// registry build.
@@ -362,7 +362,7 @@ fn merge_config(mut base: Config, user: Config) -> Config {
         match base.plugins.iter_mut().find(|p| p.id == up.id) {
             Some(dp) => {
                 dp.keyword = up.keyword;
-                dp.enable = up.enable;
+                dp.enabled = up.enabled;
                 if up.command.is_some() {
                     dp.command = up.command;
                 }
@@ -416,7 +416,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
                     m.name.to_string(),
                     m.icon.to_string(),
                     keyword,
-                    p.enable,
+                    p.enabled,
                 )
             } else if let Some(meta) = map.get(p.id.as_str()).map(|plugin| plugin.meta()) {
                 // disabled built-in: still listed from the compiled map
@@ -425,11 +425,11 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
                     meta.name.to_string(),
                     meta.icon.to_string(),
                     keyword,
-                    p.enable,
+                    p.enabled,
                 )
             } else {
                 // disabled (or undiscoverable) external plugin: no host contact
-                (p.id.clone(), p.id.clone(), String::new(), keyword, p.enable)
+                (p.id.clone(), p.id.clone(), String::new(), keyword, p.enabled)
             }
         })
         .collect()
@@ -703,13 +703,13 @@ mod tests {
             [[plugins]]
             id = "calculator"
             keyword = "calc"
-            enable = false
+            enabled = false
             "#,
         );
         let merged = merge_config(base, user);
         assert_eq!(merged.plugins.len(), 1);
         assert_eq!(merged.plugins[0].keyword, "calc");
-        assert!(!merged.plugins[0].enable);
+        assert!(!merged.plugins[0].enabled);
         assert!(merged.plugins[0].command.is_none());
     }
 
