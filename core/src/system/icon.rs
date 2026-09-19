@@ -1,4 +1,3 @@
-use itertools::iproduct;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -61,19 +60,21 @@ fn find_papirus(spec: &str) -> Option<String> {
     let bases = xdg::icon_theme_dirs();
 
     // Cartesian scan in base × size × category order; first existing file wins.
-    iproduct!(
-        bases.iter(),
-        PAPIRUS_SIZES.iter().copied(),
-        categories.iter().copied()
-    )
-    .find_map(|(base, size, category)| {
-        let path = base
-            .join("Papirus")
-            .join(size)
-            .join(category)
-            .join(format!("{name}.svg"));
-        path.exists().then(|| path.to_string_lossy().into_owned())
-    })
+    for base in &bases {
+        for size in PAPIRUS_SIZES.iter().copied() {
+            for category in categories.iter().copied() {
+                let path = base
+                    .join("Papirus")
+                    .join(size)
+                    .join(category)
+                    .join(format!("{name}.svg"));
+                if path.exists() {
+                    return Some(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    None
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -102,22 +103,21 @@ pub fn find_icon_path(name: &str) -> Option<String> {
 /// lazy and first-hit-wins, so a hit costs a few stats and a miss the full space.
 fn find_theme_icon(name: &str) -> Option<String> {
     for base in xdg::icon_theme_dirs() {
-        let found = iproduct!(
-            THEMES.iter().copied(),
-            THEME_CATEGORIES.iter().copied(),
-            ICON_SIZES.iter().copied(),
-            ICON_EXTS.iter().copied()
-        )
-        .find_map(|(theme, category, size, ext)| {
-            let path = base
-                .join(theme)
-                .join(size)
-                .join(category)
-                .join(format!("{name}.{ext}"));
-            path.exists().then(|| path.to_string_lossy().into_owned())
-        });
-        if found.is_some() {
-            return found;
+        for theme in THEMES.iter().copied() {
+            for category in THEME_CATEGORIES.iter().copied() {
+                for size in ICON_SIZES.iter().copied() {
+                    for ext in ICON_EXTS {
+                        let path = base
+                            .join(theme)
+                            .join(size)
+                            .join(category)
+                            .join(format!("{name}.{ext}"));
+                        if path.exists() {
+                            return Some(path.to_string_lossy().into_owned());
+                        }
+                    }
+                }
+            }
         }
     }
     None
