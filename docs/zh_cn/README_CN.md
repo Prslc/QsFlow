@@ -6,6 +6,11 @@
 
 中文 | [English](../../README.md)
 
+[![CI](https://github.com/Prslc/WayRun/actions/workflows/ci.yml/badge.svg)](https://github.com/Prslc/WayRun/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Prslc/WayRun?color=yellow)](../../LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)](https://www.rust-lang.org/)
+[![Wayland](https://img.shields.io/badge/Wayland-native-4a90d9?logo=wayland&logoColor=white)](https://wayland.freedesktop.org/)
+
 </div>
 
 ## 概述
