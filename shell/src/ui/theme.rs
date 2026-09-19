@@ -53,7 +53,7 @@ impl Theme {
 }
 
 /// `#rrggbb` (or `#rgb`), nothing else.
-pub(crate) fn parse_hex(spec: &str) -> Option<[u8; 3]> {
+pub fn parse_hex(spec: &str) -> Option<[u8; 3]> {
     let hex = spec.trim().strip_prefix('#')?;
     if !hex.is_ascii() {
         return None;

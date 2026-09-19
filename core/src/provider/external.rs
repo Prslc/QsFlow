@@ -22,7 +22,7 @@ pub struct HostMeta {
 /// `(mtime, size)` of the resolved `command`, used to tell whether a cached
 /// host identity is still valid. `None` when the command cannot be resolved or
 /// stat'd, in which case the cache is never trusted.
-pub(crate) fn command_stamp(command: &str) -> Option<(u64, u64)> {
+pub fn command_stamp(command: &str) -> Option<(u64, u64)> {
     let path = resolve_command(command);
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta

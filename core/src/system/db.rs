@@ -51,7 +51,7 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
 static DB: LazyLock<Mutex<Option<Connection>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Run `f` on the shared connection, surviving lock poisoning.
-pub(crate) fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+pub fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
     let mut guard = DB.lock().unwrap_or_else(PoisonError::into_inner);
     if guard.is_none() {
         *guard = Some(open_conn()?);
@@ -144,7 +144,7 @@ fn migrate_pins(conn: &Connection) -> Result<()> {
 }
 
 #[cfg(test)]
-pub(crate) fn init_schema(conn: &Connection) {
+pub fn init_schema(conn: &Connection) {
     conn.execute_batch(SCHEMA).ok();
 }
 
