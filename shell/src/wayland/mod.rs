@@ -113,6 +113,10 @@ pub struct Shell {
     frame_pending: bool,
     /// A redraw was asked for while a frame callback was outstanding.
     needs_present: bool,
+    /// The retained frame has to be laid down whole: a fresh pixmap, a scale or
+    /// size change, or the entrance's moving dim. A settled redraw only repaints
+    /// the card's rectangle.
+    needs_full: bool,
     exit: bool,
 }
 
@@ -182,6 +186,7 @@ impl Shell {
             timer_registered: false,
             frame_pending: false,
             needs_present: false,
+            needs_full: true,
             exit: false,
         })
     }

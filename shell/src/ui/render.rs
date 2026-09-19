@@ -52,18 +52,11 @@ impl Canvas {
         }
     }
 
-    /// Overwrite the band below `y` with the backdrop dim. The card's height
-    /// animates while its content is already laid out at its final size, so a
-    /// growing payload paints rows below the card's edge; `BlendMode::Source`
-    /// replaces rather than composites, so the dim is not applied twice.
-    fn restore_dim_below(&self, pixmap: &mut Pixmap, y: f32, surface: (u32, u32), dim: f32) {
-        let band = Rect {
-            x: 0.0,
-            y,
-            w: surface.0 as f32,
-            h: surface.1 as f32 - y,
-        };
-        let Some(path) = round_rect(band.scaled(self.scale), 0.0) else {
+    /// Overwrite `rect` with the backdrop dim. A region repaint has to put the
+    /// backdrop back before drawing over it; `BlendMode::Source` replaces rather
+    /// than composites, so the dim is never applied twice.
+    fn restore_dim(&self, pixmap: &mut Pixmap, rect: Rect, dim: f32) {
+        let Some(path) = round_rect(rect.scaled(self.scale), 0.0) else {
             return;
         };
 
@@ -75,6 +68,22 @@ impl Canvas {
             FillRule::Winding,
             Transform::identity(),
             None,
+        );
+    }
+
+    /// The band below `y` is backdrop. The card's height animates while its
+    /// content is already laid out at its final size, so a growing payload
+    /// paints rows below the card's edge.
+    fn restore_dim_below(&self, pixmap: &mut Pixmap, y: f32, surface: (u32, u32), dim: f32) {
+        self.restore_dim(
+            pixmap,
+            Rect {
+                x: 0.0,
+                y,
+                w: surface.0 as f32,
+                h: surface.1 as f32 - y,
+            },
+            dim,
         );
     }
 
@@ -222,6 +231,7 @@ pub fn draw(
     text: &mut TextEngine,
     icons: &mut IconCache,
     now: Instant,
+    full: bool,
 ) {
     let timing = std::env::var_os("WAYRUN_TIMING").is_some();
     let mut marks: Vec<(&str, Instant)> = Vec::new();
@@ -237,20 +247,37 @@ pub fn draw(
     let surface = state.surface;
     let theme = state.theme;
 
-    // One full-surface fill, not two: `Pixmap::fill` overwrites every pixel, so
-    // the base can be the dim itself. The first frame of a show has `dim == 0`
-    // and wants the transparent clear; every later frame is the dim, and paying
-    // for both was a redundant 2.07M-pixel write per frame.
-    let dim = state.dim_alpha(now);
-    canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
-    mark("clear");
-
     let card = Rect {
         x: geom::card_x(surface),
         y: geom::card_top(surface),
         w: geom::card_w(surface),
         h: state.card_height(now),
     };
+
+    // The frame is retained across presents, so a settled frame only repaints
+    // the card's own rectangle and leaves the (unchanged) full-screen dim in
+    // place — the dim was the single largest per-frame cost. An animation or a
+    // fresh frame repaints the whole surface: the dim is moving, or the
+    // backdrop is not there yet.
+    let dim = state.dim_alpha(now);
+    if full {
+        canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
+    } else {
+        // A shrink has to erase the old card's rows too, so the region spans the
+        // union of the previous and current bottoms, not just the current card.
+        let base_bottom = card.bottom().max(state.last_card_bottom);
+        canvas.restore_dim(
+            pixmap,
+            Rect {
+                x: card.x,
+                y: card.y,
+                w: card.w,
+                h: base_bottom - card.y,
+            },
+            dim,
+        );
+    }
+    mark("clear");
 
     // The card: a translucent fill with a 1px white hairline. The hairline is a
     // *ring*, not a base fill — painting white under the whole card would raise
@@ -310,7 +337,7 @@ pub fn draw(
     let resting = geom::card_top(surface) + geom::content_h(state.rows.len());
     let bottom = card.y + card.h;
     let mut band = None;
-    if bottom < resting {
+    if full && bottom < resting {
         canvas.restore_dim_below(pixmap, bottom, surface, dim);
         band = Some(bottom);
     }
@@ -1042,7 +1069,14 @@ mod tests {
         let mut pixmap = Pixmap::new(64, 64).unwrap();
         let mut text = TextEngine::new();
         let mut icons = IconCache::new();
-        draw(&mut pixmap, &state, &mut text, &mut icons, Instant::now());
+        draw(
+            &mut pixmap,
+            &state,
+            &mut text,
+            &mut icons,
+            Instant::now(),
+            true,
+        );
 
         // Above the card (its top is 0.28·64 ≈ 18) only the dim exists. A single
         // fill has to leave exactly the dim there; a lost dim or a leftover
@@ -1050,6 +1084,76 @@ mod tests {
         let pixel = pixmap.pixel(0, 0).unwrap();
         assert_eq!(pixel.alpha(), 77, "the dim is the base");
         assert_eq!((pixel.red(), pixel.green(), pixel.blue()), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_settled_repaint_only_touches_the_card_rectangle() {
+        let mut state = State::new();
+        state.surface = (1600, 1080);
+        state.reduce_motion = true;
+
+        let mut text = TextEngine::new();
+        let mut icons = IconCache::new();
+        let mut pixmap = Pixmap::new(1600, 1080).unwrap();
+        // A sentinel everywhere: a region repaint must leave the backdrop alone.
+        pixmap.fill(Color::from_rgba8(255, 0, 255, 255));
+
+        draw(
+            &mut pixmap,
+            &state,
+            &mut text,
+            &mut icons,
+            Instant::now(),
+            false,
+        );
+
+        // A point outside the card keeps the sentinel untouched.
+        let outside = pixmap.pixel(0, 0).unwrap();
+        assert_eq!((outside.red(), outside.blue()), (255, 255), "outside");
+
+        // A point inside the card was restored to the dim and painted over, so
+        // it can no longer be the sentinel.
+        let inside = pixmap
+            .pixel(
+                (geom::card_x(state.surface) + geom::card_w(state.surface) / 2.0) as u32,
+                (geom::card_top(state.surface) + 10.0) as u32,
+            )
+            .unwrap();
+        assert_ne!((inside.red(), inside.green(), inside.blue()), (255, 0, 255));
+    }
+
+    #[test]
+    fn a_settled_shrink_erases_the_old_cards_rows() {
+        let mut state = State::new();
+        state.surface = (1600, 1080);
+        state.reduce_motion = true;
+        let card_h = geom::content_h(0);
+        // The previous card was 200px taller than the current one.
+        state.last_card_bottom = geom::card_top(state.surface) + card_h + 200.0;
+
+        let mut text = TextEngine::new();
+        let mut icons = IconCache::new();
+        let mut pixmap = Pixmap::new(1600, 1080).unwrap();
+        pixmap.fill(Color::from_rgba8(255, 0, 255, 255));
+
+        draw(
+            &mut pixmap,
+            &state,
+            &mut text,
+            &mut icons,
+            Instant::now(),
+            false,
+        );
+
+        // Below the current card but inside the old one: the dim, not the
+        // sentinel and not a leftover row.
+        let y = (geom::card_top(state.surface) + card_h + 100.0) as u32;
+        let pixel = pixmap.pixel(800, y).unwrap();
+        assert_ne!(
+            (pixel.red(), pixel.green(), pixel.blue()),
+            (255, 0, 255),
+            "the old card's rows were erased"
+        );
     }
 
     #[test]

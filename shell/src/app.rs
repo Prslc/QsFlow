@@ -91,6 +91,10 @@ pub struct State {
     pub dismiss_at: Option<Instant>,
     /// Spec → path; `None` means "asked, no icon".
     pub icon_cache: HashMap<String, Option<String>>,
+    /// The bottom edge of the card rectangle drawn last. A settle repaint only
+    /// covers the card, so a shrink has to restore the dim over the old edge
+    /// too, and this is how it is known.
+    pub last_card_bottom: f32,
 }
 
 impl State {
@@ -123,6 +127,7 @@ impl State {
             card_at: now,
             dismiss_at: None,
             icon_cache: HashMap::new(),
+            last_card_bottom: 0.0,
         }
     }
 

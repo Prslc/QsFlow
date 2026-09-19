@@ -67,6 +67,7 @@ impl Shell {
         // will answer it, so the new show starts unpaced.
         self.frame_pending = false;
         self.needs_present = false;
+        self.needs_full = true;
         // A paste worker from the previous show must not land on this one.
         self.paste_generation = self.paste_generation.wrapping_add(1);
 
@@ -184,6 +185,8 @@ impl Shell {
             // of a frame-callback-paced present, not a hard cap.
             self.pool =
                 SlotPool::new(physical_w as usize * physical_h as usize * 4 * 2, &self.shm).ok();
+            // A fresh pixmap holds nothing; the whole frame has to be laid down.
+            self.needs_full = true;
         }
 
         self.pixmap.is_some() && self.pool.is_some()
@@ -221,12 +224,26 @@ impl Shell {
         self.needs_present = false;
         // The fade begins on the first frame that is actually drawn.
         self.app.start_entrance(now);
+        // A fresh pixmap, a moving dim (entrance) or a reflowing card needs the
+        // whole surface; a settled redraw only repaints the card rectangle.
+        let full = self.needs_full || self.app.animating(now);
+        self.needs_full = false;
         {
             let Some(pixmap) = self.pixmap.as_mut() else {
                 return;
             };
-            render::draw(pixmap, &self.app, &mut self.text, &mut self.icons, now);
+            render::draw(
+                pixmap,
+                &self.app,
+                &mut self.text,
+                &mut self.icons,
+                now,
+                full,
+            );
         }
+        // Remember where the card ended, so the next settled repaint can erase a
+        // card that shrank.
+        self.app.last_card_bottom = geom::card_top(self.app.surface) + self.app.card_height(now);
         // Capture the caret-free pixels before drawing the caret, so a blink
         // can restore them without a second frame pixmap.
         self.capture_caret_patch();
@@ -519,6 +536,7 @@ impl CompositorHandler for Shell {
         }
 
         self.app.scale = factor.max(1);
+        self.needs_full = true;
         self.redraw();
     }
 
@@ -598,6 +616,7 @@ impl LayerShellHandler for Shell {
         self.app.surface = (width, height);
         self.configured = true;
         self.blur_sent = None;
+        self.needs_full = true;
 
         self.present(Instant::now());
         let _ = self.conn.flush();
