@@ -86,10 +86,7 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
 /// three roots at depth 1 of the home root (they are walked on their own) so a
 /// hit under them is not emitted twice.
 fn keep_entry(name: &str, depth: usize) -> bool {
-    if name.starts_with('.')
-        || name == "node_modules"
-        || name == "target"
-        || name == "__pycache__"
+    if name.starts_with('.') || name == "node_modules" || name == "target" || name == "__pycache__"
     {
         return false;
     }

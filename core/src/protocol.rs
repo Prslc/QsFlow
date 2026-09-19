@@ -68,9 +68,7 @@ fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::thread::JoinHandle<()> {
             if json == DRAIN {
                 break;
             }
-            if stdout.write_all(json.as_bytes()).is_err()
-                || stdout.write_all(b"\n").is_err()
-            {
+            if stdout.write_all(json.as_bytes()).is_err() || stdout.write_all(b"\n").is_err() {
                 break;
             }
             let _ = stdout.flush();
