@@ -5,7 +5,7 @@ use anyhow::Result;
 use gio::prelude::FileExt;
 use walkdir::WalkDir;
 
-use crate::models::ResultItem;
+use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
@@ -52,8 +52,28 @@ macro_rules! search_plugin {
                     )
                 })
             }
+
+            fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
+                reveal_action(item)
+            }
         }
     };
+}
+
+/// A file row's one extra command: hand its URI to the file manager.
+fn reveal_action(item: &ResultItem) -> Vec<ActionItem> {
+    let Some(uri) = item
+        .on_click
+        .as_deref()
+        .filter(|on_click| on_click.starts_with("file:"))
+    else {
+        return Vec::new();
+    };
+    vec![ActionItem {
+        title: "Reveal in file manager".to_string(),
+        on_click: format!("reveal:{uri}"),
+        icon: Some("folder-open".to_string()),
+    }]
 }
 
 search_plugin!(
@@ -151,6 +171,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                 on_click: Some(file_url),
                 icon: find_icon_path(icon).or_else(|| Some(String::new())),
                 ephemeral: false,
+                actions: Vec::new(),
             });
 
             if results.len() >= 50 {
@@ -169,6 +190,29 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{ActionItem, ResultItem};
+
+    fn row(title: &str, on_click: Option<&str>) -> ResultItem {
+        ResultItem {
+            title: title.to_string(),
+            summary: None,
+            on_click: on_click.map(str::to_string),
+            icon: None,
+            ephemeral: false,
+            actions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn only_a_file_row_offers_a_reveal() {
+        let actions: Vec<ActionItem> = reveal_action(&row("a.txt", Some("file:///tmp/a.txt")));
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].title, "Reveal in file manager");
+        assert_eq!(actions[0].on_click, "reveal:file:///tmp/a.txt");
+
+        assert!(reveal_action(&row("run", Some("run:ls"))).is_empty());
+        assert!(reveal_action(&row("none", None)).is_empty());
+    }
 
     #[test]
     fn empty_query_matches_nothing() {

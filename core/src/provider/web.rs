@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::models::ResultItem;
+use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 use anyhow::{Context, Result};
@@ -26,6 +26,26 @@ impl Plugin for WebSearch {
         let query = query.to_string();
         Box::pin(async move { do_search(&query).await })
     }
+
+    fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
+        copy_url_action(item)
+    }
+}
+
+/// A URL row's extra command: copy the link instead of opening it.
+fn copy_url_action(item: &ResultItem) -> Vec<ActionItem> {
+    let Some(url) = item
+        .on_click
+        .as_deref()
+        .filter(|on_click| on_click.starts_with("http"))
+    else {
+        return Vec::new();
+    };
+    vec![ActionItem {
+        title: "Copy URL".to_string(),
+        on_click: format!("copy:{}", serde_json::json!({ "text": url })),
+        icon: Some("edit-copy".to_string()),
+    }]
 }
 
 async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
@@ -51,6 +71,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         on_click: Some(format!("https://www.google.com/search?q={query}")),
         icon: Some(icon.clone()),
         ephemeral: true,
+        actions: Vec::new(),
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
@@ -66,9 +87,40 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                     on_click: Some(format!("https://www.google.com/search?q={phrase}")),
                     icon: Some(icon.clone()),
                     ephemeral: true,
+                    actions: Vec::new(),
                 }),
         );
     }
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(on_click: Option<&str>) -> ResultItem {
+        ResultItem {
+            title: "x".to_string(),
+            summary: None,
+            on_click: on_click.map(str::to_string),
+            icon: None,
+            ephemeral: true,
+            actions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_url_row_offers_a_copy_link() {
+        let actions: Vec<ActionItem> = copy_url_action(&row(Some("https://example.com")));
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].title, "Copy URL");
+        assert_eq!(
+            actions[0].on_click,
+            r#"copy:{"text":"https://example.com"}"#
+        );
+
+        assert!(copy_url_action(&row(Some("run:ls"))).is_empty());
+        assert!(copy_url_action(&row(None)).is_empty());
+    }
 }

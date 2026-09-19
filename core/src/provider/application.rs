@@ -6,7 +6,7 @@ use anyhow::Result;
 use freedesktop_desktop_entry::DesktopEntry;
 use gio::prelude::*;
 
-use crate::models::ResultItem;
+use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 
@@ -116,6 +116,34 @@ impl Plugin for AppSearch {
                 .unwrap_or_default())
         })
     }
+
+    /// An application row's declared `[Desktop Action …]` groups. The launched
+    /// file is the same one the row's `launch:` reads, so an action cannot name
+    /// a group that file lacks.
+    fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
+        let Some(id) = item
+            .on_click
+            .as_deref()
+            .and_then(|on_click| on_click.strip_prefix("launch:"))
+        else {
+            return Vec::new();
+        };
+        let Some(app) = APPS.iter().find(|app| app.id == id) else {
+            return Vec::new();
+        };
+        let Some(meta) = app.meta.as_ref() else {
+            return Vec::new();
+        };
+
+        meta.actions
+            .iter()
+            .map(|action| ActionItem {
+                title: action.name.clone(),
+                on_click: format!("action:{}:{}", id, action.id),
+                icon: app.icon_path(),
+            })
+            .collect()
+    }
 }
 
 /// Score every cached app against the query; the query text is lowercased
@@ -146,6 +174,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                     on_click: Some(format!("launch:{}", app.id)),
                     icon: app.icon_path(),
                     ephemeral: false,
+                    actions: Vec::new(),
                 },
             ));
         }
@@ -162,6 +191,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                         on_click: Some(format!("action:{}:{}", app.id, action.id)),
                         icon: app.icon_path(),
                         ephemeral: false,
+                        actions: Vec::new(),
                     },
                 ));
             }

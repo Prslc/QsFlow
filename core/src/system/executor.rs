@@ -81,6 +81,43 @@ pub fn open_uri(uri: &str) {
     let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
 }
 
+/// Show a file in the file manager. `org.freedesktop.FileManager1.ShowItems`
+/// selects the file itself; when no manager implements it, fall back to opening
+/// the containing directory (the usual `xdg-open` behaviour).
+pub fn reveal(uri: &str) {
+    if reveal_via_file_manager(uri) {
+        return;
+    }
+    if let Some(parent) = gio::File::for_uri(uri)
+        .path()
+        .and_then(|path| path.parent().map(ToOwned::to_owned))
+    {
+        open_uri(&gio::File::for_path(parent).uri());
+    }
+}
+
+fn reveal_via_file_manager(uri: &str) -> bool {
+    use gio::glib::variant::ToVariant;
+
+    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) else {
+        return false;
+    };
+    let params = ("", vec![uri.to_string()]).to_variant();
+    connection
+        .call_sync(
+            Some("org.freedesktop.FileManager1"),
+            "/org/freedesktop/FileManager1",
+            "org.freedesktop.FileManager1",
+            "ShowItems",
+            Some(&params),
+            None::<&gio::glib::VariantTy>,
+            gio::DBusCallFlags::NONE,
+            2000,
+            None::<&gio::Cancellable>,
+        )
+        .is_ok()
+}
+
 /// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
 /// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
 /// survives embedded newlines/quotes; parse failure or a missing `wl-copy`

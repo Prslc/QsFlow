@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use tempfile::NamedTempFile;
 use tokio::task;
 
-use crate::models::ResultItem;
+use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
@@ -106,6 +106,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
                 on_click: Some(url),
                 icon: firefox_icon.clone(),
                 ephemeral: false,
+                actions: Vec::new(),
             })
         })?;
 
@@ -136,8 +137,28 @@ macro_rules! firefox_plugin {
                 let query = query.to_string();
                 Box::pin(async move { do_search(Mode::$mode, &query).await })
             }
+
+            fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
+                copy_url_action(item)
+            }
         }
     };
+}
+
+/// A bookmark/history row's extra command: copy the link instead of opening it.
+fn copy_url_action(item: &ResultItem) -> Vec<ActionItem> {
+    let Some(url) = item
+        .on_click
+        .as_deref()
+        .filter(|on_click| on_click.starts_with("http"))
+    else {
+        return Vec::new();
+    };
+    vec![ActionItem {
+        title: "Copy URL".to_string(),
+        on_click: format!("copy:{}", serde_json::json!({ "text": url })),
+        icon: Some("edit-copy".to_string()),
+    }]
 }
 
 firefox_plugin!(
@@ -163,5 +184,23 @@ mod tests {
     async fn empty_query_matches_nothing() {
         assert!(do_search(Mode::Bookmarks, "").await.unwrap().is_empty());
         assert!(do_search(Mode::History, "").await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_bookmark_row_offers_a_copy_link() {
+        let row = ResultItem {
+            title: "Example".to_string(),
+            summary: None,
+            on_click: Some("https://example.com".to_string()),
+            icon: None,
+            ephemeral: false,
+            actions: Vec::new(),
+        };
+        let actions = copy_url_action(&row);
+        assert_eq!(actions[0].title, "Copy URL");
+        assert_eq!(
+            actions[0].on_click,
+            r#"copy:{"text":"https://example.com"}"#
+        );
     }
 }

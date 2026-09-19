@@ -99,6 +99,7 @@ fn row(compositor: &dyn Compositor, window: Window) -> ResultItem {
             .and_then(desktop_action::icon_for_app_id)
             .or_else(|| Some(String::new())),
         ephemeral: true,
+        actions: Vec::new(),
     }
 }
 

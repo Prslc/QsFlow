@@ -16,6 +16,7 @@ enum Request<'a> {
     Run(&'a str),
     Copy(&'a str),
     Open(&'a str),
+    Reveal(&'a str),
     Launch(&'a str),
     /// `action:<desktop-id>:<action-id>`.
     Action(&'a str),
@@ -38,6 +39,7 @@ impl<'a> Request<'a> {
             "run" => Self::Run(argument),
             "copy" => Self::Copy(argument),
             "open" => Self::Open(argument),
+            "reveal" => Self::Reveal(argument),
             "launch" => Self::Launch(argument),
             "action" => Self::Action(argument),
             _ => Self::Search(input),
@@ -131,6 +133,7 @@ pub async fn serve() -> Result<()> {
             Request::Run(cmd) => system::executor::execute_command(cmd),
             Request::Copy(payload) => system::executor::copy_json(payload),
             Request::Open(uri) => system::executor::open_uri(uri),
+            Request::Reveal(uri) => system::executor::reveal(uri),
             Request::Launch(id) => system::executor::launch_app(id),
             Request::Action(spec) => {
                 if let Some((desktop_id, action_id)) = spec.split_once(':') {
@@ -159,9 +162,15 @@ pub async fn serve() -> Result<()> {
 }
 
 /// The empty query: the full ranked history, uncapped so deleting a row
-/// actually converges.
+/// actually converges. The empty-query scope's pins lead it, and every row
+/// carries its action panel like a search result.
 async fn emit_history(tx: &mpsc::Sender<String>) {
-    let items = system::usage::get_top(i32::MAX).unwrap_or_default();
+    let items: Vec<crate::models::ResultItem> = system::usage::get_top(i32::MAX)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .collect();
+    let items = plugin::decorate(items, "").await;
     emit(tx, &serde_json::json!({ "type": "results", "data": items })).await;
 }
 

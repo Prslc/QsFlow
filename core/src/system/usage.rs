@@ -1,114 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex, PoisonError};
 
-use crate::system::fs::get_home;
-
-fn db_path() -> Result<PathBuf> {
-    let dir = get_home()?.join(".local/share/wayrun");
-    std::fs::create_dir_all(&dir).context("Failed to create wayrun data directory")?;
-    Ok(dir.join("usage.db"))
-}
-
-fn open_conn() -> Result<Connection> {
-    let conn = Connection::open(db_path()?)?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS usage (
-            key TEXT PRIMARY KEY,
-            on_click TEXT,
-            count INTEGER NOT NULL DEFAULT 1,
-            last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
-            item_json TEXT NOT NULL
-        );",
-    )?;
-    migrate(&conn)?;
-    Ok(conn)
-}
-
-/// One connection for the process lifetime: an empty query calls `get_top` on
-/// every keystroke. Opened lazily, and left unset after a failure so a later
-/// call retries: a missing `$HOME`, a read-only dir or a full disk must degrade
-/// history to empty rather than panic the core.
-static DB: LazyLock<Mutex<Option<Connection>>> = LazyLock::new(|| Mutex::new(None));
-
-/// Run `f` on the shared connection, surviving lock poisoning.
-fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-    let mut guard = DB.lock().unwrap_or_else(PoisonError::into_inner);
-    if guard.is_none() {
-        *guard = Some(open_conn()?);
-    }
-    f(guard.as_ref().expect("opened just above"))
-}
-
-/// Migrate a database that lacks the `on_click` column, merging same-title
-/// rows (counts sum, the most recent item wins) so one app reached via
-/// `run:<exec>` and `launch:<id>` is a single entry.
-fn migrate(conn: &Connection) -> Result<()> {
-    let has_on_click: bool = {
-        let mut stmt = conn.prepare("PRAGMA table_info(usage)")?;
-        let names: Vec<String> = stmt
-            .query_map([], |r| r.get::<_, String>(1))?
-            .filter_map(Result::ok)
-            .collect();
-        names.iter().any(|n| n == "on_click")
-    };
-    if has_on_click {
-        return Ok(());
-    }
-
-    let rows: Vec<(String, i64, String, String)> = {
-        let mut stmt = conn.prepare("SELECT key, count, last_used_at, item_json FROM usage")?;
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-            .filter_map(Result::ok)
-            .collect()
-    };
-
-    // title -> (sum count, item_json of the most recent use, its last_used_at)
-    let mut merged: BTreeMap<String, (i64, String, String)> = BTreeMap::new();
-    for (key, count, last_used_at, item_json) in rows {
-        let title = serde_json::from_str::<serde_json::Value>(&item_json)
-            .ok()
-            .and_then(|v| v["title"].as_str().map(String::from))
-            .filter(|t| !t.is_empty())
-            .unwrap_or(key);
-        let entry = merged.entry(title).or_default();
-        entry.0 += count;
-        if last_used_at > entry.2 {
-            entry.1 = item_json;
-            entry.2 = last_used_at;
-        }
-    }
-
-    conn.execute_batch(
-        "DROP TABLE usage;
-         CREATE TABLE usage (
-            key TEXT PRIMARY KEY,
-            on_click TEXT,
-            count INTEGER NOT NULL DEFAULT 1,
-            last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
-            item_json TEXT NOT NULL
-         );",
-    )?;
-    let mut stmt = conn.prepare(
-        "INSERT INTO usage (key, on_click, count, last_used_at, item_json)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-    )?;
-    for (title, (count, item_json, last_used_at)) in merged {
-        let on_click = serde_json::from_str::<serde_json::Value>(&item_json)
-            .ok()
-            .and_then(|v| v["on_click"].as_str().map(String::from));
-        stmt.execute(rusqlite::params![
-            title,
-            on_click,
-            count,
-            last_used_at,
-            item_json
-        ])?;
-    }
-    Ok(())
-}
+use crate::system::db::with_db;
 
 pub fn record(item_json: &str) -> Result<()> {
     with_db(|conn| record_with(conn, item_json))
@@ -121,20 +14,6 @@ pub fn forget(on_click: &str) -> Result<bool> {
 
 pub fn get_top(limit: i32) -> Result<Vec<serde_json::Value>> {
     with_db(|conn| get_top_with(conn, limit))
-}
-
-#[cfg(test)]
-fn init_schema(conn: &Connection) {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS usage (
-            key TEXT PRIMARY KEY,
-            on_click TEXT,
-            count INTEGER NOT NULL DEFAULT 1,
-            last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
-            item_json TEXT NOT NULL
-        );",
-    )
-    .ok();
 }
 
 /// A row the host marked `ephemeral`, or one whose `on_click` is a clipboard
@@ -232,22 +111,7 @@ mod tests {
 
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        init_schema(&conn);
-        conn
-    }
-
-    /// Legacy layout: key = `on_click`, no `on_click` column.
-    fn legacy_conn() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE usage (
-                key TEXT PRIMARY KEY,
-                count INTEGER NOT NULL DEFAULT 1,
-                last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
-                item_json TEXT NOT NULL
-            );",
-        )
-        .unwrap();
+        crate::system::db::init_schema(&conn);
         conn
     }
 
@@ -368,7 +232,8 @@ mod tests {
         )
         .unwrap();
 
-        // ⌫ passes the current launch: action — the whole merged entry goes
+        // the panel's `forget` passes the current launch: action — the whole
+        // merged entry goes
         forget_with(&conn, "launch:org.telegram.desktop.desktop").unwrap();
         assert!(get_top_with(&conn, 10).unwrap().is_empty());
     }
@@ -445,40 +310,5 @@ mod tests {
             .collect();
         titles.sort();
         assert_eq!(titles, ["A", "URL"], "a URL row is not ephemeral");
-    }
-
-    #[test]
-    fn migrate_merges_legacy_split_rows() {
-        let conn = legacy_conn();
-        // old layout: key IS the on_click; the same app under both forms
-        conn.execute(
-            "INSERT INTO usage (key, count, last_used_at, item_json)
-             VALUES ('run:Telegram --', 8, '2026-09-03 15:40:00',
-                     '{\"title\":\"Telegram\",\"on_click\":\"run:Telegram --\"}'),
-                    ('launch:org.telegram.desktop.desktop', 3, '2026-09-04 07:43:22',
-                     '{\"title\":\"Telegram\",\"on_click\":\"launch:org.telegram.desktop.desktop\"}')",
-            [],
-        )
-        .unwrap();
-
-        migrate(&conn).unwrap();
-
-        let (count, on_click): (i64, Option<String>) = conn
-            .query_row(
-                "SELECT count, on_click FROM usage WHERE key = 'Telegram'",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(count, 11);
-        assert_eq!(
-            on_click.as_deref(),
-            Some("launch:org.telegram.desktop.desktop")
-        );
-        assert_eq!(
-            conn.query_row("SELECT count(*) FROM usage", [], |r| r.get::<_, i64>(0))
-                .unwrap(),
-            1
-        );
     }
 }

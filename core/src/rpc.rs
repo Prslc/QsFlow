@@ -139,7 +139,12 @@ pub async fn handle(
             }
         }
         "top" => {
-            let items = crate::system::usage::get_top(20).unwrap_or_default();
+            let items: Vec<crate::models::ResultItem> = crate::system::usage::get_top(20)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|value| serde_json::from_value(value).ok())
+                .collect();
+            let items = crate::plugin::decorate(items, "").await;
             if has_id {
                 respond(tx, id, Ok(json!(items))).await;
             }
@@ -217,6 +222,53 @@ pub async fn handle(
                 return true;
             };
             crate::system::executor::open_uri(&uri);
+            if has_id {
+                respond(tx, id, Ok(Value::Null)).await;
+            }
+        }
+        "pin" => {
+            let (Ok(scope), Some(Value::Object(map))) =
+                (string_param(params.as_ref(), "scope"), params.as_ref())
+            else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            };
+            let Some(item) = map.get("item") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            };
+            let pinned = crate::system::pins::pin(&scope, &item.to_string()).is_ok();
+            if has_id {
+                respond(tx, id, Ok(json!({ "pinned": pinned }))).await;
+            }
+        }
+        "unpin" => {
+            let (Ok(scope), Ok(on_click)) = (
+                string_param(params.as_ref(), "scope"),
+                string_param(params.as_ref(), "on_click"),
+            ) else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            };
+            let unpinned = crate::system::pins::unpin(&scope, &on_click).unwrap_or(false);
+            if has_id {
+                respond(tx, id, Ok(json!({ "unpinned": unpinned }))).await;
+            }
+        }
+        "reveal" => {
+            let Ok(uri) = string_param(params.as_ref(), "uri") else {
+                if has_id {
+                    respond(tx, id, Err(INVALID_PARAMS)).await;
+                }
+                return true;
+            };
+            crate::system::executor::reveal(&uri);
             if has_id {
                 respond(tx, id, Ok(Value::Null)).await;
             }
