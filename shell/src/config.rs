@@ -1,7 +1,8 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Duration;
 
-use wayrun_core::watch_targets;
+use wayrun_core::{watch as watch_file, write_if_absent};
 
 mod model;
 pub use model::{AppearanceConfig, ColorOverrides, Mode};
@@ -17,17 +18,17 @@ fn theme_path() -> Option<PathBuf> {
 /// Write the shipped template on first use so the keys are discoverable. It
 /// comments every key out, so an untouched file still takes the defaults and a
 /// later default change is picked up.
-fn write_template() {
-    let Some(path) = theme_path() else {
-        return;
-    };
-    if path.exists() {
-        return;
-    }
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(path, DEFAULT_TEMPLATE);
+///
+/// Only the first `load` may write it: the watcher reloads, and an editor's
+/// save briefly removes the file (`rename`, then a new one), so a reload that
+/// recreated it would clobber the edit.
+fn ensure_template() {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        if let Some(path) = theme_path() {
+            let _ = write_if_absent(&path, DEFAULT_TEMPLATE);
+        }
+    });
 }
 
 /// A config reload is cheap, so it is debounced shorter than the core's plugin
@@ -41,28 +42,7 @@ pub fn watch(tx: calloop::channel::Sender<AppearanceConfig>) -> Option<notify::R
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let watch_path = path.clone();
-    let now = Instant::now();
-    let mut last = now.checked_sub(Duration::from_secs(1)).unwrap_or(now);
-
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        let Ok(ev) = res else { return };
-        // React to writes, not reads: `load` reads this file, so an unfiltered
-        // Access event would re-trigger the watcher forever.
-        if matches!(ev.kind, notify::EventKind::Access(_)) {
-            return;
-        }
-        if !ev.paths.iter().any(|p| p == &watch_path) {
-            return;
-        }
-        if last.elapsed() < CONFIG_DEBOUNCE {
-            return;
-        }
-        last = Instant::now();
+    watch_file(&path, CONFIG_DEBOUNCE, move || {
         let _ = tx.send(AppearanceConfig::load());
     })
-    .ok()?;
-
-    watch_targets(&mut watcher, &path);
-    Some(watcher)
 }

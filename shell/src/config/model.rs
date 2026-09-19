@@ -253,7 +253,7 @@ struct MotionFile {
 
 impl AppearanceConfig {
     pub fn load() -> Self {
-        super::write_template();
+        super::ensure_template();
         let mut config = Self::default();
         let Some(path) = super::theme_path() else {
             return config;
@@ -406,6 +406,13 @@ mod tests {
         // untouched defaults survive
         assert_eq!(config.font.size, 14.0);
         assert_eq!(config.layout.width_ratio, 0.38);
+    }
+
+    #[test]
+    fn layout_numbers_accept_integers() {
+        let config = parse("[layout]\nradius = 0\nmax_rows = 3");
+        assert_eq!(config.layout.radius, 0.0);
+        assert_eq!(config.layout.max_rows, 3);
     }
 
     #[test]

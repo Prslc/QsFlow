@@ -229,13 +229,7 @@ fn load_or_default() -> Config {
     if let Ok(home) = crate::system::fs::get_home() {
         let path = home.join(".config/wayrun/plugins.toml");
 
-        // first run: write default config
-        if !path.exists() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            std::fs::write(&path, DEFAULT_CONFIG).ok();
-        }
+        ensure_default_config(&path);
 
         if let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(user) = toml::from_str::<Config>(&content)
@@ -245,6 +239,16 @@ fn load_or_default() -> Config {
     }
 
     config
+}
+
+/// The shipped `plugins.toml`, written only on the first load: the watcher
+/// reloads this file, and an editor's atomic save briefly removes it, so a
+/// reload that recreated it would clobber the edit.
+fn ensure_default_config(path: &std::path::Path) {
+    static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let _ = crate::write_if_absent(path, DEFAULT_CONFIG);
+    });
 }
 
 /// Overlay a user config on the shipped default: known ids take the user's

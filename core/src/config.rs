@@ -21,13 +21,7 @@ fn write_template() {
     let Some(path) = path() else {
         return;
     };
-    if path.exists() {
-        return;
-    }
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(path, DEFAULT_TEMPLATE);
+    let _ = crate::write_if_absent(&path, DEFAULT_TEMPLATE);
 }
 
 static CONFIG: OnceLock<RwLock<Config>> = OnceLock::new();

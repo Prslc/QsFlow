@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 pub mod config;
+mod notify;
 mod plugin;
 mod protocol;
 mod provider;
@@ -9,9 +10,13 @@ mod system;
 mod watchers;
 pub mod wire;
 
-/// Watch a file plus its parent directory; shared by the core's own watchers
-/// and the shell's `theme.toml` watcher.
-pub use watchers::watch_targets;
+/// Watch one file (plus its parent dir) and debounce its changes; shared by the
+/// core's own watchers and the shell's `theme.toml` watcher.
+pub use notify::watch;
+
+/// Create a file only when it is absent; shared by the template writers so a
+/// watcher reload cannot truncate an editor's save.
+pub use system::fs::write_if_absent;
 
 /// `--list-plugins` prints the registry and exits; otherwise serve the protocol.
 async fn serve_or_list() -> Result<()> {

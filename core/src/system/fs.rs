@@ -1,9 +1,24 @@
 use anyhow::{Context, Result};
 use std::env;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 pub fn get_home() -> Result<PathBuf> {
     dirs::home_dir().context("finding the user HOME directory")
+}
+
+/// Create `path` with `contents` only when it does not exist. `O_EXCL` makes the
+/// test atomic, so a config file that an editor's atomic save just recreated is
+/// never truncated by a watcher reload.
+pub fn write_if_absent(path: &Path, contents: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(contents.as_bytes())
 }
 
 /// Flatpak apps live in `<installation>/exports/share`, which only reaches
@@ -23,5 +38,24 @@ pub fn ensure_flatpak_data_dirs() {
     if !missing.is_empty() {
         // SAFETY: `main` calls this before any other thread exists.
         unsafe { env::set_var("XDG_DATA_DIRS", format!("{}:{}", missing.join(":"), dirs)) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writing_a_missing_file_never_truncates_an_existing_one() {
+        let dir =
+            std::env::temp_dir().join(format!("wayrun-write-if-absent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("x.toml");
+
+        write_if_absent(&path, "first").unwrap();
+        assert!(write_if_absent(&path, "second").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
