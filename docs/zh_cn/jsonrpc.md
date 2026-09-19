@@ -65,7 +65,9 @@ scheme——解析为启动器 UI 渲染所用的绝对路径。它面向需要�
 ### 外部主机 → core（身份发现）
 
 当 `plugins.toml` 条目声明 `command` 时，core 拉起主机并调用一次 `list_plugins`
-以发现身份。响应 `result` 为对象数组：
+以发现身份。遵循此契约的 Python 框架与示例主机见
+[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) 工作区；响应 `result`
+为对象数组：
 
 | 键 | 类型 | 含义 |
 |-----|------|------|

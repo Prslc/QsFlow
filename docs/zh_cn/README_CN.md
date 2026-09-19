@@ -2,9 +2,9 @@
 
 # QsFlow
 
-<img src="../images/application_default.png" alt="appicon" width="150" height="150"><br>
+<img src="../../images/application_default.png" alt="appicon" width="150" height="150"><br>
 
-中文 | [English](../README.md)
+中文 | [English](../../README.md)
 
 </div>
 
@@ -17,7 +17,7 @@ QsFlow 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 | 亮色主题 — 高频使用项 | 暗色主题 — 模糊应用搜索（`android`） |
 |------------------------|-------------------------------------|
-| ![QsFlow — 亮色主题](../images/launcher.png) | ![QsFlow — 暗色主题](../images/launcher-search.png) |
+| ![QsFlow — 亮色主题](../../images/launcher.png) | ![QsFlow — 暗色主题](../../images/launcher-search.png) |
 
 ## 功能特性
 
@@ -144,7 +144,7 @@ keyword = "s"
 ```
 
 调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
-条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。
+条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。主机可以手写；[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) 工作区提供了一套 Python 框架、示例插件与 `template/` 模板，可复制起步。
 
 主题色默认从 `~/.config/gtk-4.0/dank-colors.css` 读取，读取失败则使用内置默认值。
 
@@ -153,7 +153,7 @@ keyword = "s"
 `qsflow --core` 在 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
 与启动器文本协议混用：方法 `search`、`top`、`select`、`forget`、`run`、`resolve_icon`、
 `list_plugins`、`theme`、`ping`。完整协议与结果项 schema 见
-[zh_cn/jsonrpc.md](zh_cn/jsonrpc.md)。
+[zh_cn/jsonrpc.md](jsonrpc.md)。
 
 ## 致谢
 

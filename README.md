@@ -168,6 +168,9 @@ no arguments or shell syntax (scripts need a shebang and exec bit). The core
 spawns it, relays `search`, and discovers the plugin's identity from the
 host's `list_plugins` response; both the identity `icon` and result `icon`
 fields accept the `papirus:` scheme (resolved to an absolute Papirus path).
+Hosts can be written by hand; the
+[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) workspace ships a
+Python framework, example plugins, and a `template/` to copy from.
 
 Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
 built-in defaults).

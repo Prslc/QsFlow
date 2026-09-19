@@ -73,8 +73,10 @@ Called on the core's stdin, it answers with the current registry:
 ### External host → core (identity discovery)
 
 When a `plugins.toml` entry declares `command`, the core spawns the host and
-calls `list_plugins` once to discover identity. The response `result` is an
-array of objects:
+calls `list_plugins` once to discover identity. A Python framework and example
+hosts that speak this contract live in the
+[QsFlow-Plugins](https://github.com/Prslc/QsFlow-Plugins) workspace; the
+response `result` is an array of objects:
 
 | Key | Type | Meaning |
 |-----|------|---------|
