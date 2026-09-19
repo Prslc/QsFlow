@@ -18,11 +18,9 @@
 WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。在悬浮窗口中输入关键词，即可搜索已安装应用、Firefox 书签、网页建议，并进行即时数学计算。整个项目只产出一个 Rust 可执行文件 `wayrun`：默认跑覆盖层壳，带 `--core` 时跑后端服务。壳自己持有 `wlr-layer-shell` 表面，用
 [tiny-skia](https://github.com/RazrFalcon/tiny-skia) 把卡片、列表与动画直接光栅化进 `wl_shm` 缓冲，因此不需要 GPU 栈，也不依赖任何 GUI 工具包；内核负责插件注册表、JSON-RPC 协议与使用历史库。
 
-## 截图
+## 演示
 
-| 亮色主题 — 高频使用项 | 暗色主题 — 模糊应用搜索（`android`） |
-|------------------------|-------------------------------------|
-| ![WayRun — 亮色主题](../../images/launcher.png) | ![WayRun — 暗色主题](../../images/launcher-search.png) |
+![WayRun —— 应用搜索、文件搜索、动态主题与书签](../../images/demo.gif)
 
 ## 功能特性
 

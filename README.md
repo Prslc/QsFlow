@@ -25,11 +25,9 @@ list and animations with
 the frontend needs no GPU stack and no GUI toolkit; the core owns the plugin
 registry, the JSON-RPC protocol and the usage database.
 
-## Screenshots
+## Demo
 
-| Light theme — most-used items | Dark theme — fuzzy app search (`android`) |
-|-----------------------------------|-------------------------------------|
-| ![WayRun — light theme](images/launcher.png) | ![WayRun — dark theme](images/launcher-search.png) |
+![WayRun — app search, file search, dynamic theming, and bookmarks](images/demo.gif)
 
 ## Features
 
