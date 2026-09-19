@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use cosmic_text::{
@@ -58,6 +58,7 @@ impl TextEngine {
     pub fn clear_cache(&mut self) {
         self.cache = SwashCache::new();
         self.shapes.clear();
+        release_font_pages(&self.font_system);
     }
 
     /// Shape one unwrapped line at `size`, returning a handle to the cached
@@ -247,6 +248,36 @@ fn blend(data: &mut [u8], width: i32, height: i32, x: i32, y: i32, color: [u8; 4
     let destination = u32::from(data[index + 3]) * inverse / 255;
     data[index + 3] = (alpha + destination).min(255) as u8;
 }
+
+/// Hand the resident pages of every mmap'd font file back to the OS. Shaping a
+/// CJK line faults a font's tables in, and neither the glyph cache nor
+/// `malloc_trim` touches a file mapping, so a hidden shell would otherwise keep
+/// the whole page set. The mapping stays valid: the next shape re-faults.
+#[cfg(target_os = "linux")]
+fn release_font_pages(font_system: &FontSystem) {
+    let mut seen: HashSet<*const u8> = HashSet::new();
+    for face in font_system.db().faces() {
+        let fontdb::Source::SharedFile(_, data) = &face.source else {
+            continue;
+        };
+        let bytes: &[u8] = <dyn AsRef<[u8]>>::as_ref(&**data);
+        if bytes.is_empty() || !seen.insert(bytes.as_ptr()) {
+            continue;
+        }
+        // SAFETY: `bytes` is a live mmap from `fontdb`, so the base is page
+        // aligned; `madvise` rounds the length and has no other precondition.
+        unsafe {
+            libc::madvise(
+                bytes.as_ptr() as *mut libc::c_void,
+                bytes.len(),
+                libc::MADV_DONTNEED,
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn release_font_pages(_: &FontSystem) {}
 
 #[cfg(test)]
 mod tests {

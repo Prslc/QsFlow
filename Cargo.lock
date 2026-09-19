@@ -3118,6 +3118,7 @@ dependencies = [
  "cosmic-text",
  "dirs",
  "env_logger",
+ "fontdb",
  "libc",
  "log",
  "notify",
