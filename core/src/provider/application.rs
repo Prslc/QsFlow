@@ -200,7 +200,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
         }
     }
 
-    crate::provider::rank_results(results, true, crate::config::get().results.apps)
+    crate::provider::rank_results(results, true, 50)
 }
 
 fn tokenize(s: &str) -> Vec<String> {

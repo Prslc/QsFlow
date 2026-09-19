@@ -116,13 +116,17 @@ impl Plugin for External {
     }
 }
 
+/// Ceiling for one host call: a stalled host must cost the launcher seconds,
+/// never the session. Discovery holds `plugin::INIT` until it returns, so a
+/// stall there would block every later search and `?` behind it.
+const HOST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One JSON-RPC request/response round trip against `command`: spawn, write the
 /// request, close stdin, reap, return the first response line (any line that
-/// parses). `None` when the host is missing, stalled past the configured
-/// `hosts.timeout_ms`, or produced no parseable output.
+/// parses). `None` when the host is missing, stalled past [`HOST_TIMEOUT`], or
+/// produced no parseable output.
 async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
-    let limit = std::time::Duration::from_millis(crate::config::get().hosts.timeout_ms);
-    rpc_call_within(command, request, limit).await
+    rpc_call_within(command, request, HOST_TIMEOUT).await
 }
 
 /// [`rpc_call`] with an explicit deadline, so the stall path is testable.

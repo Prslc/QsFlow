@@ -2,31 +2,11 @@
 # built-in default shown here. The file is watched, so an edit applies live.
 
 [web_search]
-# Search backend: "google" or "duckduckgo".
+# Suggestion backend: "google" or "duckduckgo".
 engine = "google"
-timeout_ms = 5000
-
-[hosts]
-# Per-call deadline for an external JSON-RPC host, and how many hosts are
-# forked at once while discovering their identities.
-timeout_ms = 5000
-discovery_concurrency = 2
-
-[results]
-# Rows kept per provider.
-apps = 50
-runner = 20
-windows = 50
-
-[files]
-# Walk depth under the home directory.
-depth = 3
-
-[history]
-# Rows returned by the `top` RPC method.
-top = 20
 
 [font]
 # Primary shaping family, or a generic name (serif, sans-serif, monospace).
 # A non-CJK family avoids mapping a CJK font when the UI never draws CJK text.
+# Read by the shell at startup, so a change applies on the next launch.
 family = "Source Han Sans CN"

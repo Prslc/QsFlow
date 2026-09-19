@@ -121,17 +121,9 @@ fn do_search(engine: &Engine, query: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
-    // minreq's timeout is whole seconds; round up so a sub-second setting still
-    // gives the request a chance.
-    let timeout_s = crate::config::get()
-        .web_search
-        .timeout_ms
-        .div_ceil(1000)
-        .max(1);
-
     let response = minreq::get(engine.suggest_url)
         .with_param("q", query)
-        .with_timeout(timeout_s)
+        .with_timeout(5)
         .send()
         .context("fetching web suggestions")?;
     let json: Vec<serde_json::Value> = response.json().context("parsing web suggestions")?;

@@ -99,6 +99,10 @@ struct PendingHost {
     command: String,
 }
 
+/// How many external hosts may be forked at once while resolving identities.
+/// Each is a fresh interpreter, so this is the memory ceiling of the walk.
+const DISCOVERY_CONCURRENCY: usize = 2;
+
 /// A discovered host identity, keyed by the configured command and stamped
 /// with the file's `(mtime, size)` so an edited plugin is re-discovered while
 /// an unchanged one is never forked. This is what lets a later start build the
@@ -253,7 +257,7 @@ fn build_entries(config: &Config) -> Vec<Entry> {
 }
 
 /// Ask the hosts of the external plugins still on their placeholder identity
-/// for their name/icon, bounded to `hosts.discovery_concurrency` at a time so the
+/// for their name/icon, bounded to [`DISCOVERY_CONCURRENCY`] at a time so the
 /// fan-out cannot fork every interpreter at once, and cache the answers. A
 /// `keyword` limits the walk to the plugin a search is about to use; `None`
 /// resolves them all (the `?` help table lists every name).
@@ -293,9 +297,7 @@ async fn resolve_pending(keyword: Option<&str>) {
     }
 
     if !stale.is_empty() {
-        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(
-            crate::config::get().hosts.discovery_concurrency,
-        ));
+        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(DISCOVERY_CONCURRENCY));
         let mut hosts = tokio::task::JoinSet::new();
         for command in stale {
             let permits = permits.clone();

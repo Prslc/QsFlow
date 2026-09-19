@@ -58,7 +58,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
         }
     }
 
-    rank_results(results, false, crate::config::get().results.windows)
+    rank_results(results, false, 50)
 }
 
 fn score_window(
