@@ -27,8 +27,8 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  lint:
-    name: Lint
+  ci:
+    name: CI
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -58,61 +58,21 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
-  test:
-    name: Test
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libssl-dev \
-            libxkbcommon-dev \
-            libglib2.0-dev \
-            libsqlite3-dev \
-            fonts-dejavu-core
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: workspace
-
       - name: cargo test
         run: cargo test --all --locked
 
-  build:
-    name: Build (release)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libssl-dev \
-            libxkbcommon-dev \
-            libglib2.0-dev \
-            libsqlite3-dev \
-            fonts-dejavu-core
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: workspace
-
       - name: cargo build --release
         run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          tar -czf "wayrun-x86_64-unknown-linux-gnu.tar.gz" \
+            -C target/release wayrun
 
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
           name: wayrun-x86_64-unknown-linux-gnu
-          path: target/release/wayrun
+          path: wayrun-x86_64-unknown-linux-gnu.tar.gz
+          archive: false
           if-no-files-found: error
