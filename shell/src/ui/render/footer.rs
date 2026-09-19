@@ -13,9 +13,9 @@ use super::canvas::Canvas;
 /// exist, a distinct "No results" for an empty search, else history help.
 pub(super) fn footer_hint(rows: usize, query_empty: bool, panel: bool) -> &'static str {
     if panel {
-        "↵ Run   ↑↓ Move   Esc Back"
+        "⏎ Run   ↑↓ Move   Esc Back"
     } else if rows > 0 {
-        "↵ Launch   Shift+↵ Actions   ↑↓ Move   Esc Close"
+        "⏎ Launch   Shift+⏎ Actions   ↑↓ Move   Esc Close"
     } else if query_empty {
         "Type ? for help"
     } else {
@@ -97,8 +97,8 @@ mod tests {
         // an empty field is the history view, not a failed search
         assert_eq!(footer_hint(0, true, false), "Type ? for help");
         assert_eq!(footer_hint(0, false, false), "No results");
-        assert!(footer_hint(3, false, false).starts_with("↵ Launch"));
+        assert!(footer_hint(3, false, false).starts_with("⏎ Launch"));
         // the panel owns the footer while it is open
-        assert!(footer_hint(3, false, true).starts_with("↵ Run"));
+        assert!(footer_hint(3, false, true).starts_with("⏎ Run"));
     }
 }

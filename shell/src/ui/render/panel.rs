@@ -8,7 +8,7 @@ use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, Rect};
+use super::canvas::{Canvas, ENTER_GLYPH, Rect};
 
 /// The action panel (Shift+Enter): the parent row's title as a header, then the
 /// row's secondary commands as list rows in the same fixed window.
@@ -87,7 +87,7 @@ pub(super) fn draw_actions(
         }
 
         let labels_x = icon_x + font.icon_size + 12.0;
-        let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
+        let enter = selected.then(|| text.shape(ENTER_GLYPH, 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
             .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);

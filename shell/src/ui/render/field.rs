@@ -6,7 +6,7 @@ use tiny_skia::Pixmap;
 use crate::app::{Hover, State};
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, Rect, TEXT_INSET};
+use super::canvas::{CLEAR_GLYPH, Canvas, Rect, TEXT_INSET};
 
 pub(super) fn draw_magnifier(
     canvas: &Canvas,
@@ -219,8 +219,8 @@ pub(super) fn draw_toolbar(
             state.fade(state.theme.fg, if hovered { 0.18 } else { 0.10 }, now),
         );
 
-        let shaped = text.shape("✕", 12.0 * canvas.scale, Weight::NORMAL);
-        // the ✕'s ink sits above and left of its line box; these shifts put the
+        let shaped = text.shape(CLEAR_GLYPH, 12.0 * canvas.scale, Weight::NORMAL);
+        // the ×'s ink sits above and left of its line box; these shifts put the
         // centred box back on the circle
         text.draw(
             pixmap,

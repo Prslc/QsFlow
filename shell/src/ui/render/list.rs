@@ -8,7 +8,7 @@ use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, Rect};
+use super::canvas::{Canvas, ENTER_GLYPH, Rect};
 
 pub(super) fn draw_list(
     canvas: &Canvas,
@@ -62,7 +62,7 @@ pub(super) fn draw_list(
         let labels_x = icon_x + font.icon_size + 12.0;
         // The selected row's ↵ hint and the pinned badge are part of the layout:
         // the labels must leave room for both.
-        let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
+        let enter = selected.then(|| text.shape(ENTER_GLYPH, 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
             .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);
