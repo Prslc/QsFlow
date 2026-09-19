@@ -73,9 +73,6 @@ resident mode the hotkey toggles the surface and dismiss hides it.
 
 ## Documentation
 
-Full user docs live in [`docs/en/`](docs/en/); the Chinese editions are in
-[`docs/zh_cn/`](docs/zh_cn/).
-
 - [Usage](docs/en/usage.md) — prefixes, keybindings, and the clipboard.
 - [Resident mode](docs/en/resident.md) — the systemd unit and the IPC verbs.
 - [Theme](docs/en/theme.md) — the system theme and `theme.toml` (colors, blur,

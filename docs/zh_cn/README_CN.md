@@ -63,8 +63,6 @@ wayrun
 
 ## 文档
 
-完整的用户文档位于 [`docs/en/`](../en/)（英文）与 [`docs/zh_cn/`](.)（中文）。
-
 - [使用说明](usage.md) —— 前缀、按键与剪贴板。
 - [常驻模式](resident.md) —— systemd 单元与 IPC 动词。
 - [主题](theme.md) —— 系统主题与 `theme.toml`（配色、模糊、布局、动效）。
