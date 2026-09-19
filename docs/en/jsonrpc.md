@@ -150,17 +150,18 @@ and external host alike.
 
 The launcher UI renders icons as `file://` + path, so every `icon` the core
 emits is an absolute path. **External plugin hosts** (a `plugins.toml` entry
-with `command`) may instead return a `papirus:` spec — in any result-item
-`icon` field (`search` results and `top` default views alike) and in the
-`list_plugins` identity `icon` — and the core resolves it before the item
-reaches the UI:
+with `command`) may return a theme icon name, a `papirus:` spec or an absolute
+path — in any result-item `icon` field (`search` results and `top` default views
+alike) and in the `list_plugins` identity `icon` — and the core resolves it
+before the item reaches the UI:
 
 | Spec | Resolution |
 |------|------------|
+| absolute path | passed through |
+| theme name | searched under `$XDG_DATA_HOME/icons`, each `$XDG_DATA_DIRS/icons`, `~/.icons` and `/usr/share/pixmaps`, user dirs first |
 | `papirus:<name>` | first match for `<name>` across Papirus categories and sizes |
 | `papirus:<category>/<name>` | same, but searches `<category>` first |
 
 Examples: `papirus:folder-open` →
 `/usr/share/icons/Papirus/48x48/places/folder-open.svg`;
 `papirus:apps/firefox` → `/usr/share/icons/Papirus/48x48/apps/firefox.svg`.
-Installations rooted under `~/.local/share/icons` are searched as well.

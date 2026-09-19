@@ -2,8 +2,7 @@ use itertools::iproduct;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use crate::system::fs::get_resource_path;
-use std::path::Path;
+use crate::system::xdg;
 /// Papirus category dirs. Not every size ships every category: `panel` and
 /// friends only exist in the small sizes, so lookup must scan sizes × categories.
 const PAPIRUS_CATEGORIES: &[&str] = &[
@@ -25,8 +24,10 @@ const PAPIRUS_SIZES: &[&str] = &[
     "16x16", "8x8",
 ];
 
-/// Generic theme search space, shared by the /usr/share/icons scan and the
-/// flatpak-export hicolor scan below.
+/// Theme precedence, then categories and sizes, for the generic scan. `Papirus`
+/// ships an icon for most app/action names and is the only theme installed with
+/// full coverage here.
+const THEMES: &[&str] = &["Papirus", "breeze", "Adwaita", "hicolor"];
 const THEME_CATEGORIES: &[&str] = &["places", "apps", "mimetypes", "devices", "panel", "actions"];
 const ICON_SIZES: &[&str] = &[
     "scalable", "48x48", "32x32", "256x256", "128x128", "64x64", "24x24", "16x16",
@@ -58,15 +59,21 @@ fn find_papirus(spec: &str) -> Option<String> {
             .filter(|c| Some(*c) != hint),
     );
 
-    let mut bases = vec!["/usr/share/icons".to_string()];
-    if let Ok(home) = std::env::var("HOME") {
-        bases.push(format!("{home}/.local/share/icons"));
-    }
+    let bases = xdg::icon_theme_dirs();
 
     // Cartesian scan in base × size × category order; first existing file wins.
-    iproduct!(&bases, PAPIRUS_SIZES, &categories).find_map(|(base, size, category)| {
-        let path = format!("{base}/Papirus/{size}/{category}/{name}.svg");
-        Path::new(&path).exists().then_some(path)
+    iproduct!(
+        bases.iter(),
+        PAPIRUS_SIZES.iter().copied(),
+        categories.iter().copied()
+    )
+    .find_map(|(base, size, category)| {
+        let path = base
+            .join("Papirus")
+            .join(size)
+            .join(category)
+            .join(format!("{name}.svg"));
+        path.exists().then(|| path.to_string_lossy().into_owned())
     })
 }
 
@@ -92,8 +99,46 @@ pub fn find_icon_path(name: &str) -> Option<String> {
     result
 }
 
+/// A theme name found under any `base/{theme}/{size}/{category}/`. The scan is
+/// lazy and first-hit-wins, so a hit costs a few stats and a miss the full space.
+fn find_theme_icon(name: &str) -> Option<String> {
+    for base in xdg::icon_theme_dirs() {
+        let found = iproduct!(
+            THEMES.iter().copied(),
+            THEME_CATEGORIES.iter().copied(),
+            ICON_SIZES.iter().copied(),
+            ICON_EXTS.iter().copied()
+        )
+        .find_map(|(theme, category, size, ext)| {
+            let path = base
+                .join(theme)
+                .join(size)
+                .join(category)
+                .join(format!("{name}.{ext}"));
+            path.exists().then(|| path.to_string_lossy().into_owned())
+        });
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+/// Flat raster icons in `/usr/share/pixmaps`, outside any theme.
+fn find_pixmap_icon(name: &str) -> Option<String> {
+    for base in xdg::pixmap_dirs() {
+        for ext in ICON_EXTS {
+            let path = base.join(format!("{name}.{ext}"));
+            if path.exists() {
+                return Some(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
 fn do_find(name: &str) -> Option<String> {
-    let fallback = || get_resource_path("images/application_default.png");
+    let fallback = || xdg::resource_path("images/application_default.png");
 
     if name.is_empty() {
         return fallback();
@@ -109,54 +154,27 @@ fn do_find(name: &str) -> Option<String> {
         return find_papirus(spec).or_else(fallback);
     }
 
-    let themes = ["Papirus", "breeze", "Adwaita", "hicolor"];
-
-    let search = |dir: &str| {
-        // lazy Cartesian scan, theme × category × size × ext; first existing
-        // file wins
-        iproduct!(themes, THEME_CATEGORIES, ICON_SIZES, ICON_EXTS).find_map(
-            |(theme, category, size, ext)| {
-                let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
-                Path::new(&path).exists().then_some(path)
-            },
-        )
-    };
-
-    if let Some(p) = search("/usr/share/icons") {
+    if let Some(p) = find_theme_icon(name) {
         return Some(p);
     }
-
-    // pixmaps — legacy path, many apps drop icons here
-    for ext in ICON_EXTS {
-        let path = format!("/usr/share/pixmaps/{name}.{ext}");
-        if Path::new(&path).exists() {
-            return Some(path);
-        }
-    }
-
-    // flatpak exports (hicolor inside each export root)
-    let mut flatpak_bases = vec!["/var/lib/flatpak/exports/share".to_string()];
-    if let Ok(home) = std::env::var("HOME") {
-        flatpak_bases.push(format!("{home}/.local/share/flatpak/exports/share"));
-    }
-    for base in &flatpak_bases {
-        if let Some(p) = search(&format!("{base}/icons")) {
-            return Some(p);
-        }
+    if let Some(p) = find_pixmap_icon(name) {
+        return Some(p);
     }
 
     // project images (plugin identity icons, e.g. application_default)
     for ext in ICON_EXTS {
-        if let Some(p) = get_resource_path(&format!("images/{name}.{ext}")) {
+        if let Some(p) = xdg::resource_path(&format!("images/{name}.{ext}")) {
             return Some(p);
         }
     }
 
     fallback()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn papirus_spec_splits_category_hint() {
@@ -199,5 +217,13 @@ mod tests {
     fn papirus_unknown_name_falls_back_to_default() {
         let path = find_icon_path("papirus:definitely-not-an-icon-xyz");
         assert!(path.is_some()); // default icon, same semantics as any miss
+    }
+
+    #[test]
+    fn a_bundled_plugin_image_resolves() {
+        // `translate` ships only as `images/translate.png`, so the theme scan
+        // misses and the resource fallback is what finds it.
+        let path = find_icon_path("translate").unwrap();
+        assert!(path.ends_with("images/translate.png"), "{path}");
     }
 }

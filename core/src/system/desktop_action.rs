@@ -3,38 +3,50 @@ use std::path::{Path, PathBuf};
 
 use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
 
+use crate::system::xdg;
+
 /// Every path a desktop id may live at, in XDG precedence order: the user's own
 /// data dir first, then `$XDG_DATA_DIRS` (which `fs::ensure_flatpak_data_dirs`
 /// has already padded with the flatpak exports).
 fn candidates(id: &str) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = Vec::new();
-    if let Some(data) = dirs::data_dir() {
-        roots.push(data);
-    }
-    if let Ok(list) = std::env::var("XDG_DATA_DIRS") {
-        roots.extend(list.split(':').filter(|s| !s.is_empty()).map(PathBuf::from));
-    } else {
-        roots.push(PathBuf::from("/usr/local/share"));
-        roots.push(PathBuf::from("/usr/share"));
-    }
     let names: Vec<String> = if id.ends_with(".desktop") {
         vec![id.to_owned()]
     } else {
         vec![format!("{id}.desktop")]
     };
-    roots
+    xdg::desktop_dirs()
         .into_iter()
-        .flat_map(|root| {
-            names
-                .iter()
-                .map(move |name| root.join("applications").join(name))
-        })
+        .flat_map(|root| names.iter().map(move |name| root.join(name)))
         .collect()
 }
 
 /// The most preferred `.desktop` file for `id`, user overrides included.
 pub fn find(id: &str) -> Option<PathBuf> {
     candidates(id).into_iter().find(|path| path.is_file())
+}
+
+/// The parsed entry for `id`, so every reader of `Icon=`/`GenericName=`/actions
+/// reads the same file `launch:` would. `locales` selects localised keys; `None`
+/// keeps only the generic ones.
+pub fn entry(id: &str, locales: Option<&[String]>) -> Option<DesktopEntry> {
+    let path = find(id)?;
+    DesktopEntry::from_path(&path, locales).ok()
+}
+
+/// The icon of the application a Wayland `app_id` names. A window's app id is
+/// not always an icon name (`org.gnome.Nautilus`, `org.mozilla.firefox`), so the
+/// id's `.desktop` file wins when one exists; otherwise the id is tried as a
+/// theme icon name directly.
+pub fn icon_for_app_id(app_id: &str) -> Option<String> {
+    if app_id.is_empty() {
+        return None;
+    }
+    if let Some(icon) = entry(app_id, None).and_then(|e| e.icon().map(str::to_owned))
+        && let Some(path) = crate::system::icon::find_icon_path(&icon)
+    {
+        return Some(path);
+    }
+    crate::system::icon::find_icon_path(app_id)
 }
 
 /// What this entry's field codes stand for. `%i` names the action group's own
@@ -111,9 +123,8 @@ fn expand(exec: &str, entry: &DesktopEntry, action_id: &str, path: &Path) -> Vec
 /// The argv of `[Desktop Action <action_id>]`, or `None` when the entry carries
 /// no such group or its `Exec=` expands to nothing.
 pub fn action_argv(desktop_id: &str, action_id: &str) -> Option<Vec<String>> {
-    let path = find(desktop_id)?;
-    let entry = DesktopEntry::from_path(&path, None::<&[String]>).ok()?;
-    let argv = expand(entry.action_exec(action_id)?, &entry, action_id, &path);
+    let e = entry(desktop_id, None)?;
+    let argv = expand(e.action_exec(action_id)?, &e, action_id, &e.path);
     (!argv.is_empty()).then_some(argv)
 }
 
@@ -173,6 +184,17 @@ Exec=nautilus %i --profile \"100%% sure\"
     fn the_plain_entry_is_not_an_action() {
         assert!(argv("").is_empty());
         assert!(argv("does-not-exist").is_empty());
+    }
+
+    #[test]
+    fn a_window_app_id_maps_to_its_desktop_icon() {
+        // `firefox` is both an app_id and a desktop id; the entry's `Icon=` is
+        // what the row should render.
+        if find("firefox").is_none() {
+            return; // no desktop entry on this machine
+        }
+        let path = icon_for_app_id("firefox").unwrap();
+        assert!(path.starts_with('/'), "{path}");
     }
 
     #[test]

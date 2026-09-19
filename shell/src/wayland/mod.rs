@@ -3,7 +3,6 @@ mod input;
 mod scale;
 mod surface;
 
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use calloop::LoopHandle;
@@ -32,7 +31,7 @@ use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 
 use crate::app::{self, State as Launcher};
-use crate::session::backend::{self, BackendEvent};
+use crate::session::backend::BackendEvent;
 use crate::session::ipc;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
@@ -197,8 +196,6 @@ pub struct Shell {
     wheel_accum: f32,
     pending: Pending,
     icons: IconCache,
-    /// Icon specs already sent to the core's `resolve_icon`.
-    requested_icons: HashSet<String>,
     text: TextEngine,
     app: Launcher,
     resident: bool,
@@ -283,7 +280,6 @@ impl Shell {
             wheel_accum: 0.0,
             pending: Pending::default(),
             icons: IconCache::new(),
-            requested_icons: HashSet::new(),
             text: TextEngine::new(),
             app: Launcher::new(),
             resident: std::env::var_os("WAYRUN_RESIDENT").is_some(),
@@ -309,28 +305,16 @@ impl Shell {
             BackendEvent::Results(items) => {
                 let now = Instant::now();
                 self.app.apply_results(items, now);
-                self.request_icons();
                 let size = (30.0 * self.app.scale_factor()).round() as u32;
                 let paths: Vec<String> = self
                     .app
                     .rows
                     .iter()
-                    .filter_map(|row| row.icon_path.clone())
+                    .filter_map(|row| row.icon.clone())
                     .collect();
                 for path in paths {
                     self.icons.warm(&path, size);
                 }
-            }
-            BackendEvent::Icon { spec, path } => {
-                // Rasterise before the redraw, like the `Results` arm: the
-                // resolve reply arrives while the launcher is up, and a decode
-                // on the frame that is being animated is exactly what `warm`
-                // exists to avoid.
-                if let Some(path) = path.as_deref() {
-                    let size = (30.0 * self.app.scale_factor()).round() as u32;
-                    self.icons.warm(path, size);
-                }
-                self.app.set_icon(&spec, path)
             }
             // A confirmed forget is the only thing that removes a row: a
             // provider without `forget` answers `false` and the list is left
@@ -346,26 +330,6 @@ impl Shell {
             BackendEvent::CoreExited => self.exit = true,
         }
         self.redraw();
-    }
-
-    /// Ask the core for the absolute path of every icon spec that is not one.
-    fn request_icons(&mut self) {
-        let specs: Vec<String> = self
-            .app
-            .rows
-            .iter()
-            .filter_map(|row| row.icon_spec.as_deref())
-            .filter(|spec| !spec.starts_with('/'))
-            .map(str::to_string)
-            .collect();
-
-        for spec in specs {
-            if self.app.icon_cache.contains_key(&spec) || !self.requested_icons.insert(spec.clone())
-            {
-                continue;
-            }
-            backend::resolve_icon(&spec);
-        }
     }
 
     /// A clipboard read came back from its worker thread: insert it at the

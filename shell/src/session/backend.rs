@@ -13,11 +13,6 @@ use crate::session::model::{ResultItem, ThemeConfig};
 pub enum BackendEvent {
     Theme(ThemeConfig),
     Results(Vec<ResultItem>),
-    /// A JSON-RPC `resolve_icon` reply, matched back to the spec that asked.
-    Icon {
-        spec: String,
-        path: Option<String>,
-    },
     /// A JSON-RPC `forget` reply: the row the UI asked to drop, and whether the
     /// core really dropped anything.
     Forgotten {
@@ -31,13 +26,8 @@ pub enum BackendEvent {
 /// Lines bound for the core's stdin, drained by one writer thread.
 static OUTBOX: LazyLock<Mutex<Option<StdSender<String>>>> = LazyLock::new(|| Mutex::new(None));
 
-/// What an in-flight JSON-RPC request was for, so its reply can be routed.
-enum Pending {
-    Icon(String),
-    Forget(String),
-}
-
-static REQUESTS: LazyLock<Mutex<HashMap<u64, Pending>>> = LazyLock::new(Default::default);
+/// The `on_click` of each in-flight `forget`, so its reply can be routed back.
+static REQUESTS: LazyLock<Mutex<HashMap<u64, String>>> = LazyLock::new(Default::default);
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
 /// Send one protocol line to the core (newline added). A no-op before the core
@@ -49,13 +39,13 @@ pub fn send(line: &str) {
     }
 }
 
-/// Send a JSON-RPC request, remembering what its reply means.
-fn request(method: &str, params: serde_json::Value, pending: Pending) -> u64 {
+/// Send a JSON-RPC request, remembering the `on_click` its reply answers.
+fn request(method: &str, params: serde_json::Value, on_click: String) -> u64 {
     let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     REQUESTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .insert(id, pending);
+        .insert(id, on_click);
 
     send(
         &serde_json::json!({
@@ -70,23 +60,13 @@ fn request(method: &str, params: serde_json::Value, pending: Pending) -> u64 {
     id
 }
 
-/// Ask the core to resolve an icon spec to an absolute path; the reply arrives
-/// as [`BackendEvent::Icon`]. The returned id only correlates that reply.
-pub fn resolve_icon(spec: &str) -> u64 {
-    request(
-        "resolve_icon",
-        serde_json::json!({ "name": spec }),
-        Pending::Icon(spec.to_string()),
-    )
-}
-
 /// Ask the core to forget a row; the reply arrives as
 /// [`BackendEvent::Forgotten`] and says whether anything was really dropped.
 pub fn forget_row(on_click: &str) {
     request(
         "forget",
         serde_json::json!({ "on_click": on_click }),
-        Pending::Forget(on_click.to_string()),
+        on_click.to_string(),
     );
 }
 
@@ -174,7 +154,7 @@ enum Tagged {
     Results(Vec<ResultItem>),
 }
 
-/// A JSON-RPC reply: only `resolve_icon` answers are expected (matched back by
+/// A JSON-RPC reply: only `forget` answers are expected (matched back by
 /// request id).
 #[derive(serde::Deserialize)]
 struct RpcReply {
@@ -199,35 +179,23 @@ fn parse_object(line: &str) -> Option<BackendEvent> {
         return None;
     }
     let id = reply.id?;
-    let pending = REQUESTS
+    let on_click = REQUESTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .remove(&id)?;
 
-    match pending {
-        Pending::Icon(spec) => {
-            let path = reply
-                .result
-                .as_ref()
-                .and_then(|result| result.as_str())
-                .map(str::to_string);
-            Some(BackendEvent::Icon { spec, path })
-        }
-        Pending::Forget(on_click) => {
-            // a reply with no `forgotten` (or an error) means nothing was
-            // dropped, which is the safe answer for the UI
-            let forgotten = reply
-                .result
-                .as_ref()
-                .and_then(|result| result.get("forgotten"))
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-            Some(BackendEvent::Forgotten {
-                on_click,
-                forgotten,
-            })
-        }
-    }
+    // a reply with no `forgotten` (or an error) means nothing was dropped,
+    // which is the safe answer for the UI
+    let forgotten = reply
+        .result
+        .as_ref()
+        .and_then(|result| result.get("forgotten"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    Some(BackendEvent::Forgotten {
+        on_click,
+        forgotten,
+    })
 }
 
 #[cfg(test)]
@@ -279,33 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn matches_icon_replies_to_their_requested_spec() {
-        let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
-        REQUESTS
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(id, Pending::Icon("papirus:folder".to_string()));
-
-        let event = parse(&format!(
-            r#"{{"jsonrpc":"2.0","id":{id},"result":"/usr/share/icons/x.svg"}}"#
-        ))
-        .unwrap();
-        match event {
-            BackendEvent::Icon { spec, path } => {
-                assert_eq!(spec, "papirus:folder");
-                assert_eq!(path.as_deref(), Some("/usr/share/icons/x.svg"));
-            }
-            other => panic!("expected icon, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn a_forget_reply_says_whether_anything_was_dropped() {
         let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
         REQUESTS
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(id, Pending::Forget("run:never-used".to_string()));
+            .insert(id, "run:never-used".to_string());
 
         let event = parse(&format!(
             r#"{{"jsonrpc":"2.0","id":{id},"result":{{"forgotten":false}}}}"#
@@ -327,7 +274,7 @@ mod tests {
         REQUESTS
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(id, Pending::Forget("run:a".to_string()));
+            .insert(id, "run:a".to_string());
         let event = parse(&format!(
             r#"{{"jsonrpc":"2.0","id":{id},"error":{{"code":-32601,"message":"no"}}}}"#
         ))

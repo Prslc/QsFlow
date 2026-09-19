@@ -137,16 +137,17 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 ### 图标规范
 
 启动器 UI 以 `file://` + 路径渲染图标，因此 core 输出的每个 `icon` 都是绝对路径。
-**外部插件主机**（`plugins.toml` 中带 `command` 的条目）可以改用 `papirus:`
-规范——用在任何结果项 `icon` 字段（`search` 结果与 `top` 默认视图皆然）及
-`list_plugins` 身份 `icon` 上——core 会在结果到达 UI 前解析：
+**外部插件主机**（`plugins.toml` 中带 `command` 的条目）可以返回主题图标名、
+`papirus:` 规范或绝对路径——用在任何结果项 `icon` 字段（`search` 结果与 `top`
+默认视图皆然）及 `list_plugins` 身份 `icon` 上——core 会在结果到达 UI 前解析：
 
 | 规范 | 解析方式 |
 |------|----------|
+| 绝对路径 | 原样透传 |
+| 主题图标名 | 依次在 `$XDG_DATA_HOME/icons`、各 `$XDG_DATA_DIRS/icons`、`~/.icons`、`/usr/share/pixmaps` 中查找，用户目录优先 |
 | `papirus:<name>` | 在 Papirus 的类别与尺寸中查找 `<name>` 的首个匹配 |
 | `papirus:<category>/<name>` | 同上，但优先搜索 `<category>` |
 
 示例：`papirus:folder-open` →
 `/usr/share/icons/Papirus/48x48/places/folder-open.svg`；
 `papirus:apps/firefox` → `/usr/share/icons/Papirus/48x48/apps/firefox.svg`。
-安装在 `~/.local/share/icons` 下的主题也会被搜索。

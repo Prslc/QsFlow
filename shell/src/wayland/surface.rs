@@ -135,11 +135,9 @@ impl Shell {
         self.buffer_next = 0;
         self.pending_damage = Damage::EMPTY;
         self.buffer_physical = (0, 0);
-        // Free the decoded icons and the resolution caches: the resident shell
-        // sits hidden between shows and these grow with every distinct payload.
+        // Free the decoded icons: the resident shell sits hidden between shows
+        // and these grow with every distinct payload.
         self.icons.clear();
-        self.app.icon_cache.clear();
-        self.requested_icons.clear();
         self.text.clear_cache();
         self.app.hidden();
         ipc::VISIBLE.store(false, Ordering::Relaxed);

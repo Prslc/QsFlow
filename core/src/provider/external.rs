@@ -63,13 +63,13 @@ impl External {
                 format!("External plugin via {command}"),
             ),
         };
-        // The host may name its identity with a `papirus:` spec; the UI only
-        // renders absolute paths (`file://` + icon), so resolve before the
-        // string leaks into `Meta`.
-        let icon = if icon.starts_with("papirus:") {
-            find_icon_path(&icon).unwrap_or_default()
-        } else {
+        // The UI only renders absolute paths (`file://` + icon), so the host's
+        // identity icon — a `papirus:` spec or a theme name — is resolved here
+        // rather than leaking an unresolved spec into `Meta`.
+        let icon = if icon.is_empty() {
             icon
+        } else {
+            find_icon_path(&icon).unwrap_or_default()
         };
         Self {
             meta: Meta {
@@ -332,17 +332,14 @@ async fn forget_external(command: &str, on_click: &str) -> Result<bool> {
     let response = rpc_call(command, &request).await;
     Ok(response.is_some_and(|reply| reply.get("error").is_none()))
 }
-/// Resolve one result icon to what the UI can render (`file://` + path):
-/// empty -> the plugin's own icon, `papirus:` -> absolute Papirus path,
-/// anything else (already an absolute path) passes through.
+/// Resolve one result icon to the absolute path the UI renders. Empty falls back
+/// to the plugin's own icon; any spec — an absolute path (passes through), a
+/// `papirus:` reference or a theme name — goes through the one resolver.
 fn resolve_item_icon(icon: &str, fallback: Option<String>) -> Option<String> {
     if icon.is_empty() {
         return fallback;
     }
-    if icon.starts_with("papirus:") {
-        return find_icon_path(icon);
-    }
-    Some(icon.to_string())
+    find_icon_path(icon).or(fallback)
 }
 #[cfg(test)]
 mod tests {
@@ -374,6 +371,14 @@ mod tests {
         let resolved = resolve_item_icon("papirus:folder-open", None).unwrap();
         assert!(resolved.contains("/Papirus/"));
         assert!(resolved.ends_with(".svg"));
+    }
+
+    #[test]
+    fn a_theme_name_is_resolved_to_an_absolute_path() {
+        // Hosts may name a theme icon rather than a file; the shell only renders
+        // absolute paths, so the core resolves it before the row leaves.
+        let resolved = resolve_item_icon("firefox", None).unwrap();
+        assert!(resolved.starts_with('/'), "{resolved}");
     }
 
     #[test]

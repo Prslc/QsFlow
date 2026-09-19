@@ -658,7 +658,7 @@ fn draw_list(
         }
 
         let icon_x = rect.x + 11.0;
-        if let Some(path) = row.icon_path.as_deref() {
+        if let Some(path) = row.icon.as_deref() {
             icons.draw(
                 pixmap,
                 path,

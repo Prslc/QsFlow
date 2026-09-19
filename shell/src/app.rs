@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::session::model::ResultItem;
@@ -23,10 +22,9 @@ pub struct Row {
     pub title: String,
     pub summary: Option<String>,
     pub on_click: Option<String>,
-    /// Any icon spec (theme name, `papirus:<name>`, absolute path).
-    pub icon_spec: Option<String>,
-    /// The resolved absolute path, once known.
-    pub icon_path: Option<String>,
+    /// The icon's absolute path; the core resolves every spec before the row
+    /// reaches the shell.
+    pub icon: Option<String>,
     /// The core's `ephemeral` flag, forwarded when the row is selected.
     pub ephemeral: bool,
 }
@@ -87,8 +85,6 @@ pub struct State {
     card_to: f32,
     card_at: Instant,
     pub dismiss_at: Option<Instant>,
-    /// Spec → path; `None` means "asked, no icon".
-    pub icon_cache: HashMap<String, Option<String>>,
     /// The bottom edge of the card rectangle drawn last. A settle repaint only
     /// covers the card, so a shrink has to restore the dim over the old edge
     /// too, and this is how it is known.
@@ -124,7 +120,6 @@ impl State {
             card_to: geom::content_h(0),
             card_at: now,
             dismiss_at: None,
-            icon_cache: HashMap::new(),
             last_card_bottom: 0.0,
         }
     }
@@ -288,7 +283,7 @@ impl State {
         Some(Launch {
             title: row.title.clone(),
             summary: row.summary.clone(),
-            icon: row.icon_path.clone(),
+            icon: row.icon.clone(),
             target,
             ephemeral: row.ephemeral,
         })
@@ -521,26 +516,12 @@ impl State {
 
         self.rows = items
             .into_iter()
-            .map(|item| {
-                let icon_spec = item.icon.clone().filter(|spec| !spec.is_empty());
-                let icon_path = icon_spec.as_ref().and_then(|spec| {
-                    // absolute paths render directly; anything else is a core
-                    // resolve_icon round trip
-                    if spec.starts_with('/') {
-                        Some(spec.clone())
-                    } else {
-                        self.icon_cache.get(spec).cloned().flatten()
-                    }
-                });
-
-                Row {
-                    title: item.title,
-                    summary: item.summary,
-                    on_click: item.on_click,
-                    icon_spec,
-                    icon_path,
-                    ephemeral: item.ephemeral,
-                }
+            .map(|item| Row {
+                title: item.title,
+                summary: item.summary,
+                on_click: item.on_click,
+                icon: item.icon.filter(|spec| !spec.is_empty()),
+                ephemeral: item.ephemeral,
             })
             .collect();
 
@@ -553,22 +534,13 @@ impl State {
         self.retarget_height(now);
     }
 
-    pub fn set_icon(&mut self, spec: &str, path: Option<String>) {
-        self.icon_cache.insert(spec.to_string(), path.clone());
-        for row in &mut self.rows {
-            if row.icon_spec.as_deref() == Some(spec) {
-                row.icon_path = path.clone();
-            }
-        }
-    }
-
     fn rows_match(&self, items: &[ResultItem]) -> bool {
         self.rows.len() == items.len()
             && self.rows.iter().zip(items).all(|(row, item)| {
                 row.title == item.title
                     && row.summary == item.summary
                     && row.on_click == item.on_click
-                    && row.icon_spec.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
+                    && row.icon.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
             })
     }
 

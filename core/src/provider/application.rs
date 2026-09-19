@@ -382,9 +382,8 @@ fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
 /// dirs resolve for `id`; gio-rs binds no `GDesktopAppInfo`. Only the preferred
 /// file is read, so an action row cannot name a group the launched file lacks.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
-    let path = crate::system::desktop_action::find(id)?;
     let locales = desktop_locales();
-    let entry = DesktopEntry::from_path(&path, Some(&locales)).ok()?;
+    let entry = crate::system::desktop_action::entry(id, Some(&locales))?;
 
     Some(parse_meta(&entry, &locales))
 }

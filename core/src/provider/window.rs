@@ -7,8 +7,8 @@ use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::provider::rank_results;
 use crate::system::compositor::{self, Compositor, Window};
+use crate::system::desktop_action;
 use crate::system::executor::shell_join;
-use crate::system::icon::find_icon_path;
 
 pub struct WindowPlugin;
 
@@ -96,8 +96,8 @@ fn row(compositor: &dyn Compositor, window: Window) -> ResultItem {
         )),
         icon: window
             .app_id
-            .as_ref()
-            .and_then(|app| find_icon_path(app))
+            .as_deref()
+            .and_then(desktop_action::icon_for_app_id)
             .or_else(|| Some(String::new())),
         ephemeral: true,
     }
