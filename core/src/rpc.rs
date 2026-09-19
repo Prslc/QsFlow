@@ -139,7 +139,7 @@ pub async fn handle(
             }
         }
         "top" => {
-            let items: Vec<crate::models::ResultItem> = crate::system::usage::get_top(20)
+            let items: Vec<crate::wire::ResultItem> = crate::system::usage::get_top(20)
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|value| serde_json::from_value(value).ok())

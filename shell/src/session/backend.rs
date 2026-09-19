@@ -7,7 +7,7 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 
 use calloop::channel::Sender;
 
-use crate::session::model::{ResultItem, ThemeConfig};
+use wayrun_core::wire::{ResultItem, ThemeConfig};
 
 #[derive(Debug, Clone)]
 pub enum BackendEvent {

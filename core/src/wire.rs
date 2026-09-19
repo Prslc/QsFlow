@@ -33,11 +33,18 @@ pub struct ResultItem {
     pub badge: Option<String>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+/// The `{"type":"theme","data":{…}}` payload. Every role is optional, so a
+/// partial payload still applies; the shell draws only the roles it models.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ThemeConfig {
-    pub primary: String,    // accent_bg_color
-    pub on_primary: String, // accent_fg_color
-    pub bg: String,         // window_bg_color
-    pub fg: String,         // window_fg_color
-    pub container: String,  // popover_bg_color
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_primary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
 }

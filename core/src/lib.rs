@@ -1,13 +1,13 @@
 use anyhow::Result;
 
 pub mod config;
-mod models;
 mod plugin;
 mod protocol;
 mod provider;
 mod rpc;
 mod system;
 mod watchers;
+pub mod wire;
 
 /// Watch a file plus its parent directory; shared by the core's own watchers
 /// and the shell's `theme.toml` watcher.

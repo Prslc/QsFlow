@@ -5,9 +5,9 @@ use anyhow::Result;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use crate::wire::ResultItem;
 
 /// Identity of one plugin as described by an external host's `list_plugins`.
 /// The host owns its own name/icon/ready hint; the core just relays them.

@@ -5,10 +5,10 @@ use anyhow::Result;
 use gio::prelude::FileExt;
 use walkdir::WalkDir;
 
-use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
+use crate::wire::{ActionItem, ResultItem};
 
 fn file_icon(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or("") {
@@ -191,7 +191,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ActionItem, ResultItem};
+    use crate::wire::{ActionItem, ResultItem};
 
     fn row(title: &str, on_click: Option<&str>) -> ResultItem {
         ResultItem {

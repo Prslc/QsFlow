@@ -3,12 +3,12 @@ use std::pin::Pin;
 
 use anyhow::Result;
 
-use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::provider::rank_results;
 use crate::system::compositor::{self, Compositor, Window};
 use crate::system::desktop_action;
 use crate::system::executor::shell_join;
+use crate::wire::ResultItem;
 
 pub struct WindowPlugin;
 

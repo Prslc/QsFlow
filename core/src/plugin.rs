@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::models::ResultItem;
 use crate::provider::external::HostMeta;
 use crate::system::icon::find_icon_path;
+use crate::wire::ResultItem;
 
 const DEFAULT_CONFIG: &str = include_str!("../default-plugins.toml");
 
@@ -77,7 +77,7 @@ pub trait Plugin: Send + Sync {
     /// the shell's action panel. The core adds the launcher-level pin/unpin and
     /// history removal itself, so a plugin declares only what is particular to
     /// its rows: a file reveal, the entry's desktop actions, a copy-link.
-    fn actions(&self, _item: &ResultItem) -> Vec<crate::models::ActionItem> {
+    fn actions(&self, _item: &ResultItem) -> Vec<crate::wire::ActionItem> {
         Vec::new()
     }
 }
@@ -533,7 +533,7 @@ fn merge_pins(
 /// The first plugin that recognises a row and declares actions for it. Built-in
 /// rows carry no inline actions, so a type's menu is defined by its provider;
 /// an external host defines its own by putting `actions` on the row.
-async fn plugin_actions(item: &ResultItem) -> Vec<crate::models::ActionItem> {
+async fn plugin_actions(item: &ResultItem) -> Vec<crate::wire::ActionItem> {
     let reg = REGISTRY.read().await;
     for entry in reg.iter() {
         let actions = entry.plugin.actions(item);
@@ -550,7 +550,7 @@ fn attach_actions(
     item: &mut ResultItem,
     scope: &str,
     pinned: &[String],
-    mut plugin_actions: Vec<crate::models::ActionItem>,
+    mut plugin_actions: Vec<crate::wire::ActionItem>,
 ) {
     let Some(on_click) = item.on_click.clone() else {
         return;
@@ -560,10 +560,10 @@ fn attach_actions(
         item.badge = find_icon_path("pin");
     }
 
-    let mut actions: Vec<crate::models::ActionItem> = Vec::new();
+    let mut actions: Vec<crate::wire::ActionItem> = Vec::new();
     if is_pinned {
         let payload = json!({ "scope": scope, "on_click": on_click });
-        actions.push(crate::models::ActionItem {
+        actions.push(crate::wire::ActionItem {
             title: "Unpin".to_string(),
             on_click: format!("unpin:{payload}"),
             icon: Some("window-unpin".to_string()),
@@ -572,14 +572,14 @@ fn attach_actions(
         // Snapshot the row before the launcher actions are appended, so the pin
         // never embeds the action that stores it. A host's own actions stay.
         let payload = json!({ "scope": scope, "item": item });
-        actions.push(crate::models::ActionItem {
+        actions.push(crate::wire::ActionItem {
             title: "Pin to top".to_string(),
             on_click: format!("pin:{payload}"),
             icon: Some("pin".to_string()),
         });
     }
 
-    actions.push(crate::models::ActionItem {
+    actions.push(crate::wire::ActionItem {
         title: "Remove from history".to_string(),
         on_click: format!("forget:{on_click}"),
         icon: Some("edit-delete".to_string()),
@@ -695,7 +695,7 @@ async fn search(input: &str) -> Vec<ResultItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ActionItem, ResultItem};
+    use crate::wire::{ActionItem, ResultItem};
 
     fn parse(src: &str) -> Config {
         toml::from_str(src).unwrap()

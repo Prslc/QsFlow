@@ -167,7 +167,7 @@ pub async fn serve() -> Result<()> {
 /// actually converges. The empty-query scope's pins lead it, and every row
 /// carries its action panel like a search result.
 async fn emit_history(tx: &mpsc::Sender<String>) {
-    let items: Vec<crate::models::ResultItem> = system::usage::get_top(i32::MAX)
+    let items: Vec<crate::wire::ResultItem> = system::usage::get_top(i32::MAX)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|value| serde_json::from_value(value).ok())

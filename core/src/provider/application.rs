@@ -6,9 +6,9 @@ use anyhow::Result;
 use freedesktop_desktop_entry::DesktopEntry;
 use gio::prelude::{AppInfoExt, IconExt};
 
-use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use crate::wire::{ActionItem, ResultItem};
 
 // Tiered weights: a strong textual tier wins outright and fuzzy matching is a
 // last resort for 3+ char queries, so a short query hits a strong tier or misses.

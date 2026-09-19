@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use crate::config::AppearanceConfig;
-use crate::session::model::{ActionItem, ResultItem};
 use crate::ui::theme::Theme;
+use wayrun_core::wire::{ActionItem, ResultItem};
 
 /// Launch dismissals wait this long before the surface goes away.
 pub const EXIT_DELAY_MS: u64 = 150;
@@ -16,21 +16,6 @@ pub enum Hover {
     Row(usize),
     Action(usize),
     Clear,
-}
-
-pub struct Row {
-    pub title: String,
-    pub summary: Option<String>,
-    pub on_click: Option<String>,
-    /// The icon's absolute path; the core resolves every spec before the row
-    /// reaches the shell.
-    pub icon: Option<String>,
-    /// The core's `ephemeral` flag, forwarded when the row is selected.
-    pub ephemeral: bool,
-    /// The secondary commands the action panel offers for this row.
-    pub actions: Vec<ActionItem>,
-    /// A status glyph drawn at the row's right edge (a pin for a pinned row).
-    pub badge: Option<String>,
 }
 
 /// The keyboard-driven action panel (Wox-style) opened with Shift+Enter over the
@@ -49,6 +34,17 @@ impl Menu {
     pub fn selected_action(&self) -> Option<&ActionItem> {
         self.actions.get(self.selected)
     }
+}
+
+/// A blank icon spec means "no icon", so a re-send compares equal.
+fn normalize_icons(items: Vec<ResultItem>) -> Vec<ResultItem> {
+    items
+        .into_iter()
+        .map(|mut item| {
+            item.icon = item.icon.filter(|spec| !spec.is_empty());
+            item
+        })
+        .collect()
 }
 
 /// The selected row's fields that `select` and the launch command need.
@@ -70,7 +66,7 @@ pub struct State {
     pub anchor: Option<usize>,
     /// The live IME preedit, drawn at the caret (never inserted into `query`).
     pub preedit: Option<String>,
-    pub rows: Vec<Row>,
+    pub rows: Vec<ResultItem>,
     pub selected: usize,
     /// Index of the top visible row of the fixed `max_rows` window (`contain`).
     pub first: usize,
@@ -683,23 +679,13 @@ impl State {
     }
 
     pub fn apply_results(&mut self, items: Vec<ResultItem>, now: Instant) {
+        let items = normalize_icons(items);
         // An identical re-send is dropped so it cannot reset the selection.
-        if self.rows_match(&items) && !self.rows.is_empty() {
+        if self.rows == items && !self.rows.is_empty() {
             return;
         }
 
-        self.rows = items
-            .into_iter()
-            .map(|item| Row {
-                title: item.title,
-                summary: item.summary,
-                on_click: item.on_click,
-                icon: item.icon.filter(|spec| !spec.is_empty()),
-                ephemeral: item.ephemeral,
-                actions: item.actions,
-                badge: item.badge,
-            })
-            .collect();
+        self.rows = items;
 
         // A genuinely new payload starts from the top row; what the user is
         // looking at changed under the cursor. A local removal (`⌫`) never comes
@@ -710,18 +696,6 @@ impl State {
         self.menu = None;
         self.contain();
         self.retarget_height(now);
-    }
-
-    fn rows_match(&self, items: &[ResultItem]) -> bool {
-        self.rows.len() == items.len()
-            && self.rows.iter().zip(items).all(|(row, item)| {
-                row.title == item.title
-                    && row.summary == item.summary
-                    && row.on_click == item.on_click
-                    && row.icon.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
-                    && row.actions == item.actions
-                    && row.badge == item.badge
-            })
     }
 
     /// Move the selection by whole rows (the wheel): the highlighted row is what
@@ -889,8 +863,8 @@ pub fn whole_rows(accum: &mut f32, delta: f32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::model::ResultItem;
     use crate::ui::geom::{self, Layout};
+    use wayrun_core::wire::ResultItem;
 
     fn item(
         title: &str,

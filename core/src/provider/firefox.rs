@@ -9,10 +9,10 @@ use rusqlite::Connection;
 use tempfile::NamedTempFile;
 use tokio::task;
 
-use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
+use crate::wire::{ActionItem, ResultItem};
 
 use super::copy_url_action;
 

@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::models::{ActionItem, ResultItem};
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use crate::wire::{ActionItem, ResultItem};
 use anyhow::{Context, Result};
 
 use super::copy_url_action;

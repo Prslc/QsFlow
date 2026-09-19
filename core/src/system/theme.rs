@@ -1,4 +1,4 @@
-use crate::models::ThemeConfig;
+use crate::wire::ThemeConfig;
 use std::path::PathBuf;
 
 /// The Material palette DankMaterialShell generated with matugen for the
@@ -33,11 +33,11 @@ struct DmsPalette {
 /// The built-in dark palette, used when no system theme is available.
 pub fn default_theme() -> ThemeConfig {
     ThemeConfig {
-        primary: "#ffb59f".into(),
-        on_primary: "#561f0f".into(),
-        bg: "#1a110f".into(),
-        fg: "#f1dfda".into(),
-        container: "#271d1b".into(),
+        primary: Some("#ffb59f".into()),
+        on_primary: Some("#561f0f".into()),
+        bg: Some("#1a110f".into()),
+        fg: Some("#f1dfda".into()),
+        container: Some("#271d1b".into()),
     }
 }
 
@@ -59,11 +59,11 @@ fn from_json(text: &str) -> Option<ThemeConfig> {
         _ => file.colors.light,
     };
     Some(ThemeConfig {
-        primary: palette.primary,
-        on_primary: palette.on_primary,
-        bg: palette.background,
-        fg: palette.on_surface,
-        container: palette.surface_container_high,
+        primary: Some(palette.primary),
+        on_primary: Some(palette.on_primary),
+        bg: Some(palette.background),
+        fg: Some(palette.on_surface),
+        container: Some(palette.surface_container_high),
     })
 }
 
@@ -98,20 +98,23 @@ mod tests {
     #[test]
     fn the_mode_key_selects_the_palette() {
         let light = from_json(&sample("light")).unwrap();
-        assert_eq!(light.primary, "#35618e");
-        assert_eq!(light.bg, "#f8f9ff");
-        assert_eq!(light.fg, "#191c20");
-        assert_eq!(light.container, "#eceef4");
+        assert_eq!(light.primary.as_deref(), Some("#35618e"));
+        assert_eq!(light.bg.as_deref(), Some("#f8f9ff"));
+        assert_eq!(light.fg.as_deref(), Some("#191c20"));
+        assert_eq!(light.container.as_deref(), Some("#eceef4"));
 
         let dark = from_json(&sample("dark")).unwrap();
-        assert_eq!(dark.primary, "#a0cafd");
-        assert_eq!(dark.bg, "#101418");
-        assert_eq!(dark.container, "#1d2024");
+        assert_eq!(dark.primary.as_deref(), Some("#a0cafd"));
+        assert_eq!(dark.bg.as_deref(), Some("#101418"));
+        assert_eq!(dark.container.as_deref(), Some("#1d2024"));
     }
 
     #[test]
     fn an_unknown_mode_falls_back_to_light() {
-        assert_eq!(from_json(&sample("sepia")).unwrap().bg, "#f8f9ff");
+        assert_eq!(
+            from_json(&sample("sepia")).unwrap().bg.as_deref(),
+            Some("#f8f9ff")
+        );
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use crate::wire::ResultItem;
 use anyhow::Result;
 
 pub struct Calculator;

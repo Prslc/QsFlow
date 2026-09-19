@@ -11,8 +11,8 @@ pub mod window;
 
 use rustc_hash::FxHashMap as HashMap;
 
-use crate::models::{ActionItem, ResultItem};
 use crate::plugin::Plugin;
+use crate::wire::{ActionItem, ResultItem};
 
 /// The common tail every scored provider shares: strongest score first,
 /// optionally one row per title, capped at `max` results.

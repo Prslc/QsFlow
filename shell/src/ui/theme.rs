@@ -1,5 +1,5 @@
 use crate::config::ColorOverrides;
-use crate::session::model::ThemeConfig;
+use wayrun_core::wire::ThemeConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
@@ -77,12 +77,14 @@ pub fn parse_hex(spec: &str) -> Option<[u8; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::model::ThemeConfig;
+    use wayrun_core::wire::ThemeConfig;
 
     #[test]
     fn parses_hex_and_falls_back() {
         let config = ThemeConfig {
             primary: Some("#7aa2f7".into()),
+            on_primary: None,
+            bg: None,
             fg: Some("nonsense".into()),
             container: None,
         };

@@ -9,9 +9,9 @@ use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use crate::app;
-use crate::session::model::ActionItem;
 use crate::session::{backend, clipboard};
 use crate::ui::geom;
+use wayrun_core::wire::ActionItem;
 
 use super::{Shell, ime};
 

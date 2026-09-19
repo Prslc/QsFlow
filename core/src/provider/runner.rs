@@ -6,9 +6,9 @@ use std::sync::LazyLock;
 use anyhow::Result;
 use rustc_hash::FxHashSet as HashSet;
 
-use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
+use crate::wire::ResultItem;
 
 pub struct Runner;
 
