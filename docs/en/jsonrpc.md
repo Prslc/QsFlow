@@ -1,13 +1,13 @@
 # JSON-RPC 2.0
 
-The `wayrun-core` backend also speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
-over the same stdin/stdout. Lines that parse to an object with
-`"jsonrpc":"2.0"` and a `method` are handled as RPC requests and can be mixed
-with the launcher's text protocol. Responses are newline-delimited JSON on
-stdout.
+The core (`wayrun --core`, or a `wayrun-core` symlink) also speaks
+[JSON-RPC 2.0](https://www.jsonrpc.org/specification) over the same stdin/stdout.
+Lines that parse to an object with `"jsonrpc":"2.0"` and a `method` are handled
+as RPC requests and can be mixed with the launcher's text protocol. Responses
+are newline-delimited JSON on stdout.
 
 ```sh
-printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun-core
+printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun --core
 # -> {"jsonrpc":"2.0","result":[...],"id":1}
 ```
 

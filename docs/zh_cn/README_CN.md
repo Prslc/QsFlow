@@ -28,12 +28,15 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 
 - **模糊应用启动器** — 搜索 XDG 数据目录中的 `.desktop` 条目
   （Name、GenericName、Keywords，以及每条 desktop action 作为独立结果行）。
+- **规范的应用启动** — 桌面应用经 GLib `GAppInfo` 注册表启动
+  （`g_app_info_launch`，正确处理 Exec 引号、字段码、环境变量与
+  `DBusActivatable` 单例），而非把 `Exec=` 交给 shell 重新解析。
 - **文件与路径搜索** — 遍历 `~/Desktop`、`~/Documents`、`~/Downloads` 与主目录，直接打开结果。
 - **剪贴板历史** — 通过 `c` 前缀搜索并粘贴 `cliphist` 记录。
 - **系统命令** — `lock`、`reboot`、`shutdown`、`suspend`、`logout`。
 - **命令运行** — 通过 `r` 前缀模糊搜索 `$PATH` 可执行文件并运行（可带参数）。
 - **窗口切换** — 通过 `w` 前缀切换到任一打开的 niri 窗口。
-- **Firefox 书签与历史** — 直接读取 `places.sqlite`。
+- **Firefox 书签与历史** — 读取最新配置目录 `places.sqlite` 的副本（避免锁定正在使用的数据库）。
 - **网页搜索** — Google 搜索建议（`s`）。
 - **内联工具** — 即时计算。
 - **使用历史** — 留空时展示高频项，按 `Delete` 删除。
@@ -130,13 +133,28 @@ wayrun-launcher` 并还原绑定的启动方式。
 
 ## 配置
 
-首次运行时，`~/.config/wayrun/plugins.toml` 会自动生成：
+首次运行时，`~/.config/wayrun/plugins.toml` 会自动生成（即
+`core/default-plugins.toml` 的副本）：
 
 ```toml
 # ~/.config/wayrun/plugins.toml
 [[plugins]]
+id = "calculator"
+keyword = ""
+enable = true
+
+[[plugins]]
+id = "system-commands"
+keyword = ""
+enable = true
+
+[[plugins]]
 id = "app-search"
-keyword = ""       # 留空 = 无前缀
+keyword = ""
+
+[[plugins]]
+id = "runner"
+keyword = "r"
 enable = true
 
 [[plugins]]
@@ -144,8 +162,29 @@ id = "firefox-bookmarks"
 keyword = "b"
 
 [[plugins]]
+id = "firefox-history"
+keyword = "h"
+
+[[plugins]]
 id = "web-search"
 keyword = "s"
+
+[[plugins]]
+id = "file-search"
+keyword = "f"
+
+[[plugins]]
+id = "path-search"
+keyword = "d"
+
+[[plugins]]
+id = "clipboard"
+keyword = "c"
+
+[[plugins]]
+id = "window"
+keyword = "w"
+enable = true
 ```
 
 调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
@@ -156,9 +195,9 @@ keyword = "s"
 ## JSON-RPC 2.0
 
 `wayrun --core` 在 stdin/stdout 上支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
-与启动器文本协议混用：方法 `search`、`top`、`select`、`forget`、`run`、`resolve_icon`、
-`list_plugins`、`theme`、`ping`。完整协议与结果项 schema 见
-[zh_cn/jsonrpc.md](jsonrpc.md)。
+与启动器文本协议混用：方法 `search`、`top`、`select`、`forget`、`run`、`action`、
+`launch`、`open`、`copy`、`resolve_icon`、`list_plugins`、`theme`、`ping`。完整协议与
+结果项 schema 见 [zh_cn/jsonrpc.md](jsonrpc.md)。
 
 ## 致谢
 

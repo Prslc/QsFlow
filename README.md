@@ -35,15 +35,17 @@ registry, the JSON-RPC protocol and the usage database.
 
 - **Fuzzy app launcher** — search `.desktop` entries across XDG data dirs
   (name, GenericName, Keywords — plus each desktop action as its own row).
-- **Proper app launching** — apps open via the GLib `GAppInfo` registry
+- **Proper app launching** — desktop apps open via the GLib `GAppInfo` registry
   (`g_app_info_launch`, honouring Exec quoting, field codes, env and
-  `DBusActivatable` single-instance), never a raw `sh -c`.
+  `DBusActivatable` single-instance) rather than `Exec=` re-parsed through a
+  shell.
 - **Files & paths** — walk `~/Desktop`, `~/Documents`, `~/Downloads` and home; open in the default app.
 - **Clipboard history** — search and paste from `cliphist` via `c`.
 - **System commands** — `lock`, `reboot`, `shutdown`, `suspend`, `logout`.
 - **Run commands** — fuzzy-search `$PATH` executables via `r` and run them (with args).
 - **Window switcher** — switch to any open niri window via `w`.
-- **Firefox bookmarks & history** — reads `places.sqlite` directly.
+- **Firefox bookmarks & history** — reads a copy of the newest profile's
+  `places.sqlite` (avoiding a lock on the live database).
 - **Web search** — Google suggestions (`s`).
 - **Inline tools** — calculator.
 - **Usage history** — frequent items on empty input; `Delete` removes an entry.
@@ -147,13 +149,28 @@ spawn-per-hotkey binding.
 
 ## Configuration
 
-On first run, `~/.config/wayrun/plugins.toml` is generated automatically:
+On first run, `~/.config/wayrun/plugins.toml` is generated (a copy of
+`core/default-plugins.toml`):
 
 ```toml
 # ~/.config/wayrun/plugins.toml
 [[plugins]]
+id = "calculator"
+keyword = ""
+enable = true
+
+[[plugins]]
+id = "system-commands"
+keyword = ""
+enable = true
+
+[[plugins]]
 id = "app-search"
-keyword = ""       # empty = no prefix
+keyword = ""
+
+[[plugins]]
+id = "runner"
+keyword = "r"
 enable = true
 
 [[plugins]]
@@ -161,8 +178,29 @@ id = "firefox-bookmarks"
 keyword = "b"
 
 [[plugins]]
+id = "firefox-history"
+keyword = "h"
+
+[[plugins]]
 id = "web-search"
 keyword = "s"
+
+[[plugins]]
+id = "file-search"
+keyword = "f"
+
+[[plugins]]
+id = "path-search"
+keyword = "d"
+
+[[plugins]]
+id = "clipboard"
+keyword = "c"
+
+[[plugins]]
+id = "window"
+keyword = "w"
+enable = true
 ```
 
 Reorder entries to change priority, edit `keyword` to remap prefixes, or set
@@ -184,8 +222,9 @@ built-in defaults).
 
 `wayrun --core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over
 stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
-`select`, `forget`, `run`, `resolve_icon`, `list_plugins`, `theme`, `ping`. The
-full protocol spec and the result-item (schema) contract are in
+`select`, `forget`, `run`, `action`, `launch`, `open`, `copy`, `resolve_icon`,
+`list_plugins`, `theme`, `ping`. The full protocol spec and the
+result-item (schema) contract are in
 [docs/en/jsonrpc.md](docs/en/jsonrpc.md).
 
 ## Credit

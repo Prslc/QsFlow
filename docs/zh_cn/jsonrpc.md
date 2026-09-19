@@ -1,11 +1,12 @@
 # JSON-RPC 2.0
 
-`wayrun-core` 后端还支持 [JSON-RPC 2.0](https://www.jsonrpc.org/specification)，
-经由同一条 stdin/stdout。凡解析为含 `"jsonrpc":"2.0"` 与 `method` 的对象行，都会
-作为 RPC 请求处理，并与启动器的文本协议混用。响应为 stdout 上以换行分隔的 JSON。
+core（`wayrun --core`，或 `wayrun-core` 符号链接）还支持
+[JSON-RPC 2.0](https://www.jsonrpc.org/specification)，经由同一条 stdin/stdout。
+凡解析为含 `"jsonrpc":"2.0"` 与 `method` 的对象行，都会作为 RPC 请求处理，并与
+启动器的文本协议混用。响应为 stdout 上以换行分隔的 JSON。
 
 ```sh
-printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun-core
+printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"id":1}' | wayrun --core
 # -> {"jsonrpc":"2.0","result":[...],"id":1}
 ```
 
