@@ -3,3 +3,4 @@ target/
 .run/
 AGENTS.md
 AGENTS.md.bak
+scripts/
