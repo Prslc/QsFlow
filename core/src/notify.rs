@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Result, Watcher};
 
@@ -14,17 +13,14 @@ fn watch_targets(watcher: &mut RecommendedWatcher, path: &Path) {
     }
 }
 
-/// A debounced watcher for one file: it reacts only to that path's writes, at
-/// most once per `debounce`, so an editor's save (several events) reloads once.
-/// `debounce` of zero forwards every event.
-pub fn watch<F>(path: &Path, debounce: Duration, mut on_change: F) -> Option<RecommendedWatcher>
+/// Call `on_event` for every write to `path`; with no debounce, the handler must
+/// keep its state on a failed read and ignore an unchanged value.
+pub fn watch<F>(path: &Path, mut on_event: F) -> Option<RecommendedWatcher>
 where
     F: FnMut() + Send + 'static,
 {
     let watch_path: PathBuf = path.to_path_buf();
     let filter = watch_path.clone();
-    let now = Instant::now();
-    let mut last = now.checked_sub(debounce).unwrap_or(now);
     let mut watcher = notify::recommended_watcher(move |res: Result<Event>| {
         let Ok(ev) = res else { return };
         // React to writes, not reads: the reload reads the file, so an
@@ -32,14 +28,9 @@ where
         if matches!(ev.kind, EventKind::Access(_)) {
             return;
         }
-        if !ev.paths.iter().any(|p| p == &filter) {
-            return;
+        if ev.paths.iter().any(|p| p == &filter) {
+            on_event();
         }
-        if last.elapsed() < debounce {
-            return;
-        }
-        last = Instant::now();
-        on_change();
     })
     .ok()?;
 

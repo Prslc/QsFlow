@@ -1,13 +1,7 @@
-use std::time::Duration;
-
 use notify::RecommendedWatcher;
 use tokio::sync::mpsc;
 
 use crate::notify::watch;
-
-/// A plugin reload re-forks every external host, so it is debounced longer than
-/// a config-only reload.
-const RELOAD_DEBOUNCE: Duration = Duration::from_millis(400);
 
 /// Watch the DMS palette and re-emit a theme message to the UI on change, since
 /// a resident core otherwise reads the theme once at start.
@@ -23,7 +17,7 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<RecommendedWatcher> {
     .ok();
     let tx = tx.clone();
 
-    watch(&path, Duration::ZERO, move || {
+    watch(&path, move || {
         let Ok(json) = serde_json::to_string(&serde_json::json!({
             "type": "theme",
             "data": crate::system::theme::load_theme(),
@@ -50,28 +44,29 @@ pub fn watch_config() -> Option<RecommendedWatcher> {
     let path = crate::config::path()?;
     let handle = tokio::runtime::Handle::current();
 
-    watch(&path, RELOAD_DEBOUNCE, move || {
+    watch(&path, move || {
         let handle = handle.clone();
         handle.spawn(async move {
-            crate::config::reload();
-            crate::plugin::reload().await;
+            if crate::config::reload() {
+                crate::plugin::reload().await;
+            }
         });
     })
 }
 
-/// Watch `plugins.toml` and reload the registry (resident mode would otherwise
-/// keep the startup config forever).
+/// Watch `plugins.toml` and rebuild the registry, so resident mode picks up an
+/// edit without a restart; an unchanged file is a no-op.
 pub fn watch_plugins() -> Option<RecommendedWatcher> {
     let path = crate::system::fs::get_home()
         .ok()?
         .join(".config/wayrun/plugins.toml");
     let handle = tokio::runtime::Handle::current();
 
-    watch(&path, RELOAD_DEBOUNCE, move || {
+    watch(&path, move || {
         // notify's callback runs off the runtime; hop back in to await.
         let handle = handle.clone();
         handle.spawn(async move {
-            crate::plugin::reload().await;
+            crate::plugin::reload_if_changed().await;
         });
     })
 }

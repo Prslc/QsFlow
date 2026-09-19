@@ -37,8 +37,18 @@ pub fn get() -> Config {
     cell().read().expect("config lock poisoned").clone()
 }
 
-pub fn reload() {
-    *cell().write().expect("config lock poisoned") = Config::load();
+/// Reload `config.toml`, returning whether the value changed; a watcher rebuilds
+/// the plugin registry (how a provider sees a setting) only when it did.
+pub fn reload() -> bool {
+    let Some(new) = Config::load_checked() else {
+        return false;
+    };
+    let mut guard = cell().write().expect("config lock poisoned");
+    if *guard == new {
+        return false;
+    }
+    *guard = new;
+    true
 }
 
 pub fn web_search_engine() -> String {

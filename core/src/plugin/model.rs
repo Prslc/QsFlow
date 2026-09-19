@@ -2,12 +2,12 @@ use serde::Deserialize;
 
 use crate::provider::external::HostMeta;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 pub struct Config {
     pub plugins: Vec<PluginEntry>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 pub struct PluginEntry {
     pub id: String,
     pub keyword: String,

@@ -75,7 +75,7 @@ async fn ensure_loaded() {
     if !REGISTRY_READY.load(Ordering::Acquire) {
         let _guard = INIT.lock().await;
         if !REGISTRY_READY.load(Ordering::Acquire) {
-            do_reload().await;
+            rebuild().await;
         }
     }
 }
@@ -84,11 +84,25 @@ async fn ensure_loaded() {
 /// edit without a restart; it lands on the next search / `?` / `list_plugins`.
 pub async fn reload() {
     let _guard = INIT.lock().await;
-    do_reload().await;
+    rebuild().await;
 }
 
-async fn do_reload() {
+/// Rebuild only when `plugins.toml` actually changed, so one save's several
+/// events do not re-fork every external host.
+pub async fn reload_if_changed() {
+    let _guard = INIT.lock().await;
     let new_config = load_or_default();
+    if REGISTRY_READY.load(Ordering::Acquire) && *CONFIG.read().await == new_config {
+        return;
+    }
+    apply(new_config).await;
+}
+
+async fn rebuild() {
+    apply(load_or_default()).await;
+}
+
+async fn apply(new_config: Config) {
     let entries = build_entries(&new_config);
     *CONFIG.write().await = new_config;
     *REGISTRY.write().await = entries;
@@ -241,9 +255,8 @@ fn load_or_default() -> Config {
     config
 }
 
-/// The shipped `plugins.toml`, written only on the first load: the watcher
-/// reloads this file, and an editor's atomic save briefly removes it, so a
-/// reload that recreated it would clobber the edit.
+/// The shipped `plugins.toml`, written once; a watcher reload must not recreate
+/// the file an editor just replaced.
 fn ensure_default_config(path: &std::path::Path) {
     static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     ONCE.get_or_init(|| {

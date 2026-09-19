@@ -10,8 +10,8 @@ mod system;
 mod watchers;
 pub mod wire;
 
-/// Watch one file (plus its parent dir) and debounce its changes; shared by the
-/// core's own watchers and the shell's `theme.toml` watcher.
+/// Call back on every write to one file (and its parent dir); shared by the
+/// core's watchers and the shell's `theme.toml` watcher.
 pub use notify::watch;
 
 /// Create a file only when it is absent; shared by the template writers so a

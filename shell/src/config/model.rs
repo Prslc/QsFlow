@@ -253,19 +253,19 @@ struct MotionFile {
 
 impl AppearanceConfig {
     pub fn load() -> Self {
+        Self::load_checked().unwrap_or_default()
+    }
+
+    /// The file's config, or `None` when it is absent or unparseable; a reload
+    /// keeps the applied config instead of resetting to defaults.
+    pub fn load_checked() -> Option<Self> {
         super::ensure_template();
+        let path = super::theme_path()?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let file = toml::from_str::<ThemeFile>(&text).ok()?;
         let mut config = Self::default();
-        let Some(path) = super::theme_path() else {
-            return config;
-        };
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return config;
-        };
-        let Ok(file) = toml::from_str::<ThemeFile>(&text) else {
-            return config;
-        };
         config.apply(file);
-        config
+        Some(config)
     }
 
     fn apply(&mut self, file: ThemeFile) {

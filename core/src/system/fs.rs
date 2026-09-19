@@ -7,9 +7,8 @@ pub fn get_home() -> Result<PathBuf> {
     dirs::home_dir().context("finding the user HOME directory")
 }
 
-/// Create `path` with `contents` only when it does not exist. `O_EXCL` makes the
-/// test atomic, so a config file that an editor's atomic save just recreated is
-/// never truncated by a watcher reload.
+/// Create `path` only when it is absent; `O_EXCL` keeps the test atomic, so an
+/// editor's atomic save is never truncated.
 pub fn write_if_absent(path: &Path, contents: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

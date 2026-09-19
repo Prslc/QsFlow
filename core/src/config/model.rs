@@ -56,19 +56,19 @@ struct FontFile {
 }
 
 impl Config {
-    pub(super) fn load() -> Self {
+    /// The file's config, or `None` when it is absent or unparseable. A watcher
+    /// reload keeps what is applied rather than resetting to defaults.
+    pub(super) fn load_checked() -> Option<Self> {
+        let path = path()?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let file = toml::from_str::<ConfigFile>(&text).ok()?;
         let mut config = Self::default();
-        let Some(path) = path() else {
-            return config;
-        };
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return config;
-        };
-        let Ok(file) = toml::from_str::<ConfigFile>(&text) else {
-            return config;
-        };
         config.apply(file);
-        config
+        Some(config)
+    }
+
+    pub(super) fn load() -> Self {
+        Self::load_checked().unwrap_or_default()
     }
 
     fn apply(&mut self, file: ConfigFile) {
