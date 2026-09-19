@@ -55,9 +55,8 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
-        // same engine icon and summary as the header row — icon-less
-        // or summary-less rows would otherwise render as the UI's bare
-        // 48px text-only "simple" rows and look incoherent
+        // Same engine icon and summary as the header row, so every suggestion
+        // renders uniformly.
         results.extend(
             suggestions
                 .iter()

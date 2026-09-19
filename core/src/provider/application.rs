@@ -10,9 +10,8 @@ use crate::models::ResultItem;
 use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 
-// Tiered weights, ported from DMS's launcher scorer: a strong textual tier
-// wins outright; fuzzy matching is a weak last resort for 3+ char queries
-// only, so short queries must hit a strong tier or miss entirely.
+// Tiered weights: a strong textual tier wins outright and fuzzy matching is a
+// last resort for 3+ char queries, so a short query hits a strong tier or misses.
 const W_EXACT: u32 = 10_000;
 const W_PREFIX: u32 = 5_000;
 const W_WORD_BOUNDARY: u32 = 3_000;
@@ -25,9 +24,8 @@ const W_ACTION_EXACT: u32 = 8_000;
 const W_ACTION_PREFIX: u32 = 4_000;
 const W_ACTION_SUBSTRING: u32 = 400;
 
-/// `GenericName` + `Keywords` from the app's `.desktop` file (plain,
-/// unlocalised keys only). Parsed lazily — the gio `AppInfo` interface does
-/// not expose them, and they are only consulted once name/comment miss.
+/// `GenericName` + `Keywords` from the app's `.desktop` file, localised through
+/// its own `Key[locale]=` entries. gio's `AppInfo` does not expose them.
 struct DesktopMeta {
     generic: Option<String>,
     keywords: Vec<String>,
@@ -153,8 +151,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
             ));
         }
 
-        // each action is its own row (DMS-style), titled after the action and
-        // launched by the UI
+        // Each action is its own row (DMS-style).
         for action in app.meta.iter().flat_map(|m| &m.actions) {
             let action_score = action_score(&action.name_lower, &query_lower);
             if action_score > 0 {
@@ -225,8 +222,6 @@ fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> 
         return W_SUBSTRING;
     }
 
-    // fuzzy only for queries of 3+ chars; short queries must match a strong
-    // tier or they are simply not a hit
     if query_lower.chars().count() >= 3 {
         let fs = fuzzy_score(field_lower, query_lower);
         if fs > 0.0 {
@@ -383,11 +378,9 @@ fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
     }
 }
 
-/// Locate the `.desktop` file by id through the XDG data dirs and read the
-/// `GenericName`/`Keywords`/`Actions` keys. gio-rs binds no `GDesktopAppInfo`, so
-/// this is the only way to reach them. Only the preferred file is read: a user
-/// override replaces the packaged entry whole (which is also what keeps an
-/// action row from naming a group the launched file does not define).
+/// Read `GenericName`/`Keywords`/`Actions` from the `.desktop` file the XDG data
+/// dirs resolve for `id`; gio-rs binds no `GDesktopAppInfo`. Only the preferred
+/// file is read, so an action row cannot name a group the launched file lacks.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     let path = crate::system::desktop_action::find(id)?;
     let locales = desktop_locales();

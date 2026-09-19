@@ -7,7 +7,7 @@ pub const FOOTER_H: f32 = 28.0;
 pub const RADIUS: f32 = 16.0;
 pub const CARD_MAX_H: f32 = 480.0;
 
-/// Backdrop dim at full opacity (the QML's `dim.opacity = 0.30`).
+/// Backdrop dim at full opacity.
 pub const DIM_ALPHA: f32 = 0.30;
 /// Card fill alpha — translucent so the compositor blur reads as frost.
 pub const CARD_ALPHA: f32 = 0.72;

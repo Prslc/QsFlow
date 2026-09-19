@@ -4,7 +4,6 @@ use anyhow::Result;
 use std::fs;
 
 pub fn load_theme() -> ThemeConfig {
-    // default color
     let mut theme = ThemeConfig {
         primary: "#ffb59f".into(),
         on_primary: "#561f0f".into(),

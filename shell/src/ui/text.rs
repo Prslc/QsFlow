@@ -6,11 +6,11 @@ use cosmic_text::{
 };
 use tiny_skia::Pixmap;
 
-/// The machine's CJK-capable default (`fc-match sans:lang=zh-cn`); cosmic-text
-/// falls back per glyph for anything it lacks.
+/// The machine's CJK-capable sans default; cosmic-text falls back per glyph for
+/// anything it lacks.
 pub const FAMILY: &str = "Source Han Sans CN";
 
-/// The card's line height: 1.2 × the font size, as the QML's text used.
+/// The card's line height as a multiple of the font size.
 pub const LINE_HEIGHT: f32 = 1.2;
 
 pub struct Shaped {
@@ -52,10 +52,9 @@ impl TextEngine {
     }
 
     /// Drop the rasterised-glyph bitmaps and the shaped-line cache. The
-    /// `FontSystem`'s font database is process-lifetime (rebuilding it costs
-    /// ~70ms), but the glyph cache grows with every distinct glyph and size a
-    /// show draws, so the resident shell frees it on dismiss the way it frees
-    /// the icon caches.
+    /// `FontSystem`'s font database is process-lifetime, but the glyph cache
+    /// grows with every distinct glyph and size a show draws, so the resident
+    /// shell frees it on dismiss.
     pub fn clear_cache(&mut self) {
         self.cache = SwashCache::new();
         self.shapes.clear();
@@ -196,9 +195,7 @@ impl TextEngine {
                             }
                             SwashContent::Color => {
                                 // A bitmap glyph (an emoji) is straight RGBA:
-                                // its own alpha is the coverage. Using a fixed
-                                // 255 wrote the whole placement box opaque,
-                                // transparent padding included.
+                                // its own alpha is the coverage.
                                 let alpha = (u16::from(image.data[i + 3]) * u16::from(color[3])
                                     / 255) as u8;
                                 if inside {

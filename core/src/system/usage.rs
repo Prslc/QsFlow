@@ -27,9 +27,8 @@ fn open_conn() -> Result<Connection> {
     Ok(conn)
 }
 
-/// One connection for the process lifetime — every keystroke of an empty
-/// query calls `get_top`, and re-opening the database file each time was
-/// pure overhead.
+/// One connection for the process lifetime: an empty query calls `get_top` on
+/// every keystroke.
 static DB: LazyLock<Mutex<Connection>> =
     LazyLock::new(|| Mutex::new(open_conn().expect("failed to open wayrun usage database")));
 
@@ -39,9 +38,9 @@ fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
     f(&guard)
 }
 
-/// Older cores keyed history by raw `on_click` and lacked this column;
-/// migrate merges same-title rows (counts sum, the most recent item wins) so
-/// one app reached via `run:<exec>` and `launch:<id>` is a single entry.
+/// Migrate a database that lacks the `on_click` column, merging same-title
+/// rows (counts sum, the most recent item wins) so one app reached via
+/// `run:<exec>` and `launch:<id>` is a single entry.
 fn migrate(conn: &Connection) -> Result<()> {
     let has_on_click: bool = {
         let mut stmt = conn.prepare("PRAGMA table_info(usage)")?;
@@ -196,8 +195,8 @@ fn forget_with(conn: &Connection, on_click: &str) -> Result<bool> {
     Ok(deleted > 0)
 }
 
-/// Drop `copy:` rows recorded before the guard existed. Runs at core startup
-/// so older usage databases heal on upgrade; idempotent.
+/// Drop `copy:` rows, which are not re-launchable targets. Runs at core
+/// startup so an older database heals on upgrade; idempotent.
 pub fn purge_ephemeral() -> Result<()> {
     with_db(purge_with)
 }
@@ -291,7 +290,7 @@ mod tests {
     #[test]
     fn same_title_actions_merge_into_one_entry() {
         let conn = test_conn();
-        // legacy run: form then the current launch: form — same app
+        // both on_click forms for the same app
         record_with(
             &conn,
             r#"{"title":"Telegram","on_click":"run:Telegram --"}"#,
@@ -423,8 +422,7 @@ mod tests {
     #[test]
     fn migrate_merges_legacy_split_rows() {
         let conn = legacy_conn();
-        // old layout: key IS the on_click; the same app recorded under both
-        // its legacy run: form and the current launch: form
+        // old layout: key IS the on_click; the same app under both forms
         conn.execute(
             "INSERT INTO usage (key, count, last_used_at, item_json)
              VALUES ('run:Telegram --', 8, '2026-09-03 15:40:00',

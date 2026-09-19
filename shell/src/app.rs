@@ -7,8 +7,7 @@ use crate::ui::theme::Theme;
 
 pub const ENTRANCE_MS: u64 = 240;
 pub const REFLOW_MS: u64 = 150;
-/// The QML's `exitTimer`: launch dismissals wait this long before the surface
-/// goes away.
+/// Launch dismissals wait this long before the surface goes away.
 pub const EXIT_DELAY_MS: u64 = 150;
 /// The field's caret blink interval.
 pub const CARET_BLINK_MS: u64 = 500;
@@ -59,12 +58,11 @@ pub struct State {
     /// The layer surface's logical size.
     pub surface: (u32, u32),
     /// The integer buffer scale `wl_surface` reports, used when the compositor
-    /// offers no fractional scale: 2 on a 1.25× output, where the exact ratio
-    /// would be better.
+    /// offers no fractional scale; it is the ceiling of the exact ratio.
     pub scale: i32,
-    /// The exact ratio from `wp_fractional_scale_v1` (`1.25` on the laptop
-    /// panel). When set, the buffer is `surface × this` and a viewport maps it
-    /// back onto the logical size, so `scale` above is not used for sizing.
+    /// The exact ratio from `wp_fractional_scale_v1`. When set, the buffer is
+    /// `surface × this` and a viewport maps it back onto the logical size, so
+    /// `scale` above is not used for sizing.
     pub fractional: Option<f32>,
     /// Whether the layer surface currently exists.
     pub visible: bool,
@@ -161,14 +159,12 @@ impl State {
         geom::DIM_ALPHA * self.entrance(now)
     }
 
-    /// The card's fill alpha: the entrance animation is an opacity fade (the
-    /// QML scaled the card, which a flat pixmap cannot).
+    /// The card's fill alpha for the entrance's opacity fade.
     pub fn entrance(&self, now: Instant) -> f32 {
         if self.reduce_motion {
-            // Reduced motion starts at the end state, as the iced-era runtime
-            // did. Returning 0 here is not "no animation", it is an invisible
-            // launcher: the dim and every `fade()`d colour are multiplied by
-            // this and the buffer stays fully transparent.
+            // Reduced motion starts at the end state: returning 0 here leaves
+            // the dim and every `fade()`d colour transparent, an invisible
+            // launcher rather than "no animation".
             return 1.0;
         }
         if !self.entrance_started {
@@ -241,8 +237,7 @@ impl State {
         self.preedit_active = false;
     }
 
-    /// Keep the selection inside the five-row window, minimally: the QML's
-    /// `positionViewAtIndex(currentIndex, ListView.Contain)`.
+    /// Keep the selection inside the five-row window, minimally.
     pub fn contain(&mut self) {
         self.first = geom::contain(self.selected, self.first, self.rows.len());
         self.resync_hover();
@@ -519,8 +514,7 @@ impl State {
     }
 
     pub fn apply_results(&mut self, items: Vec<ResultItem>, now: Instant) {
-        // The QML's `lastResults` dedupe: an identical re-send is dropped so it
-        // cannot reset the selection.
+        // An identical re-send is dropped so it cannot reset the selection.
         if self.rows_match(&items) && !self.rows.is_empty() {
             return;
         }
@@ -550,10 +544,10 @@ impl State {
             })
             .collect();
 
-        // The QML's `onResultsUpdated`: a genuinely new payload starts from the
-        // top row, because what the user is looking at just changed under the
-        // cursor. A local removal (`⌫`) never comes through here, so it keeps
-        // the cursor in place, and an identical re-send returned above.
+        // A genuinely new payload starts from the top row; what the user is
+        // looking at changed under the cursor. A local removal (`⌫`) never comes
+        // through here and an identical re-send returned above, so both keep the
+        // cursor.
         self.selected = 0;
         self.contain();
         self.retarget_height(now);
@@ -640,9 +634,8 @@ fn ease_out_quint(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(5)
 }
 
-/// The one command line a row's `on_click` becomes: `ui/SearchWindow.qml:launch()`
-/// records the usage first, then maps the scheme to a verb. Anything without a
-/// scheme is a shell command.
+/// The one command line a row's `on_click` becomes; anything without a scheme
+/// is a shell command.
 pub fn launch_command(target: &str) -> String {
     if let Some(id) = target.strip_prefix("launch:") {
         format!("launch {id}")
@@ -711,7 +704,7 @@ mod tests {
         // stepping past the window scrolls by exactly one row
         assert_eq!(geom::contain(geom::MAX_ROWS, 0, 20), 1);
         assert_eq!(geom::contain(geom::MAX_ROWS + 1, 1, 20), 2);
-        // moving up *inside* the window keeps it put (ListView.Contain)
+        // moving up *inside* the window keeps it put
         assert_eq!(geom::contain(3, 1, 20), 1);
         // leaving it upwards follows the selection
         assert_eq!(geom::contain(0, 3, 20), 0);
@@ -769,8 +762,8 @@ mod tests {
             ),
         ];
         state.apply_results(changed, now);
-        // a genuinely new payload starts from the top row, as the QML's
-        // `onResultsUpdated` did: what the cursor pointed at has changed
+        // a genuinely new payload starts from the top row: what the cursor
+        // pointed at has changed
         assert_eq!(state.selected, 0);
         assert_eq!(state.rows[1].on_click.as_deref(), Some("run:firefox"));
     }
@@ -976,8 +969,7 @@ mod tests {
         assert_eq!(state.scale_factor(), 1.25);
         assert!(state.uses_viewport());
         // the same logical surface asks for 1920 physical pixels through the
-        // fractional ratio and 3072 through the integer scale: 2.56x the pixels
-        // for 1.25x of detail
+        // fractional ratio and 3072 through the integer scale
         assert_eq!((1536.0 * state.scale_factor()).round() as u32, 1920);
         assert_eq!((1536.0 * 2.0) as u32, 3072);
     }

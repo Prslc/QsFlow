@@ -75,8 +75,8 @@ pub fn launch_app(desktop_id: &str) {
     }
 }
 
-/// Open a URI with the default handler. Not `Qt.openUrlExternally`: outside a
-/// Flatpak/Snap sandbox it falls back to `xdg-open`, which drops `Terminal=true`.
+/// Open a URI with the default handler via `GLib`. `xdg-open` would drop
+/// `Terminal=true` outside a Flatpak/Snap sandbox.
 pub fn open_uri(uri: &str) {
     let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
 }

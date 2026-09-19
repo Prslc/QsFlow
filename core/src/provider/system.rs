@@ -57,10 +57,9 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         ),
     ];
 
-    // prefix match only: the default fallback chain short-circuits on the
-    // first non-empty plugin (calculator -> system-commands -> apps), so
-    // loose mid-word substring hits ("bo" inside "reBOot") shadowed
-    // app-search's stronger whole-name matches and hid apps like Bottles
+    // Prefix match only: the fallback chain short-circuits on the first
+    // non-empty plugin, so a loose mid-word hit would shadow app-search's
+    // whole-name matches for the same query.
     commands
         .iter()
         .filter(|(name, keyword, _, _)| {

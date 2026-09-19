@@ -63,8 +63,7 @@ fn find_papirus(spec: &str) -> Option<String> {
         bases.push(format!("{home}/.local/share/icons"));
     }
 
-    // Cartesian scan in base × size × category order; first existing file
-    // wins, same as the loop it replaces
+    // Cartesian scan in base × size × category order; first existing file wins.
     iproduct!(&bases, PAPIRUS_SIZES, &categories).find_map(|(base, size, category)| {
         let path = format!("{base}/Papirus/{size}/{category}/{name}.svg");
         Path::new(&path).exists().then_some(path)
@@ -114,7 +113,7 @@ fn do_find(name: &str) -> Option<String> {
 
     let search = |dir: &str| {
         // lazy Cartesian scan, theme × category × size × ext; first existing
-        // file wins (same order & early exit as the nested loops it replaces)
+        // file wins
         iproduct!(themes, THEME_CATEGORIES, ICON_SIZES, ICON_EXTS).find_map(
             |(theme, category, size, ext)| {
                 let path = format!("{dir}/{theme}/{size}/{category}/{name}.{ext}");
@@ -179,9 +178,8 @@ mod tests {
     }
     #[test]
     fn absolute_path_passes_through_unchanged() {
-        // regression: do_find used to drop the leading-`/` early return,
-        // so resolved paths re-entered the theme search and fell back to
-        // the default placeholder
+        // An absolute path must short-circuit, or it re-enters the theme
+        // search and falls back to the default placeholder.
         let p = "/usr/share/icons/Papirus/48x48/apps/github.svg";
         assert_eq!(find_icon_path(p), Some(p.to_string()));
     }

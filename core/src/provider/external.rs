@@ -117,12 +117,9 @@ impl Plugin for External {
     }
 }
 
-/// How long one host call may take. A plugin answers over the network (github's
-/// search API, a translation service), so this is a ceiling and not an
-/// expectation: a host that stalls must cost the launcher a few seconds, never
-/// the session. Without it, one stalled host hangs the search that touched it
-/// — and, when it stalls during discovery, every later search and `?` with it,
-/// because discovery holds `plugin::INIT` until it returns.
+/// Ceiling for one host call: a stalled host must cost the launcher seconds,
+/// never the session. Discovery holds `plugin::INIT` until it returns, so a
+/// stall there would block every later search and `?` behind it.
 const HOST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// One JSON-RPC request/response round trip against `command`: spawn, write the
@@ -314,13 +311,10 @@ fn resolve_command(command: &str) -> String {
     command.to_string()
 }
 
-/// Relay a row's removal to the host that owns it: when `on_click` is a
-/// `run:` shell command whose first token is this host's `command` (as
-/// configured or resolved on PATH), ask the host to `forget` the row — it
-/// may delete plugin data (e.g. a todo item). `true` means this host owned the
-/// row and acknowledged the relay; a host without a `forget` method answers
-/// `-32601`, which is an error object and therefore "not mine". Host failures
-/// are silent: usage history was already removed either way.
+/// Relay a row's removal to the host that owns it: `on_click` must be a `run:`
+/// command whose first token is this host's `command`. `true` means the host
+/// owned the row and acknowledged it; `-32601` ("not mine") and host failures
+/// are `false`, because usage history was already removed either way.
 async fn forget_external(command: &str, on_click: &str) -> Result<bool> {
     let Some(argv0) = run_argv0(on_click) else {
         return Ok(false);
@@ -451,10 +445,7 @@ mod tests {
         assert!(!owned, "-32601 means the row is not this host's to drop");
     }
 
-    /// A host that never answers must cost the deadline, not the session: this
-    /// is what a `urlopen` without a timeout does when the network stalls, and
-    /// it used to hang the search that touched it — and, when it stalled during
-    /// discovery, every later search and `?` behind it.
+    /// A host that never answers must cost the deadline, not the session.
     #[tokio::test]
     async fn a_stalled_host_is_given_up_on() {
         let dir = tempfile::tempdir().unwrap();

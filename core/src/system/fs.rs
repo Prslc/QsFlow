@@ -63,7 +63,6 @@ fn find_in_xdg_data(sub_path: &str) -> Option<String> {
 }
 
 pub fn get_resource_path(sub_path: &str) -> Option<String> {
-    // explicit override via environment variable
     if let Ok(dir) = env::var("QFLOW_RESOURCE_DIR") {
         let p = PathBuf::from(dir).join(sub_path);
         if p.exists() {

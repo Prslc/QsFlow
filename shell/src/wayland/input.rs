@@ -57,10 +57,9 @@ impl Shell {
         let shift = self.modifiers.shift;
 
         // `redraw` is "something on screen changed"; `edited` is narrower and
-        // only a *query* change may send a search line. The QML searched from
-        // the field's `onTextChanged`, so navigation (and ⌫, which forgets a
-        // row) must not re-run the search: a re-search after `forget` re-emits
-        // the row the user just deleted.
+        // only a *query* change may send a search line. Navigation (and ⌫,
+        // which forgets a row) must not re-run the search: a re-search after
+        // `forget` re-emits the row the user just deleted.
         let mut redraw = true;
         let mut edited = false;
         match event.keysym {
@@ -109,7 +108,7 @@ impl Shell {
         }
 
         if redraw {
-            // A key press restarts the caret's flash, as Qt's field does.
+            // A key press restarts the caret's flash.
             self.app.caret_visible = true;
             self.app.caret_at = now;
             self.redraw();
@@ -121,15 +120,13 @@ impl Shell {
 
     /// Every query change is one search line; the core debounces and aborts
     /// superseded searches. Every path that edits the field goes through here —
-    /// typing, paste, the IME and the ✕ — because the QML searched from
-    /// `onTextChanged` and a path that skipped it would draw a query the core
-    /// never saw.
+    /// typing, paste, the IME and the ✕ — or it draws a query the core never
+    /// saw.
     pub(super) fn query_changed(&self) {
         backend::send(&self.app.query);
     }
 
-    /// `ui/SearchWindow.qml:launch()` — usage recording first, then exactly one
-    /// command line to the core.
+    /// Usage recording first, then exactly one command line to the core.
     fn submit(&mut self, now: Instant) {
         if self.app.preedit_active {
             return;
@@ -151,10 +148,10 @@ impl Shell {
 
         backend::send(&app::launch_command(&launch.target));
 
-        // The QML's `exitTimer`: the surface outlives the launch by 150ms, in
-        // both modes. Without the delay a dev (non-resident) run returns from
-        // the event loop while the verb is still queued for the writer thread,
-        // and the process exit can beat the line to the core.
+        // The surface outlives the launch by 150ms, in both modes. Without the
+        // delay a non-resident run returns from the event loop while the verb
+        // is still queued for the writer thread, and the process exit can beat
+        // the line to the core.
         let at = now + Duration::from_millis(app::EXIT_DELAY_MS);
         self.app.dismiss_at = Some(at);
         let _ = self.loop_handle.insert_source(
@@ -169,10 +166,9 @@ impl Shell {
     }
 
     /// `⌫`: ask the core to forget the selected row. The row leaves the list
-    /// only once the core answers that something was really dropped — a
-    /// provider that implements no `forget` (every built-in) and a row that was
-    /// never used answer `false`, and the row stays put instead of vanishing
-    /// from a list that would just re-emit it on the next search.
+    /// only once the core answers that something was really dropped; a
+    /// provider with no `forget` answers `false` and the row stays, since the
+    /// next search would just re-emit it.
     fn forget(&mut self) {
         if let Some(target) = self.app.selected_target() {
             backend::forget_row(&target);

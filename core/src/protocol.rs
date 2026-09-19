@@ -74,22 +74,21 @@ pub async fn serve() -> Result<()> {
     )
     .await;
 
-    // Keep the watchers alive for the core's lifetime: resident mode re-emits
-    // the theme / reloads the registry on file change instead of holding the
-    // startup read forever.
+    // Hold the watchers for the core's lifetime: dropping them stops live theme
+    // and plugin-registry updates.
     let _theme_watcher = watchers::watch_theme(&tx);
 
     let _plugins_watcher = watchers::watch_plugins();
 
-    // Purge copy:-keyed rows recorded before the exclusion rule (idempotent;
-    // the guard in usage::record keeps new ones out).
+    // Drop copy:-keyed history rows; idempotent, and usage::record keeps new
+    // ones out.
     let _ = system::usage::purge_ephemeral();
 
     let mut reader = BufReader::new(io::stdin()).lines();
     let mut search: Option<JoinHandle<()>> = None;
-    // A `forget` walks the external hosts, which waits on them, so it runs in a
-    // task; the handles are kept so a one-shot client still gets its reply
-    // before this process returns.
+    // `forget` walks the external hosts and waits on them, so it runs in a task;
+    // the handles are awaited before returning so a one-shot client still gets
+    // its reply.
     let mut forgets: Vec<JoinHandle<()>> = Vec::new();
 
     while let Some(line) = reader.next_line().await? {
@@ -128,8 +127,8 @@ pub async fn serve() -> Result<()> {
     Ok(())
 }
 
-/// The empty query: the full ranked history. A 20-row cap made ⌫ curation never
-/// visibly converge, since deleted rows kept refilling from beyond it.
+/// The empty query: the full ranked history, uncapped so deleting a row
+/// actually converges.
 async fn emit_history(tx: &mpsc::Sender<String>) {
     let items = system::usage::get_top(i32::MAX).unwrap_or_default();
     emit(tx, &serde_json::json!({ "type": "results", "data": items })).await;

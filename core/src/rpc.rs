@@ -79,8 +79,8 @@ fn run_cmd(params: Option<&Value>) -> Result<String, ()> {
 
 /// Handle a line as a JSON-RPC 2.0 request. Returns `true` if `line` was a
 /// JSON-RPC request (valid or not); `false` if it should fall through to the
-/// legacy text protocol. `forgets` collects the tasks a `forget` spawns, so the
-/// caller can wait for their replies before the process exits.
+/// text protocol. `forgets` collects the tasks a `forget` spawns, so the caller
+/// can await their replies before the process exits.
 pub async fn handle(
     line: &str,
     tx: &mpsc::Sender<String>,
@@ -122,12 +122,12 @@ pub async fn handle(
                 return true;
             };
             // Await inline (request/response), unlike the streaming text-search
-            // path: a JSON-RPC client gets its correlated response even for a
-            // one-shot `printf ... | wayrun --core` (no need to hold stdin open).
+            // path: a one-shot client gets its correlated response without
+            // holding stdin open.
             if text.is_empty() {
                 // `top` is the dedicated most-used method; an empty `search`
-                // query is not a search. (The text protocol handles its own
-                // empty-line default in main.rs, so this never affects the UI.)
+                // query is not a search. The text protocol owns its empty-line
+                // default, so this never affects the UI.
                 if has_id {
                     respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
@@ -371,8 +371,7 @@ mod tests {
     }
     #[tokio::test]
     async fn resolve_icon_passes_absolute_path_through() {
-        // regression: do_find dropped its leading-`/` early return, so an
-        // already-resolved path fell through to the default placeholder
+        // an absolute path is already resolved and must pass through unchanged
         let (handled, msgs) = run(
             r#"{"jsonrpc":"2.0","method":"resolve_icon","params":{"name":"/usr/share/icons/Papirus/48x48/apps/github.svg"},"id":8}"#,
         )
@@ -451,7 +450,7 @@ mod tests {
 
     #[test]
     fn search_text_rejects_non_text_params() {
-        // bare string and the old `query` alias are no longer accepted
+        // text must be an object field; bare strings and a `query` alias are rejected
         assert!(search_text(Some(&Value::String("firefox".into()))).is_err());
         let empty: Value = serde_json::from_str("{}").unwrap();
         let query: Value = serde_json::from_str(r#"{"query":"x"}"#).unwrap();

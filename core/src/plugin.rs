@@ -335,7 +335,6 @@ fn load_or_default() -> Config {
             std::fs::write(&path, DEFAULT_CONFIG).ok();
         }
 
-        // overlay user overrides, appending ids the defaults don't know
         if let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(user) = toml::from_str::<Config>(&content)
         {
@@ -429,11 +428,10 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
         .collect()
 }
 
-/// Drop a result row's data across the registry (best effort). Called by the
-/// `forget` paths after usage history is removed; only external hosts that
-/// own the `on_click` act on it (see `Plugin::forget`). `true` when one of them
-/// owned the row and dropped it, so `forget` can answer truthfully instead of
-/// the UI claiming a deletion nobody made.
+/// Drop a result row's data across the registry (best effort). Only external
+/// hosts that own the `on_click` act on it (see `Plugin::forget`); `true` when
+/// one of them owned the row and dropped it, so `forget` can answer truthfully
+/// instead of the UI claiming a deletion nobody made.
 pub async fn forget_row(on_click: &str) -> bool {
     ensure_loaded().await;
     let reg = REGISTRY.read().await;

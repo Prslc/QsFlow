@@ -76,10 +76,8 @@ pub struct Pending {
 #[derive(Debug, PartialEq, Eq)]
 pub enum PreeditAction {
     /// The IME said nothing about a preedit, so the composition is over and
-    /// whatever is drawn has to go. Skipping this leaves the field showing a
-    /// composition the IME already closed — the candidate box disappears and
-    /// the characters stay, which is what the iced-era runtime's own
-    /// `pending_preedit.is_none()` branch existed to prevent.
+    /// whatever is drawn has to go; skipping this leaves a stale composition
+    /// in the field.
     Clear,
     /// The IME staged a preedit: `None` is an explicit clear.
     Set(Option<String>),
@@ -219,8 +217,7 @@ impl Shell {
             }
         }
 
-        // A commit is a query change like any other keystroke, and the QML
-        // searched from the field's `onTextChanged`: without this a CJK
+        // A commit is a query change like any other keystroke: without this a
         // composition draws its characters but never searches for them. The
         // preedit itself stays out of `query`, so it needs no search.
         if edited {
@@ -257,8 +254,6 @@ mod tests {
 
     #[test]
     fn a_bare_done_ends_the_composition() {
-        // The bug this guards: the IME closes the candidate box and says nothing
-        // about a preedit, and the field kept drawing the old composition.
         let mut pending = Pending::default();
         assert_eq!(
             pending.resolve(),

@@ -108,9 +108,8 @@ fn render_svg(data: &[u8], size: u32) -> Option<Pixmap> {
     Some(pixmap)
 }
 
-/// Bilinear resize into the target box, which is what the GPU sampler the iced
-/// shell used did. Premultiplied channels interpolate correctly, so a
-/// transparent edge cannot bleed its colour.
+/// Bilinear resize into the target box. Premultiplied channels interpolate
+/// correctly, so a transparent edge cannot bleed its colour.
 fn resample(source: PixmapRef, target: &mut Pixmap) {
     let (sw, sh) = (source.width() as f32, source.height() as f32);
     let (tw, th) = (target.width() as f32, target.height() as f32);

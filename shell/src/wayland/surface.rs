@@ -36,8 +36,8 @@ impl Shell {
             None,
         );
         layer.set_anchor(Anchor::all());
-        // `-1` is the QML's `ExclusionMode.Ignore`: the surface ignores other
-        // surfaces' exclusive zones and the configure is the full output.
+        // `-1`: the surface ignores other surfaces' exclusive zones, so the
+        // configure is the full output.
         layer.set_exclusive_zone(-1);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         // A size of 0 with every anchor lets the compositor decide: the output.
@@ -74,15 +74,13 @@ impl Shell {
 
         self.app.shown(now);
         ipc::VISIBLE.store(true, Ordering::Relaxed);
-        // The QML's init timer: an empty query means the usage-ranked history,
-        // so a show never displays the previous query's payload.
+        // An empty query means the usage-ranked history, so a show never
+        // displays the previous query's payload.
         backend::send("");
         self.open_at = Some(now);
         self.last_present = None;
-        // Allocate the frame buffers here rather than on the first present: in
-        // resident mode the surface is 1920x1080 by default, so the 8.3MB
-        // pixmap and the shared-memory pool would otherwise land on the frame
-        // that starts the entrance animation.
+        // Allocate the frame buffers here rather than on the first present, so
+        // the allocation does not land on the frame that starts the entrance.
         let (physical_w, physical_h) = self.physical_size();
         self.ensure_buffers(physical_w, physical_h);
         if self.timing {
@@ -115,9 +113,8 @@ impl Shell {
             fractional.destroy();
         }
         self.viewport_destination = None;
-        // `app.fractional` is retained: it is an output property and lets the
-        // next `open` allocate at the exact ratio instead of re-deriving the
-        // integer ceiling (a 1.25× output would briefly allocate 3072x1728).
+        // `app.fractional` is retained: it is an output property, so the next
+        // `open` allocates at the exact ratio instead of the integer ceiling.
         // The new surface's `PreferredScale` refreshes it on the first commit.
         // Dropping the layer surface destroys it: there is no hide/unmap verb.
         self.layer = None;
@@ -398,13 +395,9 @@ impl Shell {
         }
         surface.damage_buffer(damage.x, damage.y, damage.w, damage.h);
 
-        // The frame callback must be registered *before* the commit that it
-        // should pace: niri takes the pending callback while processing the
-        // commit, so a request sent after it only fires on the next commit —
-        // which, on an idle launcher, is the next caret blink 500ms later, and
-        // the entrance fade then never plays. It is requested on every commit,
-        // not only during an animation, so the next `redraw` is coalesced into
-        // it instead of presenting a second buffer in the same frame.
+        // The frame callback must be requested before the commit it paces: a
+        // request sent after the commit waits for the next one. It is requested
+        // on every commit so the next `redraw` is coalesced into it.
         let frame_surface = surface.clone();
         surface.frame(&self.qh, FrameCallbackData(frame_surface));
         self.frame_pending = true;
@@ -570,9 +563,8 @@ impl Shell {
         patch.restore(pixmap);
     }
 
-    /// The blur region covers the card's rounded rect. The runtime re-applies
-    /// the stored region on every present, so the send is deduped on the
-    /// 4px-quantised rect.
+    /// The blur region covers the card's rounded rect, deduped on the
+    /// 4px-quantised rect: a present must not re-apply the stored region.
     fn sync_blur(&mut self) {
         let (Some(layer), Some(effect)) = (self.layer.as_ref(), self.effect.as_ref()) else {
             return;
@@ -600,8 +592,8 @@ impl Shell {
 }
 
 /// The pixels under the caret, saved from a frame drawn without it. A blink
-/// restores the patch and redraws the caret, so the shell keeps a few hundred
-/// bytes instead of a second full-output pixmap.
+/// restores the patch and redraws the caret, so the shell holds no second
+/// full-output pixmap.
 #[derive(Debug)]
 pub(super) struct CaretPatch {
     x: u32,
@@ -836,9 +828,9 @@ mod tests {
 
     #[test]
     fn a_longer_shm_canvas_is_not_a_panic() {
-        // `sctk` rounds a slot up to 64 bytes, so the canvas is longer than the
-        // pixmap whenever the buffer's byte length is not a multiple of 64 —
-        // which is any output whose pixel count is not a multiple of 16.
+        // `sctk` rounds a slot's length up to 64 bytes, so the canvas is longer
+        // than the pixmap whenever the buffer's byte length is not a multiple
+        // of 64.
         let source: Vec<u8> = (0..16).collect();
         let mut destination = vec![0u8; 16 + 48];
 

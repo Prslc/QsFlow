@@ -38,9 +38,8 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
-        // Only react to content changes (write/create/rename). Access
-        // events — including the reads `load_theme` itself performs — would
-        // otherwise re-trigger the watcher forever.
+        // React to content changes only; an Access event from the reads
+        // `load_theme` performs would re-trigger the watcher forever.
         if matches!(ev.kind, notify::EventKind::Access(_)) {
             return;
         }
@@ -83,10 +82,8 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
-        // React to writes, not reads: `plugin::reload` reads this very file, so
-        // an unfiltered Access event would reload again — the watcher would
-        // re-trigger itself every debounce, re-forking every external host and
-        // (with a stalling host) holding `plugin::INIT` until it returned.
+        // React to writes, not reads: `plugin::reload` reads this file, so an
+        // unfiltered Access event would re-trigger the watcher forever.
         if matches!(ev.kind, notify::EventKind::Access(_)) {
             return;
         }

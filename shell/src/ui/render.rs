@@ -10,19 +10,17 @@ use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 
-/// Text sizes of the QML.
 const TITLE_SIZE: f32 = 14.0;
 const SUMMARY_SIZE: f32 = 12.0;
 const SUGGESTION_SIZE: f32 = 11.0;
 pub const QUERY_SIZE: f32 = 18.0;
 const ICON_SIZE: f32 = 30.0;
-/// The search field's inner insets, from the QML: the container's 14, the
-/// magnifier's 22, the row's 12px spacing and the input's own 8. The IME needs
-/// it to place the caret rectangle.
+/// The search field's inner insets: the container's 14, the magnifier's 22, the
+/// row's 12px spacing and the input's own 8. The IME needs it to place the
+/// caret rectangle.
 pub const TEXT_INSET: f32 = 14.0 + 22.0 + 12.0 + 8.0;
 
-/// Everything logical→physical scaling goes through here, so the layout below
-/// reads in the same units as the QML.
+/// Everything logical→physical scaling goes through here.
 struct Canvas {
     scale: f32,
 }
@@ -213,8 +211,7 @@ impl Rect {
 
     /// The same rectangle in the target's pixels. `round_rect` builds paths in
     /// the pixmap's coordinate space, so every rect handed to it has to be
-    /// scaled: only radii and stroke widths were being scaled before, which put
-    /// the whole card in the buffer's top-left corner at `buffer_scale` 2.
+    /// scaled, not just radii and strokes.
     fn scaled(self, scale: f32) -> Self {
         Self {
             x: self.x * scale,
@@ -280,9 +277,8 @@ pub fn draw(
     mark("clear");
 
     // The card: a translucent fill with a 1px white hairline. The hairline is a
-    // *ring*, not a base fill — painting white under the whole card would raise
-    // the interior's composite alpha from 0.804 to 0.873 and cost the interior
-    // its 0.196 background transmission.
+    // *ring*, never a base fill under the whole card, which would raise the
+    // interior's composite alpha and cost it its background transmission.
     canvas.fill_round(
         pixmap,
         Rect {
@@ -378,14 +374,14 @@ fn draw_magnifier(canvas: &Canvas, pixmap: &mut Pixmap, field: Rect, state: &Sta
 }
 
 /// The field's text area: its left edge and its width. The field is
-/// single-line, so a query wider than this is scrolled inside the box instead
-/// of being clipped with the caret left outside it.
+/// single-line, so a wider query is scrolled inside the box rather than clipped
+/// with the caret outside it.
 fn text_area(field: Rect) -> (f32, f32) {
     (field.x + TEXT_INSET, field.w - TEXT_INSET - 40.0)
 }
 
 /// How far the query has to be scrolled left for a caret at `caret_x` to stay
-/// inside the text area. The QML's `TextField` scrolled itself the same way.
+/// inside the text area.
 fn scroll_for(caret_x: f32, area: (f32, f32)) -> f32 {
     (caret_x + 2.0 - (area.0 + area.1)).max(0.0)
 }
@@ -429,8 +425,8 @@ fn draw_query(
     // the drawn caret and the rectangle the IME is told about are one geometry
     let (caret, shift) = caret_box(state, text);
 
-    // A keyboard selection sits under the glyphs (the QML's `selectionColor` was
-    // the accent at 35%), clipped to the same text area.
+    // A keyboard selection sits under the glyphs at the accent's 35%, clipped to
+    // the same text area.
     if let Some((start, end)) = state.selection() {
         let from = text.shape(&state.query[..start], size, Weight::MEDIUM);
         let to = text.shape(&state.query[..end], size, Weight::MEDIUM);
@@ -500,8 +496,7 @@ fn caret_box(state: &State, text: &mut TextEngine) -> (Rect, f32) {
     let area = text_area(field);
     let shift = scroll_for(area.0 + before.width / scale, area);
 
-    // The caret is 1px wide at the *line box* height, not at the font size:
-    // 21.6px for an 18px query.
+    // The caret is 1px wide at the *line box* height, not at the font size.
     let line_height = (QUERY_SIZE * crate::ui::text::LINE_HEIGHT).round();
     (
         Rect {
@@ -676,8 +671,7 @@ fn draw_list(
 
         let labels_x = icon_x + ICON_SIZE + 12.0;
         // The selected row's ↵ hint is part of the layout: the labels must
-        // leave room for it, as the QML's Column did, so a long title cannot
-        // run underneath it.
+        // leave room for it, so a long title cannot run underneath it.
         let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
@@ -1078,9 +1072,8 @@ mod tests {
             true,
         );
 
-        // Above the card (its top is 0.28·64 ≈ 18) only the dim exists. A single
-        // fill has to leave exactly the dim there; a lost dim or a leftover
-        // clear shows up as alpha 0.
+        // Above the card only the dim exists; a clear under the dim would show
+        // up as alpha 0.
         let pixel = pixmap.pixel(0, 0).unwrap();
         assert_eq!(pixel.alpha(), 77, "the dim is the base");
         assert_eq!((pixel.red(), pixel.green(), pixel.blue()), (0, 0, 0));

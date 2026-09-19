@@ -226,7 +226,6 @@ pub struct Shell {
 }
 
 impl Shell {
-    /// The constructor: everything `run()` used to do before it built the state.
     pub fn new(
         conn: &Connection,
         qh: &QueueHandle<Shell>,
@@ -407,10 +406,8 @@ impl Shell {
     }
 
     /// Ask for a redraw. The commit is paced to the compositor's frame
-    /// callback, so a burst of events (a key press plus its release, the
-    /// reflow frames, a payload) collapses into one commit per frame instead of
-    /// one per event; without that the shm pool doubled under every burst and
-    /// never shrank (measured: hundreds of MB while typing).
+    /// callback, so a burst of events collapses into one commit per frame
+    /// instead of one per event.
     pub fn redraw(&mut self) {
         self.needs_present = true;
         self.pump();
@@ -450,10 +447,10 @@ impl Shell {
         }
 
         if self.keyboard_focus && self.app.preedit.is_none() {
-            // A key press restarts the flash, as Qt's field does: stay on for a
-            // whole interval measured from the last edit instead of toggling a
-            // free-running timer, which could switch the caret off right after
-            // the user typed.
+            // A key press restarts the flash: stay on for a whole interval
+            // measured from the last edit instead of toggling a free-running
+            // timer, which could switch the caret off right after the user
+            // typed.
             let phase = now.saturating_duration_since(self.app.caret_at);
             let interval = Duration::from_millis(app::CARET_BLINK_MS);
             if phase < interval {
