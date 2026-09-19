@@ -79,109 +79,27 @@ wayrun
 
 The launcher is a full-screen overlay with a dimmed backdrop and a centered card.
 In the default spawn-per-hotkey flow, `Esc` / clicking outside quits it; in
-resident mode (below) the hotkey toggles the surface and dismiss hides it.
+resident mode the hotkey toggles the surface and dismiss hides it.
 
-## Resident mode (optional — zero cold-start)
+## Documentation
 
-By default each hotkey press re-spawns the shell and its Rust core. To pop the
-launcher up instantly, keep one resident process alive and toggle the surface
-over a unix socket (`$XDG_RUNTIME_DIR/wayrun.sock`):
+Full user docs live in [`docs/en/`](docs/en/); the Chinese editions are in
+[`docs/zh_cn/`](docs/zh_cn/).
 
-```ini
-# ~/.config/systemd/user/wayrun-launcher.service
-[Unit]
-Description=WayRun launcher (resident)
-After=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=/home/you/.local/bin/wayrun
-# the shell exits 0 on a core crash, which is a *clean* exit — never "on-failure"
-Restart=always
-RestartSec=2
-# so commands the launcher runs see ~/.local/bin too
-Environment=PATH=/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin
-# WAYLAND_DISPLAY/DISPLAY come from the graphical session (imported by the
-# compositor); only XDG_RUNTIME_DIR is set, via the uid-proof `%t` specifier —
-# no hardcoded display number or uid.
-Environment=XDG_RUNTIME_DIR=%t
-# resident mode: start hidden, toggle via `wayrun toggle`
-Environment=WAYRUN_RESIDENT=1
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-systemctl --user enable --now wayrun-launcher
-# niri hotkey — toggle instead of spawn:
-#   Alt+Space { spawn-sh "wayrun toggle"; }
-```
-
-The verbs are `open` / `close` / `toggle` / `status`, spoken to the socket the
-resident instance owns; `status` prints `visible` or `hidden`.
-`WAYRUN_RESIDENT=1` selects resident mode (start hidden, dismiss hides); without
-it a plain `wayrun` shows on launch and quits on dismiss, so the manual/dev
-path is independent of the systemd service. To revert,
-`systemctl --user disable --now wayrun-launcher` and restore the
-spawn-per-hotkey binding.
-
-
-## Usage
-
-| Input | Action |
-|-------|--------|
-| `firefox` | fuzzy-search installed applications |
-| `b <query>` | search Firefox bookmarks |
-| `h <query>` | search Firefox history |
-| `f <query>` | search files by name |
-| `d <query>` | search files by path (multi-token fuzzy) |
-| `r <query>` | fuzzy-search `$PATH` executables and run one |
-| `w <query>` | switch focus to a matching open niri window |
-| `c <query>` | search clipboard history (cliphist) |
-| `s <query>` | Google suggestions |
-| `?` | show keyword modes, default functions, and hints |
-| `lock` / `reboot` / `shutdown` | system commands |
-| `2 + 3` | inline calculator |
-| _(empty)_ | show most-used items |
-| `Enter` | launch selected result |
-| `Delete` | remove history item |
-
-## Configuration
-
-Two optional files under `~/.config/wayrun/`, both watched, so an edit applies
-without restarting:
-
-- **`plugins.toml`** — the plugin registry, generated on first run. Enable,
-  disable, reorder or remap keywords, and declare external JSON-RPC hosts.
-  See **[docs/en/plugins.md](docs/en/plugins.md)**.
-- **`theme.toml`** — colors and the launcher's appearance. It follows
-  DankMaterialShell's Material You palette and can override colors, the
-  background blur, layout and motion.
-  See **[docs/en/theme.md](docs/en/theme.md)**.
-
-## JSON-RPC 2.0
-
-`wayrun --core` speaks [JSON-RPC 2.0](https://www.jsonrpc.org/specification) over
-stdin/stdout, alongside the launcher's text protocol: methods `search`, `top`,
-`select`, `forget`, `run`, `action`, `launch`, `open`, `copy`, `resolve_icon`,
-`list_plugins`, `theme`, `ping`. The full protocol spec and the
-result-item (schema) contract are in
-[docs/en/jsonrpc.md](docs/en/jsonrpc.md).
+- [Usage](docs/en/usage.md) — prefixes, keybindings, and the clipboard.
+- [Resident mode](docs/en/resident.md) — the systemd unit and the IPC verbs.
+- [Theme](docs/en/theme.md) — the system theme and `theme.toml` (colors, blur,
+  layout, motion).
+- [Plugins](docs/en/plugins.md) — `plugins.toml`, the built-ins, and external
+  JSON-RPC hosts.
+- [JSON-RPC 2.0](docs/en/jsonrpc.md) — the wire protocol and the result schema.
 
 ## Credit
 
-- **[Wox](https://github.com/wox-launcher/wox)** — the launcher concept is inspired by this project.
-- **[tiny-skia](https://github.com/RazrFalcon/tiny-skia)** — the software rasteriser the shell draws its card, list and animations into a `wl_shm` buffer with.
-- **[cosmic-text](https://github.com/pop-os/cosmic-text)** — text shaping and glyph rasterisation for the query and the result rows.
-- **[resvg](https://github.com/RazrFalcon/resvg)** — SVG icon rasterisation.
-- **[smithay-client-toolkit](https://github.com/Smithay/client-toolkit)** — Wayland client plumbing for the layer-shell overlay.
-- **[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)** — icon theme providing high-quality SVG icons.
-- **[tokio](https://tokio.rs)** — async runtime driving the backend.
-- **[rusqlite](https://github.com/rusqlite/rusqlite)** — Firefox profile and usage database access.
-- **[walkdir](https://github.com/BurntSushi/walkdir)** — recursive directory traversal for file and path search.
-- **[nucleo](https://github.com/helix-editor/nucleo)** — fuzzy matching for `r` (commands) and `w` (windows).
-- **[rustc-hash](https://github.com/rust-lang/rustc-hash)** — fast non-cryptographic hashing for plugin maps and icon cache.
-- **[gio (gtk-rs)](https://gtk-rs.org/)** — GLib `GAppInfo` registry for application discovery and launching.
-- **[fasteval](https://github.com/likebike/fasteval)** — calculator expression evaluation.
+WayRun is inspired by [Wox](https://github.com/wox-launcher/wox). It is built on
+the Rust Wayland ecosystem — in particular
+[smithay-client-toolkit](https://github.com/Smithay/client-toolkit) for the
+layer-shell plumbing, [tiny-skia](https://github.com/RazrFalcon/tiny-skia) for
+rasterisation, and [cosmic-text](https://github.com/pop-os/cosmic-text) for text
+shaping. Icons come from the
+[Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) theme.
