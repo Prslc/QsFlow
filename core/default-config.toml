@@ -1,13 +1,7 @@
-# WayRun core behaviour. Every key is optional: a missing file or key keeps the
-# built-in default shown here. The file is watched, so an edit applies live.
+# ~/.config/wayrun/config.toml — every key is optional; the defaults are shown.
 
 [web_search]
-# Suggestion backend: "google" or "duckduckgo".
 engine = "google"
 
 [font]
-# Primary shaping family, or a generic name (serif, sans-serif, monospace). The
-# shell falls back per glyph for anything it lacks, so a family covering only
-# the scripts you read keeps the fonts you never draw out of memory. Read at
-# startup, so a change applies on the next launch.
 family = "Source Han Sans CN"
