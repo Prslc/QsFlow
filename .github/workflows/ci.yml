@@ -38,6 +38,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             pkg-config \
+            libssl-dev \
             libxkbcommon-dev \
             libglib2.0-dev \
             libsqlite3-dev \
@@ -68,6 +69,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             pkg-config \
+            libssl-dev \
             libxkbcommon-dev \
             libglib2.0-dev \
             libsqlite3-dev \
@@ -93,6 +95,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             pkg-config \
+            libssl-dev \
             libxkbcommon-dev \
             libglib2.0-dev \
             libsqlite3-dev \
