@@ -648,6 +648,19 @@ impl CaretPatch {
     }
 }
 
+/// Copy `source` into `destination` swapping R and B per pixel: the difference
+/// between `ARGB8888` and the premultiplied `ABGR8888` tiny-skia produces.
+fn swap_red_blue(destination: &mut [u8], source: &[u8]) {
+    let (destination, _) = destination.as_chunks_mut::<4>();
+    let (source, _) = source.as_chunks::<4>();
+    for (target, pixel) in destination.iter_mut().zip(source) {
+        target[0] = pixel[2];
+        target[1] = pixel[1];
+        target[2] = pixel[0];
+        target[3] = pixel[3];
+    }
+}
+
 /// The pixmap is premultiplied RGBA; `ABGR8888` is that byte for byte, while
 /// `ARGB8888` is the same word with R and B swapped.
 fn copy_into(source: &[u8], destination: &mut [u8], format: wl_shm::Format) {
@@ -662,14 +675,7 @@ fn copy_into(source: &[u8], destination: &mut [u8], format: wl_shm::Format) {
         return;
     }
 
-    let (canvas, _) = canvas.as_chunks_mut::<4>();
-    let (source, _) = source.as_chunks::<4>();
-    for (target, pixel) in canvas.iter_mut().zip(source) {
-        target[0] = pixel[2];
-        target[1] = pixel[1];
-        target[2] = pixel[0];
-        target[3] = pixel[3];
-    }
+    swap_red_blue(canvas, source);
 }
 
 /// Copy `rect` (physical pixels, already clamped to the buffer) between two
@@ -702,14 +708,7 @@ fn copy_rect(
             destination.copy_from_slice(source);
             continue;
         }
-        let (destination, _) = destination.as_chunks_mut::<4>();
-        let (source, _) = source.as_chunks::<4>();
-        for (target, pixel) in destination.iter_mut().zip(source) {
-            target[0] = pixel[2];
-            target[1] = pixel[1];
-            target[2] = pixel[0];
-            target[3] = pixel[3];
-        }
+        swap_red_blue(destination, source);
     }
 }
 

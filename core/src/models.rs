@@ -13,7 +13,7 @@ pub struct ActionItem {
     pub icon: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ResultItem {
     pub title: String,
     pub summary: Option<String>,

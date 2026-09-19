@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_arithmetic() {
+    fn plain_arithmetic_is_evaluated() {
         assert_eq!(first("2 + 3"), "5");
         assert_eq!(first("10 - 7"), "3");
         assert_eq!(first("6 * 4"), "24");
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_input() {
+    fn empty_input_is_not_math() {
         assert!(do_search("").is_empty());
     }
 
@@ -143,35 +143,35 @@ mod tests {
     }
 
     #[test]
-    fn division_by_zero() {
+    fn division_by_zero_is_not_an_answer() {
         assert!(do_search("1/0").is_empty());
     }
 
     #[test]
-    fn non_math_input() {
+    fn prose_is_not_math() {
         assert!(do_search("firefox").is_empty());
         assert!(do_search("hello world").is_empty());
     }
 
     #[test]
-    fn decimals() {
+    fn a_decimal_result_is_kept() {
         let result = first("3.14 * 2");
         assert!(result.starts_with("6.28"));
     }
 
     #[test]
-    fn negative() {
+    fn a_negative_result_is_kept() {
         assert_eq!(first("-5 + 8"), "3");
         assert_eq!(first("0 - 10"), "-10");
     }
 
     #[test]
-    fn power() {
+    fn a_power_expression_is_evaluated() {
         assert_eq!(first("2 ^ 10"), "1024");
     }
 
     #[test]
-    fn constants() {
+    fn named_constants_are_evaluated() {
         let pi = first("pi");
         assert!(pi.starts_with("3.14159"));
         assert!(first("PI").starts_with("3.14159"));
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn functions() {
+    fn math_functions_are_evaluated() {
         let half = first("sin(pi / 2)");
         assert!(half.starts_with('1'));
         assert_eq!(first("abs(-5)"), "5");
