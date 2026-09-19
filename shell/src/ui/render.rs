@@ -724,6 +724,20 @@ fn draw_list(
     }
 }
 
+/// The footer's left-hand hint: the launch keys once there are rows, a distinct
+/// "No results" when a non-empty query came back empty, and the history help
+/// otherwise. `No results` must not be confused with the untouched empty state,
+/// or a searched-but-empty payload reads as "not searched".
+fn footer_hint(rows: usize, query_empty: bool) -> &'static str {
+    if rows > 0 {
+        "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close"
+    } else if query_empty {
+        "Type ? for help"
+    } else {
+        "No results"
+    }
+}
+
 fn draw_footer(
     canvas: &Canvas,
     pixmap: &mut Pixmap,
@@ -733,11 +747,8 @@ fn draw_footer(
     now: Instant,
 ) {
     let empty = state.rows.is_empty();
-    let hints = if empty {
-        "Type ? for help  ·  prefixes: b h f d c s g tr r w"
-    } else {
-        "↵ Launch   ↑↓ Move   ⌫ Forget   Esc Close"
-    };
+    let no_match = empty && !state.query.is_empty();
+    let hints = footer_hint(state.rows.len(), state.query.is_empty());
     let count = if empty {
         String::new()
     } else {
@@ -757,7 +768,15 @@ fn draw_footer(
     text.draw(
         pixmap,
         &shaped,
-        state.fade(state.theme.fg, 0.5, now),
+        state.fade(
+            if no_match {
+                state.theme.primary
+            } else {
+                state.theme.fg
+            },
+            if no_match { 0.7 } else { 0.5 },
+            now,
+        ),
         canvas.px(left),
         canvas.px(y + (geom::FOOTER_H - shaped.height / canvas.scale) / 2.0),
         None,
@@ -909,6 +928,14 @@ mod tests {
         // caret two logical pixels inside the area
         let caret = area.0 + area.1 + 5.0;
         assert_eq!(caret - scroll_for(caret, area), area.0 + area.1 - 2.0);
+    }
+
+    #[test]
+    fn the_footer_separates_no_results_from_an_untouched_field() {
+        // an empty field is the history view, not a failed search
+        assert_eq!(footer_hint(0, true), "Type ? for help");
+        assert_eq!(footer_hint(0, false), "No results");
+        assert!(footer_hint(3, false).starts_with("↵ Launch"));
     }
 
     #[test]

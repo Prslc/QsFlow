@@ -37,6 +37,10 @@ impl Plugin for WindowPlugin {
 /// `run:` row that focuses the winner. The compositor backend is picked from
 /// the environment; without one the provider is simply empty.
 fn do_search(query: &str) -> Vec<ResultItem> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
     let Some(compositor) = compositor::detect() else {
         return Vec::new();
     };
@@ -49,7 +53,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
     let mut results: Vec<(u16, ResultItem)> = Vec::new();
 
     for window in windows {
-        let score = score_window(&window, query, &pattern, &mut matcher);
+        let score = score_window(&window, &pattern, &mut matcher);
         if score > 0 {
             results.push((score, row(compositor, window)));
         }
@@ -60,13 +64,9 @@ fn do_search(query: &str) -> Vec<ResultItem> {
 
 fn score_window(
     window: &Window,
-    query: &str,
     pattern: &nucleo::Utf32String,
     matcher: &mut nucleo::Matcher,
 ) -> u16 {
-    if query.is_empty() {
-        return 1;
-    }
     let title = nucleo::Utf32String::from(window.title.to_lowercase());
     let title_score = matcher
         .fuzzy_match(title.slice(..), pattern.slice(..))
@@ -100,5 +100,15 @@ fn row(compositor: &dyn Compositor, window: Window) -> ResultItem {
             .and_then(|app| find_icon_path(app))
             .or_else(|| Some(String::new())),
         ephemeral: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_query_matches_nothing() {
+        assert!(do_search("").is_empty());
     }
 }

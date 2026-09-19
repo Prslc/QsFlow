@@ -482,45 +482,49 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
         .split_once(' ')
         .map_or(("", input), |(k, q)| (k.trim(), q.trim()));
 
-    if !keyword.is_empty()
-        && query.is_empty()
-        && let Some(entry) = reg.iter().find(|entry| entry.keyword == keyword)
-    {
-        // Keyword-only input opens the plugin: an external host may serve a
-        // default view (`top`); fall back to the identity card when it has
-        // none or returns nothing.
-        if let Ok(Some(items)) = entry.plugin.default_view().await
-            && !items.is_empty()
-        {
-            return items;
-        }
-        let meta = entry.plugin.meta();
-        return vec![ResultItem {
-            title: meta.name.to_string(),
-            summary: Some(meta.ready.to_string()),
-            on_click: None,
-            icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
-            ephemeral: false,
-        }];
-    }
+    // A keyword some plugin owns is a namespace of its own: a miss stays empty
+    // and never falls through to the default (app/command) providers. Only an
+    // unowned first word is ordinary query text.
+    let routed = !keyword.is_empty() && reg.iter().any(|entry| entry.keyword == keyword);
 
-    // explicit keyword
-    for entry in reg.iter().filter(|e| e.keyword == keyword) {
-        if let Ok(results) = entry.plugin.search(query, input).await
-            && !results.is_empty()
+    if routed {
+        if query.is_empty()
+            && let Some(entry) = reg.iter().find(|entry| entry.keyword == keyword)
         {
-            return results;
+            // Keyword-only input opens the plugin: an external host may serve a
+            // default view (`top`); fall back to the identity card when it has
+            // none or returns nothing.
+            if let Ok(Some(items)) = entry.plugin.default_view().await
+                && !items.is_empty()
+            {
+                return items;
+            }
+            let meta = entry.plugin.meta();
+            return vec![ResultItem {
+                title: meta.name.to_string(),
+                summary: Some(meta.ready.to_string()),
+                on_click: None,
+                icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
+                ephemeral: false,
+            }];
         }
-    }
 
-    // default fallback chain
-    if !keyword.is_empty() {
-        for entry in reg.iter().filter(|e| e.keyword.is_empty()) {
+        for entry in reg.iter().filter(|e| e.keyword == keyword) {
             if let Ok(results) = entry.plugin.search(query, input).await
                 && !results.is_empty()
             {
                 return results;
             }
+        }
+
+        return vec![];
+    }
+
+    for entry in reg.iter().filter(|e| e.keyword.is_empty()) {
+        if let Ok(results) = entry.plugin.search(query, input).await
+            && !results.is_empty()
+        {
+            return results;
         }
     }
 

@@ -125,6 +125,9 @@ impl Plugin for AppSearch {
 /// and tokenized once, not per app.
 fn do_search(query: &str) -> Vec<ResultItem> {
     let query_lower = query.trim().to_lowercase();
+    if query_lower.is_empty() {
+        return Vec::new();
+    }
     let query_words = tokenize(&query_lower);
 
     let mut results: Vec<(u32, ResultItem)> = Vec::new();
@@ -151,22 +154,20 @@ fn do_search(query: &str) -> Vec<ResultItem> {
         }
 
         // each action is its own row (DMS-style), titled after the action and
-        // launched by the UI; the empty query is the history view, so no rows
-        if !query_lower.is_empty() {
-            for action in app.meta.iter().flat_map(|m| &m.actions) {
-                let action_score = action_score(&action.name_lower, &query_lower);
-                if action_score > 0 {
-                    results.push((
-                        action_score,
-                        ResultItem {
-                            title: action.name.clone(),
-                            summary: Some(app.title.clone()),
-                            on_click: Some(format!("action:{}:{}", app.id, action.id)),
-                            icon: app.icon_path(),
-                            ephemeral: false,
-                        },
-                    ));
-                }
+        // launched by the UI
+        for action in app.meta.iter().flat_map(|m| &m.actions) {
+            let action_score = action_score(&action.name_lower, &query_lower);
+            if action_score > 0 {
+                results.push((
+                    action_score,
+                    ResultItem {
+                        title: action.name.clone(),
+                        summary: Some(app.title.clone()),
+                        on_click: Some(format!("action:{}:{}", app.id, action.id)),
+                        icon: app.icon_path(),
+                        ephemeral: false,
+                    },
+                ));
             }
         }
     }
@@ -199,6 +200,11 @@ fn action_score(name_lower: &str, query_lower: &str) -> u32 {
 /// consecutive name word), plain substring, then edit-distance fuzziness.
 /// All string inputs must already be lowercased.
 fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> u32 {
+    // An empty query would prefix-match every field; treat it as no match so
+    // the scorer cannot turn into a "list everything" path.
+    if query_lower.is_empty() {
+        return 0;
+    }
     if field_lower == query_lower {
         return W_EXACT;
     }
@@ -299,7 +305,7 @@ fn score_app(
     query_words: &[String],
 ) -> u32 {
     if query_lower.is_empty() {
-        return 1;
+        return 0;
     }
 
     let mut score = field_score(name_lower, query_lower, query_words);
@@ -615,9 +621,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_query_matches_everything() {
+    fn empty_query_matches_nothing() {
         let m = meta(None, &[]);
-        assert_eq!(s("Anything", None, Some(&m), "a.desktop", ""), 1);
+        assert_eq!(s("Anything", None, Some(&m), "a.desktop", ""), 0);
+        assert!(do_search("").is_empty());
     }
 
     #[test]

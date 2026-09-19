@@ -30,6 +30,10 @@ impl Plugin for SystemCommands {
 }
 
 fn do_search(input: &str) -> Vec<ResultItem> {
+    if input.is_empty() {
+        return vec![];
+    }
+
     let commands = [
         (
             "Lock",
@@ -60,7 +64,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
     commands
         .iter()
         .filter(|(name, keyword, _, _)| {
-            input.is_empty() || name.to_lowercase().starts_with(input) || keyword.starts_with(input)
+            name.to_lowercase().starts_with(input) || keyword.starts_with(input)
         })
         .map(|(name, _, icon, cmd)| ResultItem {
             title: name.to_string(),
@@ -70,4 +74,20 @@ fn do_search(input: &str) -> Vec<ResultItem> {
             ephemeral: true,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_query_matches_nothing() {
+        assert!(do_search("").is_empty());
+    }
+
+    #[test]
+    fn prefix_matches_by_name_or_keyword() {
+        assert_eq!(do_search("re")[0].title, "Reboot");
+        assert_eq!(do_search("susp")[0].title, "Suspend");
+    }
 }

@@ -35,6 +35,10 @@ impl Plugin for Clipboard {
 }
 
 fn do_search(query: &str) -> Vec<ResultItem> {
+    if query.is_empty() {
+        return vec![];
+    }
+
     let Ok(output) = Command::new("cliphist").arg("list").output() else {
         return vec![];
     };

@@ -251,6 +251,10 @@ async fn query_external(
     text: &str,
     icon: &str,
 ) -> Result<Vec<ResultItem>> {
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "search",
@@ -405,6 +409,15 @@ mod tests {
         std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
         std::fs::set_permissions(&path, perms).unwrap();
         path.display().to_string()
+    }
+
+    #[tokio::test]
+    async fn an_empty_query_never_reaches_the_host() {
+        // No host is contacted: an empty text is not a search.
+        let items = query_external("/nonexistent/host", "p", "", "")
+            .await
+            .unwrap();
+        assert!(items.is_empty());
     }
 
     #[tokio::test]

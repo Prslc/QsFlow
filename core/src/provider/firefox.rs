@@ -50,6 +50,10 @@ fn find_db() -> Result<PathBuf> {
 }
 
 async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
+    if query.is_empty() {
+        return Ok(vec![]);
+    }
+
     let query = query.to_string();
     task::spawn_blocking(move || {
         let db_path = find_db()?;
@@ -153,3 +157,14 @@ firefox_plugin!(
     "h",
     "Search Firefox history"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn empty_query_matches_nothing() {
+        assert!(do_search(Mode::Bookmarks, "").await.unwrap().is_empty());
+        assert!(do_search(Mode::History, "").await.unwrap().is_empty());
+    }
+}

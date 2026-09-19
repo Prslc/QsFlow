@@ -75,13 +75,10 @@ search_plugin!(
 );
 
 fn match_name(entry_name: &str, _entry_path: &str, query: &str) -> bool {
-    query.is_empty() || entry_name.to_lowercase().contains(query)
+    entry_name.to_lowercase().contains(query)
 }
 
 fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
-    if query.is_empty() {
-        return true;
-    }
     let path_lower = entry_path.to_lowercase();
     query
         .split_whitespace()
@@ -89,6 +86,10 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
 }
 
 fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultItem> {
+    if query.is_empty() {
+        return vec![];
+    }
+
     let Ok(home) = get_home() else {
         return vec![];
     };
@@ -161,4 +162,15 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
     }
 
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_query_matches_nothing() {
+        assert!(do_search("", match_name).is_empty());
+        assert!(do_search("", match_path).is_empty());
+    }
 }
