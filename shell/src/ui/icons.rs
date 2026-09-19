@@ -7,12 +7,17 @@ pub struct IconCache {
     /// `String` so the per-frame lookup can borrow the path as `&str`; the
     /// inner value is `None` for an unreadable file.
     entries: HashMap<String, HashMap<u32, Option<Pixmap>>>,
+    /// The same bitmap recoloured to the theme foreground, for the action
+    /// panel's theme glyphs. Keyed by colour too, so a live theme change makes
+    /// new entries instead of showing the old tint.
+    tinted: HashMap<(String, u32, [u8; 3]), Option<Pixmap>>,
 }
 
 impl IconCache {
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            tinted: HashMap::new(),
         }
     }
 
@@ -21,6 +26,7 @@ impl IconCache {
     /// session's.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.tinted.clear();
     }
 
     /// Rasterise `path` now, so a later draw cannot land the cost on the frame
@@ -32,6 +38,55 @@ impl IconCache {
             .or_default()
             .entry(size)
             .or_insert_with(|| render(path, size));
+    }
+
+    /// Like [`IconCache::warm`], for a glyph drawn through
+    /// [`IconCache::draw_tinted`].
+    pub fn warm_tinted(&mut self, path: &str, size: u32, color: [u8; 3]) {
+        self.tinted
+            .entry((path.to_string(), size, color))
+            .or_insert_with(|| {
+                render(path, size).map(|mut pixmap| {
+                    tint(&mut pixmap, color);
+                    pixmap
+                })
+            });
+    }
+
+    /// Draw `path` recoloured to `color` when it is a monochrome silhouette;
+    /// a coloured icon is drawn unchanged. The action panel's theme glyphs
+    /// (pin, trash, copy) are dark-on-transparent and would be invisible on the
+    /// dark card otherwise.
+    pub fn draw_tinted(
+        &mut self,
+        target: &mut Pixmap,
+        path: &str,
+        pos: (f32, f32),
+        size: u32,
+        opacity: f32,
+        color: [u8; 3],
+    ) {
+        let icon = self
+            .tinted
+            .entry((path.to_string(), size, color))
+            .or_insert_with(|| {
+                render(path, size).map(|mut pixmap| {
+                    tint(&mut pixmap, color);
+                    pixmap
+                })
+            });
+        let Some(icon) = icon else { return };
+        target.draw_pixmap(
+            pos.0.round() as i32,
+            pos.1.round() as i32,
+            icon.as_ref(),
+            &PixmapPaint {
+                opacity: opacity.clamp(0.0, 1.0),
+                ..PixmapPaint::default()
+            },
+            Transform::identity(),
+            None,
+        );
     }
 
     /// Draw the icon at `path` contained in a `size`×`size` box whose top-left
@@ -85,6 +140,37 @@ fn render(path: &str, size: u32) -> Option<Pixmap> {
         let mut target = Pixmap::new(size, size)?;
         resample(source.as_ref(), &mut target);
         Some(target)
+    }
+}
+
+/// Recolour a monochrome silhouette to `color`, preserving alpha. A coloured
+/// icon is left alone: the pin/trash/copy glyphs are grey and need the theme
+/// colour, but a folder or an application icon must keep its own.
+fn tint(pixmap: &mut Pixmap, color: [u8; 3]) {
+    let greyscale = pixmap
+        .pixels()
+        .iter()
+        .filter(|pixel| pixel.alpha() > 0)
+        .all(|pixel| {
+            pixel.red().abs_diff(pixel.green()) <= 8 && pixel.green().abs_diff(pixel.blue()) <= 8
+        });
+    if !greyscale {
+        return;
+    }
+
+    for pixel in pixmap.pixels_mut() {
+        let alpha = pixel.alpha();
+        let scale = u32::from(alpha);
+        // Premultiplied colour: `color * alpha / 255`, which never exceeds the
+        // alpha, so `from_rgba` accepts it.
+        let channel = |value: u8| ((u32::from(value) * scale + 127) / 255) as u8;
+        *pixel = PremultipliedColorU8::from_rgba(
+            channel(color[0]),
+            channel(color[1]),
+            channel(color[2]),
+            alpha,
+        )
+        .expect("a premultiplied channel never exceeds its alpha");
     }
 }
 
@@ -216,6 +302,58 @@ mod tests {
         assert_eq!(centre.alpha(), 255, "the square is drawn");
         assert_eq!((centre.red(), centre.green(), centre.blue()), (255, 0, 0));
 
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_greyscale_glyph_is_tinted_to_the_theme_colour() {
+        // a `#444` silhouette, the shape a Papirus action icon has on this box
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#444444"/></svg>"##;
+        let path = std::env::temp_dir().join("wayrun-icon-tint.svg");
+        std::fs::write(&path, svg).unwrap();
+
+        let mut cache = IconCache::new();
+        let mut target = Pixmap::new(34, 34).unwrap();
+        cache.draw_tinted(
+            &mut target,
+            path.to_str().unwrap(),
+            (2.0, 2.0),
+            30,
+            1.0,
+            [241, 223, 218],
+        );
+
+        let centre = target.pixel(17, 17).unwrap();
+        assert_eq!(centre.alpha(), 255);
+        assert_eq!(
+            (centre.red(), centre.green(), centre.blue()),
+            (241, 223, 218)
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_coloured_glyph_keeps_its_own_colour() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#1e88e5"/></svg>"##;
+        let path = std::env::temp_dir().join("wayrun-icon-notint.svg");
+        std::fs::write(&path, svg).unwrap();
+
+        let mut cache = IconCache::new();
+        let mut target = Pixmap::new(34, 34).unwrap();
+        cache.draw_tinted(
+            &mut target,
+            path.to_str().unwrap(),
+            (2.0, 2.0),
+            30,
+            1.0,
+            [241, 223, 218],
+        );
+
+        let centre = target.pixel(17, 17).unwrap();
+        assert_eq!(
+            (centre.red(), centre.green(), centre.blue()),
+            (0x1e, 0x88, 0xe5)
+        );
         let _ = std::fs::remove_file(&path);
     }
 

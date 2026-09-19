@@ -310,14 +310,18 @@ impl Shell {
                 let now = Instant::now();
                 self.app.apply_results(items, now);
                 let size = (crate::ui::render::ICON_SIZE * self.app.scale_factor()).round() as u32;
-                let paths: Vec<String> = self
-                    .app
-                    .rows
-                    .iter()
-                    .filter_map(|row| row.icon.clone())
-                    .collect();
-                for path in paths {
-                    self.icons.warm(&path, size);
+                let fg = self.app.theme.fg;
+                for row in &self.app.rows {
+                    if let Some(path) = &row.icon {
+                        self.icons.warm(path, size);
+                    }
+                    // The panel draws action glyphs in the theme foreground;
+                    // warm that variant, not the dark original.
+                    for action in &row.actions {
+                        if let Some(path) = &action.icon {
+                            self.icons.warm_tinted(path, size, fg);
+                        }
+                    }
                 }
             }
             // A confirmed forget is the only thing that removes a row: a

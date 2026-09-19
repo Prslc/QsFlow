@@ -1,3 +1,13 @@
+/// One secondary command of a row, shown in the action panel (Shift+Enter).
+/// `icon` is already an absolute path, resolved by the core.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+pub struct ActionItem {
+    pub title: String,
+    pub on_click: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
 /// One row of a `{"type":"results","data":[…]}` payload; absent keys are normal.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 pub struct ResultItem {
@@ -12,6 +22,9 @@ pub struct ResultItem {
     /// usage history. Forwarded back in the `select` record.
     #[serde(default)]
     pub ephemeral: bool,
+    /// The row's action panel, resolved by the core.
+    #[serde(default)]
+    pub actions: Vec<ActionItem>,
 }
 
 /// The `{"type":"theme","data":{…}}` payload. `bg`/`on_primary` are not modelled

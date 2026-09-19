@@ -76,6 +76,48 @@ impl Layout {
         }
     }
 
+    /// The action panel's header band: the parent row's title, above the
+    /// actions it offers.
+    pub fn panel_header_h(&self) -> f32 {
+        28.0
+    }
+
+    /// The card height with the action panel open: like `content_h`, but the
+    /// list band holds the actions under a header instead of the results.
+    pub fn panel_h(&self, actions: usize) -> f32 {
+        let base = PAD + SEARCH_H + GAP + FOOTER_H + PAD;
+        base + GAP + self.panel_header_h() + self.list_h(actions)
+    }
+
+    /// The y of the first action row: the panel header sits where the first
+    /// result row would.
+    pub fn actions_top(&self, surface: (u32, u32)) -> f32 {
+        self.rows_top(surface) + self.panel_header_h()
+    }
+
+    /// The action index under a surface-local point, `None` outside the panel.
+    pub fn action_at(
+        &self,
+        surface: (u32, u32),
+        first: usize,
+        count: usize,
+        x: f32,
+        y: f32,
+    ) -> Option<usize> {
+        let left = self.card_x(surface);
+        if x < left || x > left + self.card_w(surface) {
+            return None;
+        }
+
+        let top = self.actions_top(surface);
+        if y < top || y >= top + self.list_h(count) {
+            return None;
+        }
+
+        let index = first + ((y - top) / ROW_H) as usize;
+        (index < count).then_some(index)
+    }
+
     /// The blur region covering the card's rounded rect. A rect cannot carry a
     /// radius, so the corners are 2px scanline bands inset by
     /// `r - sqrt(r² - (r - dy)²)`, taken at each band's top so no rect pokes
@@ -260,6 +302,37 @@ mod tests {
         assert_eq!(l.row_radius(), 8.0);
         assert_eq!(l.chip_radius(), 6.0);
         assert_eq!(l.hairline_radius(), 15.5);
+    }
+
+    #[test]
+    fn the_action_panel_adds_a_header_above_the_actions() {
+        let l = Layout::default();
+        assert_eq!(l.panel_h(3), l.content_h(3) + l.panel_header_h());
+        // the actions start where the first result row would, one header lower
+        let surface = (1920, 1080);
+        assert_eq!(
+            l.actions_top(surface),
+            l.rows_top(surface) + l.panel_header_h()
+        );
+
+        let left = l.card_x(surface) + 10.0;
+        let top = l.actions_top(surface);
+        assert_eq!(l.action_at(surface, 0, 4, left, top), Some(0));
+        assert_eq!(l.action_at(surface, 0, 4, left, top + ROW_H + 1.0), Some(1));
+        // a `first` window shifts surface row 0 to that action
+        assert_eq!(l.action_at(surface, 2, 20, left, top + 0.5), Some(2));
+        // above the actions is the header, not an action
+        assert_eq!(l.action_at(surface, 0, 4, left, top - 1.0), None);
+        // only the `max_rows` window is drawn
+        assert_eq!(
+            l.action_at(surface, 0, 20, left, top + l.max_rows as f32 * ROW_H),
+            None
+        );
+        // a short panel has nothing below its last action
+        assert_eq!(
+            l.action_at(surface, 0, 2, left, top + 2.0 * ROW_H + 1.0),
+            None
+        );
     }
 
     #[test]

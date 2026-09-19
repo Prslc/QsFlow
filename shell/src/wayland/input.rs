@@ -9,6 +9,7 @@ use wayland_client::protocol::{wl_keyboard, wl_pointer, wl_seat, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use crate::app;
+use crate::session::model::ActionItem;
 use crate::session::{backend, clipboard};
 use crate::ui::geom;
 
@@ -20,6 +21,9 @@ const WHEEL_ROW_PX: f32 = geom::ROW_H;
 impl Shell {
     fn key(&mut self, event: &KeyEvent, now: Instant) {
         let control = self.modifiers.ctrl;
+        // Shift extends a selection instead of collapsing it, and opens the
+        // action panel on Enter.
+        let shift = self.modifiers.shift;
 
         if control {
             match event.keysym {
@@ -53,13 +57,53 @@ impl Shell {
             }
         }
 
-        // Shift extends a selection instead of collapsing it.
-        let shift = self.modifiers.shift;
+        // The action panel owns the keyboard while it is open. A key it does
+        // not use dismisses it and falls through to the field, so typing or an
+        // arrow continues in the results.
+        if self.app.menu.is_some() {
+            match event.keysym {
+                Keysym::Escape => {
+                    self.close_panel(now);
+                    return;
+                }
+                Keysym::Return | Keysym::KP_Enter if shift => {
+                    self.close_panel(now);
+                    return;
+                }
+                Keysym::Return | Keysym::KP_Enter => {
+                    self.run_action(now);
+                    return;
+                }
+                Keysym::Up => {
+                    self.app.menu_up();
+                    self.redraw();
+                    return;
+                }
+                Keysym::Down => {
+                    self.app.menu_down();
+                    self.redraw();
+                    return;
+                }
+                Keysym::Page_Up => {
+                    self.app.menu_page_up();
+                    self.redraw();
+                    return;
+                }
+                Keysym::Page_Down => {
+                    self.app.menu_page_down();
+                    self.redraw();
+                    return;
+                }
+                // A modifier on its own is not a command. Closing here would let
+                // the Shift of a Shift+Enter undo the close it is part of.
+                _ if event.keysym.is_modifier_key() => return,
+                _ => self.close_panel(now),
+            }
+        }
 
         // `redraw` is "something on screen changed"; `edited` is narrower and
-        // only a *query* change may send a search line. Navigation (and ⌫,
-        // which forgets a row) must not re-run the search: a re-search after
-        // `forget` re-emits the row the user just deleted.
+        // only a *query* change may send a search line, so navigation and the
+        // action panel never re-run a search.
         let mut redraw = true;
         let mut edited = false;
         match event.keysym {
@@ -68,7 +112,11 @@ impl Shell {
                 return;
             }
             Keysym::Return | Keysym::KP_Enter => {
-                self.submit(now);
+                if shift {
+                    self.open_panel(now);
+                } else {
+                    self.submit(now);
+                }
                 return;
             }
             Keysym::BackSpace => {
@@ -76,7 +124,11 @@ impl Shell {
                 self.app.backspace();
                 edited = self.app.query.len() != before;
             }
-            Keysym::Delete => self.forget(),
+            Keysym::Delete => {
+                let before = self.app.query.len();
+                self.app.delete();
+                edited = self.app.query.len() != before;
+            }
             Keysym::Home if shift => self.app.extend_home(),
             Keysym::Home => self.app.home(),
             Keysym::End if shift => self.app.extend_end(),
@@ -148,10 +200,14 @@ impl Shell {
 
         backend::send(&app::launch_command(&launch.target));
 
-        // The surface outlives the launch by 150ms, in both modes. Without the
-        // delay a non-resident run returns from the event loop while the verb
-        // is still queued for the writer thread, and the process exit can beat
-        // the line to the core.
+        self.schedule_dismiss(now);
+    }
+
+    /// The surface outlives a launch by 150ms, in both modes. Without the delay
+    /// a non-resident run returns from the event loop while the verb is still
+    /// queued for the writer thread, and the process exit can beat the line to
+    /// the core.
+    fn schedule_dismiss(&mut self, now: Instant) {
         let at = now + Duration::from_millis(app::EXIT_DELAY_MS);
         self.app.dismiss_at = Some(at);
         let _ = self.loop_handle.insert_source(
@@ -165,13 +221,65 @@ impl Shell {
         );
     }
 
-    /// `⌫`: ask the core to forget the selected row. The row leaves the list
-    /// only once the core answers that something was really dropped; a
-    /// provider with no `forget` answers `false` and the row stays, since the
-    /// next search would just re-emit it.
-    fn forget(&mut self) {
-        if let Some(target) = self.app.selected_target() {
-            backend::forget_row(&target);
+    fn open_panel(&mut self, now: Instant) {
+        if self.app.preedit_active {
+            return;
+        }
+        if self.app.open_actions() {
+            self.app.retarget_height(now);
+            // The panel is taller than the row list was: the band below the
+            // current card edge belongs to the backdrop during the reflow.
+            self.needs_full = true;
+            self.redraw();
+        }
+    }
+
+    fn close_panel(&mut self, now: Instant) {
+        if self.app.menu.take().is_some() {
+            self.app.retarget_height(now);
+            self.needs_full = true;
+            self.redraw();
+        }
+    }
+
+    fn run_action(&mut self, now: Instant) {
+        let Some(action) = self.app.selected_action() else {
+            return;
+        };
+        self.execute_action(&action, now);
+    }
+
+    /// One action-panel command. Pin/unpin re-search so the new leading row
+    /// appears while the launcher stays open; the rest behave like a launch and
+    /// dismiss, except `forget`, which drops the row in place like `⌫`.
+    fn execute_action(&mut self, action: &ActionItem, now: Instant) {
+        let Some(command) = app::parse_action(&action.on_click) else {
+            return;
+        };
+
+        match command {
+            app::ActionCommand::Pin { scope, item } => {
+                backend::pin(&scope, item);
+                self.close_panel(now);
+                self.query_changed();
+            }
+            app::ActionCommand::Unpin { scope, on_click } => {
+                backend::unpin(&scope, &on_click);
+                self.close_panel(now);
+                self.query_changed();
+            }
+            app::ActionCommand::Forget { on_click } => {
+                backend::forget_row(&on_click);
+                self.close_panel(now);
+            }
+            app::ActionCommand::Reveal { uri } => {
+                backend::reveal(&uri);
+                self.schedule_dismiss(now);
+            }
+            app::ActionCommand::Run { target } => {
+                backend::send(&app::launch_command(&target));
+                self.schedule_dismiss(now);
+            }
         }
     }
 
@@ -364,8 +472,37 @@ impl PointerHandler for Shell {
                         .clear_hit(event.position.0 as f32, event.position.1 as f32)
                     {
                         self.app.clear_query();
+                        self.app.close_actions();
                         self.redraw();
                         self.query_changed();
+                        return;
+                    }
+
+                    if self.app.menu.is_some() {
+                        let (first, count) = self
+                            .app
+                            .menu
+                            .as_ref()
+                            .map(|menu| (menu.first, menu.actions.len()))
+                            .unwrap_or_default();
+                        if let Some(index) = self.app.appearance.layout.action_at(
+                            self.app.surface,
+                            first,
+                            count,
+                            event.position.0 as f32,
+                            event.position.1 as f32,
+                        ) {
+                            if let Some(menu) = &mut self.app.menu {
+                                menu.selected = index;
+                            }
+                            self.run_action(now);
+                            return;
+                        }
+                        if inside_card {
+                            // the panel swallows a press that is not on an action
+                            return;
+                        }
+                        self.dismiss(now);
                         return;
                     }
 
@@ -408,7 +545,11 @@ impl PointerHandler for Shell {
                     };
                     let whole = app::whole_rows(&mut self.wheel_accum, rows);
                     if whole != 0 {
-                        self.app.scroll(whole);
+                        if self.app.menu.is_some() {
+                            self.app.menu_scroll(whole);
+                        } else {
+                            self.app.scroll(whole);
+                        }
                         redraw = true;
                     }
                 }

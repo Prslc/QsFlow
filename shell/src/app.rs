@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use crate::config::AppearanceConfig;
-use crate::session::model::ResultItem;
+use crate::session::model::{ActionItem, ResultItem};
 use crate::ui::geom;
 use crate::ui::theme::Theme;
 
@@ -10,10 +10,12 @@ pub const EXIT_DELAY_MS: u64 = 150;
 /// The field's caret blink interval.
 pub const CARET_BLINK_MS: u64 = 500;
 
-/// What the pointer is over: a list row's tint, or the ✕ button's.
+/// What the pointer is over: a list row's tint, an action-panel row's, or the
+/// ✕ button's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hover {
     Row(usize),
+    Action(usize),
     Clear,
 }
 
@@ -26,6 +28,26 @@ pub struct Row {
     pub icon: Option<String>,
     /// The core's `ephemeral` flag, forwarded when the row is selected.
     pub ephemeral: bool,
+    /// The secondary commands the action panel offers for this row.
+    pub actions: Vec<ActionItem>,
+}
+
+/// The keyboard-driven action panel (Wox-style) opened with Shift+Enter over the
+/// selected row. It replaces the result list until it is dismissed or an action
+/// runs; `parent` is the row it belongs to.
+pub struct Menu {
+    pub parent: usize,
+    pub actions: Vec<ActionItem>,
+    pub selected: usize,
+    /// The top visible action of the `max_rows` window.
+    pub first: usize,
+}
+
+impl Menu {
+    /// The action the panel would run.
+    pub fn selected_action(&self) -> Option<&ActionItem> {
+        self.actions.get(self.selected)
+    }
 }
 
 /// The selected row's fields that `select` and the launch command need.
@@ -51,6 +73,8 @@ pub struct State {
     pub selected: usize,
     /// Index of the top visible row of the fixed `max_rows` window (`contain`).
     pub first: usize,
+    /// The open action panel, if any. It takes over the list and the keyboard.
+    pub menu: Option<Menu>,
     /// The core's system theme (the DMS palette, or the fallback).
     pub system_theme: Theme,
     /// The `theme.toml` appearance config.
@@ -111,6 +135,7 @@ impl State {
             rows: Vec::new(),
             selected: 0,
             first: 0,
+            menu: None,
             system_theme: theme,
             appearance,
             theme,
@@ -141,7 +166,7 @@ impl State {
         self.reduce_motion = self.reduced_env || config.reduced;
         self.appearance = config;
         self.refresh_theme();
-        self.card_from = self.appearance.layout.content_h(self.rows.len());
+        self.card_from = self.content_height();
         self.card_to = self.card_from;
         self.card_at = now;
     }
@@ -167,6 +192,16 @@ impl State {
     /// buffer scale must stay 1.
     pub fn uses_viewport(&self) -> bool {
         self.fractional.is_some()
+    }
+
+    /// The card's resting height: the action panel when one is open, else the
+    /// result list. Every height computation goes through here, so the footer,
+    /// the blur region and the reflow all agree with the drawn frame.
+    pub fn content_height(&self) -> f32 {
+        match &self.menu {
+            Some(menu) => self.appearance.layout.panel_h(menu.actions.len()),
+            None => self.appearance.layout.content_h(self.rows.len()),
+        }
     }
 
     pub fn card_height(&self, now: Instant) -> f32 {
@@ -232,11 +267,12 @@ impl State {
         self.preedit = None;
         self.preedit_active = false;
         self.selected = 0;
+        self.menu = None;
         self.hovered = None;
         self.dismiss_at = None;
         self.shown_at = now;
         self.card_at = now;
-        self.card_from = self.appearance.layout.content_h(self.rows.len());
+        self.card_from = self.content_height();
         self.card_to = self.card_from;
         self.contain();
         self.caret_visible = true;
@@ -252,12 +288,13 @@ impl State {
         self.entrance_started = true;
         self.shown_at = now;
         self.card_at = now;
-        self.card_from = self.appearance.layout.content_h(self.rows.len());
+        self.card_from = self.content_height();
         self.card_to = self.card_from;
     }
 
     pub fn hidden(&mut self) {
         self.dismiss_at = None;
+        self.menu = None;
         // The surface is gone, so nothing is composing on it any more.
         self.preedit = None;
         self.preedit_active = false;
@@ -272,12 +309,103 @@ impl State {
         self.resync_hover();
     }
 
+    // ---- action panel -----------------------------------------------------
+
+    /// Open the selected row's action panel; whether it had one to open.
+    pub fn open_actions(&mut self) -> bool {
+        let Some(row) = self.rows.get(self.selected) else {
+            return false;
+        };
+        if row.actions.is_empty() {
+            return false;
+        }
+        self.menu = Some(Menu {
+            parent: self.selected,
+            actions: row.actions.clone(),
+            selected: 0,
+            first: 0,
+        });
+        true
+    }
+
+    pub fn close_actions(&mut self) {
+        self.menu = None;
+    }
+
+    /// The action Enter would run in the open panel.
+    pub fn selected_action(&self) -> Option<ActionItem> {
+        self.menu.as_ref().and_then(Menu::selected_action).cloned()
+    }
+
+    /// The title of the row the panel belongs to, for its header.
+    pub fn menu_parent_title(&self) -> Option<&str> {
+        let menu = self.menu.as_ref()?;
+        self.rows.get(menu.parent).map(|row| row.title.as_str())
+    }
+
+    pub fn menu_up(&mut self) {
+        if let Some(menu) = &mut self.menu {
+            menu.selected = menu.selected.saturating_sub(1);
+        }
+        self.menu_contain();
+    }
+
+    pub fn menu_down(&mut self) {
+        if let Some(menu) = &mut self.menu
+            && menu.selected + 1 < menu.actions.len()
+        {
+            menu.selected += 1;
+        }
+        self.menu_contain();
+    }
+
+    /// The wheel moves the panel's selection, like the arrows.
+    pub fn menu_scroll(&mut self, rows: i32) {
+        let last = match &self.menu {
+            Some(menu) if !menu.actions.is_empty() && rows != 0 => menu.actions.len() - 1,
+            _ => return,
+        };
+        if let Some(menu) = &mut self.menu {
+            menu.selected = (menu.selected as i32 + rows).clamp(0, last as i32) as usize;
+        }
+        self.menu_contain();
+    }
+
+    pub fn menu_page_up(&mut self) {
+        let page = self.appearance.layout.max_rows;
+        if let Some(menu) = &mut self.menu {
+            menu.selected = menu.selected.saturating_sub(page);
+        }
+        self.menu_contain();
+    }
+
+    pub fn menu_page_down(&mut self) {
+        let page = self.appearance.layout.max_rows;
+        if let Some(menu) = &mut self.menu {
+            menu.selected = (menu.selected + page).min(menu.actions.len().saturating_sub(1));
+        }
+        self.menu_contain();
+    }
+
+    fn menu_contain(&mut self) {
+        let layout = self.appearance.layout;
+        if let Some(menu) = &mut self.menu {
+            menu.first = layout.contain(menu.selected, menu.first, menu.actions.len());
+        }
+        self.resync_hover();
+    }
+
     /// The pointer position and the hover it implies; returns whether the hover
     /// changed. The ✕ button sits outside the list and wins over a row.
     pub fn hover_at(&mut self, x: f32, y: f32) -> bool {
         self.cursor = Some((x, y));
         let hover = if self.clear_hit(x, y) {
             Some(Hover::Clear)
+        } else if let Some(menu) = &self.menu {
+            self.appearance
+                .layout
+                .action_at(self.surface, menu.first, menu.actions.len(), x, y)
+                .map(Hover::Action)
         } else {
             self.appearance
                 .layout
@@ -302,15 +430,25 @@ impl State {
     /// in the same place, so nothing fires an enter/exit for them: re-derive
     /// the row hover. `Hover::Clear` is left alone, since it is not in the list.
     fn resync_hover(&mut self) {
-        let row = self.cursor.and_then(|(x, y)| {
-            self.appearance
-                .layout
-                .row_at(self.surface, self.first, self.rows.len(), x, y)
+        let hit = self.cursor.and_then(|(x, y)| {
+            if let Some(menu) = &self.menu {
+                self.appearance
+                    .layout
+                    .action_at(self.surface, menu.first, menu.actions.len(), x, y)
+                    .map(Hover::Action)
+            } else {
+                self.appearance
+                    .layout
+                    .row_at(self.surface, self.first, self.rows.len(), x, y)
+                    .map(Hover::Row)
+            }
         });
 
-        match row {
-            Some(row) => self.hovered = Some(Hover::Row(row)),
-            None if matches!(self.hovered, Some(Hover::Row(_))) => self.hovered = None,
+        match hit {
+            Some(hit) => self.hovered = Some(hit),
+            None if matches!(self.hovered, Some(Hover::Row(_) | Hover::Action(_))) => {
+                self.hovered = None
+            }
             None => {}
         }
     }
@@ -329,7 +467,7 @@ impl State {
     }
 
     pub fn retarget_height(&mut self, now: Instant) {
-        let target = self.appearance.layout.content_h(self.rows.len());
+        let target = self.content_height();
         if target != self.card_to {
             self.card_from = self.card_height(now);
             self.card_to = target;
@@ -524,11 +662,6 @@ impl State {
 
     // ---- rows -------------------------------------------------------------
 
-    /// The selected row's `on_click`: what `⌫` offers to the core.
-    pub fn selected_target(&self) -> Option<String> {
-        self.rows.get(self.selected)?.on_click.clone()
-    }
-
     /// Drop a row the core confirmed it really forgot. Looked up by `on_click`
     /// rather than by index, because the payload may have been replaced while
     /// the reply was in flight.
@@ -543,6 +676,8 @@ impl State {
 
         self.rows.remove(index);
         self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        // The panel was about the list that just changed under it.
+        self.menu = None;
         self.contain();
         self.retarget_height(now);
         true
@@ -562,14 +697,17 @@ impl State {
                 on_click: item.on_click,
                 icon: item.icon.filter(|spec| !spec.is_empty()),
                 ephemeral: item.ephemeral,
+                actions: item.actions,
             })
             .collect();
 
         // A genuinely new payload starts from the top row; what the user is
         // looking at changed under the cursor. A local removal (`⌫`) never comes
         // through here and an identical re-send returned above, so both keep the
-        // cursor.
+        // cursor. A fresh payload also belongs to a new list, so any open panel
+        // is stale.
         self.selected = 0;
+        self.menu = None;
         self.contain();
         self.retarget_height(now);
     }
@@ -581,6 +719,7 @@ impl State {
                     && row.summary == item.summary
                     && row.on_click == item.on_click
                     && row.icon.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
+                    && row.actions == item.actions
             })
     }
 
@@ -649,6 +788,66 @@ fn ease_out_quint(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(5)
 }
 
+/// What an action-panel row's `on_click` means. The launcher-level `pin:` and
+/// `unpin:` carry a JSON payload; the rest reuse the row schemes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActionCommand {
+    Pin {
+        scope: String,
+        item: serde_json::Value,
+    },
+    Unpin {
+        scope: String,
+        on_click: String,
+    },
+    Forget {
+        on_click: String,
+    },
+    Reveal {
+        uri: String,
+    },
+    Run {
+        target: String,
+    },
+}
+
+/// Decode one action's `on_click`. `None` for a malformed `pin:`/`unpin:`
+/// payload, which is ignored rather than run as a command; a scheme-less target
+/// is an ordinary launch command.
+pub fn parse_action(on_click: &str) -> Option<ActionCommand> {
+    if let Some(payload) = on_click.strip_prefix("pin:") {
+        let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+        return Some(ActionCommand::Pin {
+            scope: value["scope"].as_str()?.to_string(),
+            item: value.get("item")?.clone(),
+        });
+    }
+
+    if let Some(payload) = on_click.strip_prefix("unpin:") {
+        let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+        return Some(ActionCommand::Unpin {
+            scope: value["scope"].as_str()?.to_string(),
+            on_click: value["on_click"].as_str()?.to_string(),
+        });
+    }
+
+    if let Some(on_click) = on_click.strip_prefix("forget:") {
+        return Some(ActionCommand::Forget {
+            on_click: on_click.to_string(),
+        });
+    }
+
+    if let Some(uri) = on_click.strip_prefix("reveal:") {
+        return Some(ActionCommand::Reveal {
+            uri: uri.to_string(),
+        });
+    }
+
+    Some(ActionCommand::Run {
+        target: on_click.to_string(),
+    })
+}
+
 /// The one command line a row's `on_click` becomes; anything without a scheme
 /// is a shell command.
 pub fn launch_command(target: &str) -> String {
@@ -704,6 +903,7 @@ mod tests {
             on_click: on_click.map(str::to_string),
             icon: icon.map(str::to_string),
             ephemeral: false,
+            actions: Vec::new(),
         }
     }
 
@@ -993,7 +1193,7 @@ mod tests {
         state.apply_results(items, now);
         state.selected = 1;
         assert_eq!(
-            state.selected_target().as_deref(),
+            state.rows[1].on_click.as_deref(),
             Some("launch:firefox.desktop")
         );
 
@@ -1085,5 +1285,141 @@ mod tests {
         row.ephemeral = true;
         state.apply_results(vec![row], std::time::Instant::now());
         assert!(state.selected_row().unwrap().ephemeral);
+    }
+
+    fn with_actions(mut row: ResultItem, titles: &[&str]) -> ResultItem {
+        row.actions = titles
+            .iter()
+            .map(|title| ActionItem {
+                title: title.to_string(),
+                on_click: format!("run:{title}"),
+                icon: None,
+            })
+            .collect();
+        row
+    }
+
+    #[test]
+    fn the_panel_opens_over_the_selected_row_and_runs_its_action() {
+        let mut state = state();
+        let now = std::time::Instant::now();
+        state.apply_results(
+            vec![
+                item("Files", None, Some("file:///tmp"), None),
+                item("Firefox", None, Some("launch:firefox.desktop"), None),
+            ],
+            now,
+        );
+        state.selected = 1;
+        state.rows[1].actions = vec![ActionItem {
+            title: "Pin to top".to_string(),
+            on_click: "pin:{\"scope\":\"\",\"item\":{}}".to_string(),
+            icon: None,
+        }];
+
+        assert!(state.open_actions());
+        assert_eq!(state.menu_parent_title(), Some("Firefox"));
+        assert_eq!(state.selected_action().unwrap().title, "Pin to top");
+        // the panel is taller than the one-row list it replaced
+        assert_eq!(state.content_height(), state.appearance.layout.panel_h(1));
+
+        state.close_actions();
+        assert!(state.menu.is_none());
+        assert_eq!(state.content_height(), state.appearance.layout.content_h(2));
+    }
+
+    #[test]
+    fn a_row_without_actions_has_no_panel() {
+        let mut state = state();
+        state.apply_results(
+            vec![item("Files", None, Some("file:///tmp"), None)],
+            std::time::Instant::now(),
+        );
+        assert!(!state.open_actions());
+        assert!(state.menu.is_none());
+    }
+
+    #[test]
+    fn a_new_payload_closes_the_panel() {
+        let mut state = state();
+        let now = std::time::Instant::now();
+        state.apply_results(
+            vec![with_actions(
+                item("a", None, Some("run:a"), None),
+                &["Pin to top"],
+            )],
+            now,
+        );
+        assert!(state.open_actions());
+
+        state.apply_results(vec![item("b", None, Some("run:b"), None)], now);
+        assert!(state.menu.is_none(), "a new list invalidates the panel");
+    }
+
+    #[test]
+    fn the_panel_window_follows_the_selection_past_max_rows() {
+        let mut state = state();
+        let now = std::time::Instant::now();
+        let actions: Vec<&str> = (0..10).map(|_| "act").collect();
+        state.apply_results(
+            vec![with_actions(item("a", None, Some("run:a"), None), &actions)],
+            now,
+        );
+        assert!(state.open_actions());
+
+        let max = state.appearance.layout.max_rows;
+        state.menu_down();
+        state.menu_down();
+        state.menu_down();
+        state.menu_down();
+        state.menu_down();
+        assert_eq!(state.menu.as_ref().unwrap().selected, 5);
+        assert_eq!(state.menu.as_ref().unwrap().first, 5 - max + 1);
+
+        state.menu_page_up();
+        assert_eq!(state.menu.as_ref().unwrap().selected, 5 - max);
+    }
+
+    #[test]
+    fn parse_action_decodes_each_panel_command() {
+        let pin =
+            parse_action(r#"pin:{"scope":"b firefox","item":{"title":"x","on_click":"run:x"}}"#)
+                .unwrap();
+        match pin {
+            ActionCommand::Pin { scope, item } => {
+                assert_eq!(scope, "b firefox");
+                assert_eq!(item["title"], "x");
+            }
+            other => panic!("expected pin, got {other:?}"),
+        }
+
+        assert_eq!(
+            parse_action(r#"unpin:{"scope":"","on_click":"run:x"}"#),
+            Some(ActionCommand::Unpin {
+                scope: String::new(),
+                on_click: "run:x".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_action("forget:launch:firefox.desktop"),
+            Some(ActionCommand::Forget {
+                on_click: "launch:firefox.desktop".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_action("reveal:file:///tmp/a%20b"),
+            Some(ActionCommand::Reveal {
+                uri: "file:///tmp/a%20b".to_string(),
+            })
+        );
+        // a plain scheme is an ordinary launch command
+        assert_eq!(
+            parse_action("action:org.x:new-window"),
+            Some(ActionCommand::Run {
+                target: "action:org.x:new-window".to_string(),
+            })
+        );
+        // a malformed pin is ignored, never run as a command
+        assert_eq!(parse_action("pin:not json"), None);
     }
 }

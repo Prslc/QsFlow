@@ -70,6 +70,37 @@ pub fn forget_row(on_click: &str) {
     );
 }
 
+/// Pin a row's stored snapshot to the top of one exact query. A notification,
+/// not a request: the caller re-searches and the pin leads the reply, so no
+/// reply of its own is needed.
+pub fn pin(scope: &str, item: serde_json::Value) {
+    send(
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "pin",
+            "params": { "scope": scope, "item": item },
+        })
+        .to_string(),
+    );
+}
+
+/// Drop one pin of an exact query.
+pub fn unpin(scope: &str, on_click: &str) {
+    send(
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "unpin",
+            "params": { "scope": scope, "on_click": on_click },
+        })
+        .to_string(),
+    );
+}
+
+/// Ask the core to show a file in the file manager.
+pub fn reveal(uri: &str) {
+    send(&format!("reveal {uri}"));
+}
+
 /// Spawn the core and wire the reader/writer threads: one writer owns stdin (no
 /// interleaved lines), the reader reaps the child when stdout closes.
 pub fn start(tx: Sender<BackendEvent>) {
