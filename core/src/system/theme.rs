@@ -32,6 +32,7 @@ struct DmsPalette {
 /// The built-in dark palette, used when no system theme is available.
 pub fn default_theme() -> ThemeConfig {
     ThemeConfig {
+        mode: Some("dark".into()),
         primary: Some("#ffb59f".into()),
         on_primary: Some("#561f0f".into()),
         bg: Some("#1a110f".into()),
@@ -53,11 +54,14 @@ fn load_dms() -> Option<ThemeConfig> {
 
 fn from_json(text: &str) -> Option<ThemeConfig> {
     let file: DmsColors = serde_json::from_str(text).ok()?;
-    let palette = match file.mode.as_str() {
-        "dark" => file.colors.dark,
-        _ => file.colors.light,
+    // anything that is not `dark` resolves to the light palette, and the mode
+    // sent on the wire must agree with the palette it names.
+    let (mode, palette) = match file.mode.as_str() {
+        "dark" => ("dark", file.colors.dark),
+        _ => ("light", file.colors.light),
     };
     Some(ThemeConfig {
+        mode: Some(mode.into()),
         primary: Some(palette.primary),
         on_primary: Some(palette.on_primary),
         bg: Some(palette.background),
@@ -97,12 +101,14 @@ mod tests {
     #[test]
     fn the_mode_key_selects_the_palette() {
         let light = from_json(&sample("light")).unwrap();
+        assert_eq!(light.mode.as_deref(), Some("light"));
         assert_eq!(light.primary.as_deref(), Some("#35618e"));
         assert_eq!(light.bg.as_deref(), Some("#f8f9ff"));
         assert_eq!(light.fg.as_deref(), Some("#191c20"));
         assert_eq!(light.container.as_deref(), Some("#eceef4"));
 
         let dark = from_json(&sample("dark")).unwrap();
+        assert_eq!(dark.mode.as_deref(), Some("dark"));
         assert_eq!(dark.primary.as_deref(), Some("#a0cafd"));
         assert_eq!(dark.bg.as_deref(), Some("#101418"));
         assert_eq!(dark.container.as_deref(), Some("#1d2024"));
@@ -110,10 +116,9 @@ mod tests {
 
     #[test]
     fn an_unknown_mode_falls_back_to_light() {
-        assert_eq!(
-            from_json(&sample("sepia")).unwrap().bg.as_deref(),
-            Some("#f8f9ff")
-        );
+        let theme = from_json(&sample("sepia")).unwrap();
+        assert_eq!(theme.mode.as_deref(), Some("light"));
+        assert_eq!(theme.bg.as_deref(), Some("#f8f9ff"));
     }
 
     #[test]

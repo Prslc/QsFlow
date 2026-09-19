@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::config::AppearanceConfig;
+use crate::config::{AppearanceConfig, Mode};
 use crate::ui::theme::{Surfaces, Theme};
 use wayrun_core::wire::{ActionItem, ResultItem};
 
@@ -73,6 +73,9 @@ pub struct State {
     pub menu: Option<Menu>,
     /// The core's system theme (the DMS palette, or the fallback).
     pub system_theme: Theme,
+    /// Which system palette is active, so `[colors.dark]`/`[colors.light]`
+    /// pick the matching table.
+    pub mode: Mode,
     /// The `theme.toml` appearance config.
     pub appearance: AppearanceConfig,
     /// The effective theme: `system_theme` with `appearance.colors` on top.
@@ -121,7 +124,9 @@ impl State {
         let reduced_env = std::env::var_os("WAYRUN_REDUCED_MOTION").is_some();
         let reduce_motion = reduced_env || appearance.reduced;
         let theme = Theme::default();
-        let surfaces = Surfaces::resolve(theme, &appearance.colors);
+        let mode = Mode::default();
+        let colors = appearance.colors.for_mode(mode);
+        let surfaces = Surfaces::resolve(theme, &colors);
         let card = appearance.layout.content_h(0);
         Self {
             query: String::new(),
@@ -133,6 +138,7 @@ impl State {
             first: 0,
             menu: None,
             system_theme: theme,
+            mode,
             appearance,
             theme,
             surfaces,
@@ -168,15 +174,17 @@ impl State {
         self.card_at = now;
     }
 
-    /// The core's system theme changed.
-    pub fn set_system_theme(&mut self, system: Theme) {
+    /// The core's system theme changed, with the mode whose palette it holds.
+    pub fn set_system_theme(&mut self, system: Theme, mode: Mode) {
         self.system_theme = system;
+        self.mode = mode;
         self.refresh_theme();
     }
 
     fn refresh_theme(&mut self) {
-        self.theme = Theme::overlay(self.system_theme, &self.appearance.colors);
-        self.surfaces = Surfaces::resolve(self.theme, &self.appearance.colors);
+        let colors = self.appearance.colors.for_mode(self.mode);
+        self.theme = Theme::overlay(self.system_theme, &colors);
+        self.surfaces = Surfaces::resolve(self.theme, &colors);
     }
 
     /// The buffer scale to render at: the compositor's fractional ratio when
@@ -945,13 +953,16 @@ mod tests {
         let now = std::time::Instant::now();
 
         let mut config = AppearanceConfig::default();
-        config.colors.fg = Some([0x10, 0x20, 0x30]);
+        config.colors.shared.fg = Some([0x10, 0x20, 0x30]);
         config.layout.max_rows = 2;
-        state.set_system_theme(Theme {
-            primary: [1, 2, 3],
-            fg: [4, 5, 6],
-            container: [7, 8, 9],
-        });
+        state.set_system_theme(
+            Theme {
+                primary: [1, 2, 3],
+                fg: [4, 5, 6],
+                container: [7, 8, 9],
+            },
+            Mode::Dark,
+        );
         state.apply_appearance(config, now);
 
         assert_eq!(state.theme.primary, [1, 2, 3]);

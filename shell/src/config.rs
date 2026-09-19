@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use wayrun_core::watch_targets;
 
 mod model;
-pub use model::{AppearanceConfig, ColorOverrides};
+pub use model::{AppearanceConfig, ColorOverrides, Mode};
 
 const DEFAULT_TEMPLATE: &str = include_str!("../default-theme.toml");
 

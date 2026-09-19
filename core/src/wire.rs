@@ -36,6 +36,10 @@ pub struct ResultItem {
 /// partial payload still applies; the shell draws only the roles it models.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ThemeConfig {
+    /// `"dark"` or `"light"`: which palette was resolved, so a host's per-mode
+    /// overrides can follow. Absent means the host did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

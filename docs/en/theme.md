@@ -32,11 +32,12 @@ Roles are mapped like this:
 | `container` | `surface_container_high` |
 
 The shell currently draws with `primary`, `fg` and `container`; `bg` and
-`on_primary` are carried for completeness.
+`on_primary` are carried for completeness. The core also sends the resolved
+`mode`, which selects `theme.toml`'s per-mode colour tables.
 
-Without DMS the built-in dark palette is used. Support for the freedesktop
-appearance portal (`org.freedesktop.appearance`: `color-scheme` and
-`accent-color`), which is what GTK/libadwaita reads on GNOME and KDE, is
+Without DMS the built-in dark palette is used, with `mode = "dark"`. Support for
+the freedesktop appearance portal (`org.freedesktop.appearance`: `color-scheme`
+and `accent-color`), which is what GTK/libadwaita reads on GNOME and KDE, is
 planned.
 
 ## `~/.config/wayrun/theme.toml`
@@ -62,6 +63,9 @@ pair being its alpha. An unparseable value is skipped and the default stays.
 | `container` | system theme | Card fill. |
 | `follow_system` | `false` | Ignore the base roles **and** every surface below; track the system palette entirely. |
 
+`[colors]` is the shared set; `[colors.dark]` and `[colors.light]` override it
+per mode (see below).
+
 A surface's default is its role at the shipped alpha; set the key only to change
 that surface on purpose, alpha included.
 
@@ -81,6 +85,28 @@ that surface on purpose, alpha included.
 The overlay is per field: a role you set stops following the system palette,
 while an unset role keeps tracking it, so a matugen/DMS change still recolours
 the rest live. Omitting the section is the same as a pure dynamic theme.
+
+#### Per-mode overrides
+
+A hand-picked colour is static, but the system palette switches between light
+and dark. `[colors.dark]` and `[colors.light]` accept the same keys as
+`[colors]` and layer on top of it while that mode is active, so a colour that
+only works in one mode can differ while everything else stays shared:
+
+```toml
+[colors]
+primary = "#7aa2f7"          # shared by both modes
+
+[colors.dark]
+fg = "#c0caf5"
+
+[colors.light]
+fg = "#1f2430"
+```
+
+The active mode is the one the core resolved (the DMS `mode`, and `dark` when
+there is no system theme), so the tables follow a live light/dark switch with no
+restart. A key the active table does not set keeps the `[colors]` value.
 
 ### `[blur]`
 

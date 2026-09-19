@@ -204,6 +204,7 @@ mod tests {
     #[test]
     fn parses_hex_and_falls_back() {
         let config = ThemeConfig {
+            mode: None,
             primary: Some("#7aa2f7".into()),
             on_primary: None,
             bg: None,

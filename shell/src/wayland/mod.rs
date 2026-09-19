@@ -31,7 +31,7 @@ use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 
 use crate::app::{self, State as Launcher};
-use crate::config::AppearanceConfig;
+use crate::config::{AppearanceConfig, Mode};
 use crate::session::backend::BackendEvent;
 use crate::session::ipc;
 use crate::ui::icons::IconCache;
@@ -293,8 +293,10 @@ impl Shell {
     pub fn on_backend(&mut self, event: BackendEvent) {
         match event {
             BackendEvent::Theme(config) => {
-                self.app
-                    .set_system_theme(theme::Theme::from_config(&config));
+                self.app.set_system_theme(
+                    theme::Theme::from_config(&config),
+                    Mode::from_wire(config.mode.as_deref()),
+                );
             }
             BackendEvent::Results(items) => {
                 let now = Instant::now();

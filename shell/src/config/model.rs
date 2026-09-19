@@ -10,14 +10,6 @@ macro_rules! assign {
     };
 }
 
-/// Assign a surface colour; unlike `assign!` an absent key clears the slot, so
-/// the surface falls back to the role it derives from.
-macro_rules! assign_color {
-    ($slot:expr, $value:expr) => {
-        $slot = $value.as_deref().and_then(theme::parse_color);
-    };
-}
-
 /// The base roles are RGB; every surface takes a colour with inline alpha, so
 /// opacity travels with the colour instead of its own key.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -37,6 +29,60 @@ pub struct ColorOverrides {
     pub dim: Option<[u8; 4]>,
     /// Ignore every override in this section and follow the system palette.
     pub follow_system: bool,
+}
+
+/// Which system palette is active; selects the matching colour table.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Mode {
+    /// The core sends `"light"` or `"dark"`; anything else is treated as dark.
+    pub fn from_wire(mode: Option<&str>) -> Self {
+        match mode {
+            Some("light") => Self::Light,
+            _ => Self::Dark,
+        }
+    }
+}
+
+/// The `[colors]` root plus the `[colors.dark]`/`[colors.light]` tables layered
+/// on top while that mode is active.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ColorConfig {
+    pub shared: ColorOverrides,
+    pub dark: ColorOverrides,
+    pub light: ColorOverrides,
+}
+
+impl ColorConfig {
+    /// The shared keys with `mode`'s table on top, field by field: a mode states
+    /// only what it changes, and everything else inherits the shared value.
+    pub fn for_mode(&self, mode: Mode) -> ColorOverrides {
+        let mode = match mode {
+            Mode::Dark => &self.dark,
+            Mode::Light => &self.light,
+        };
+        ColorOverrides {
+            primary: mode.primary.or(self.shared.primary),
+            fg: mode.fg.or(self.shared.fg),
+            container: mode.container.or(self.shared.container),
+            card: mode.card.or(self.shared.card),
+            field: mode.field.or(self.shared.field),
+            selection: mode.selection.or(self.shared.selection),
+            hover: mode.hover.or(self.shared.hover),
+            hairline: mode.hairline.or(self.shared.hairline),
+            muted: mode.muted.or(self.shared.muted),
+            summary: mode.summary.or(self.shared.summary),
+            footer: mode.footer.or(self.shared.footer),
+            accent: mode.accent.or(self.shared.accent),
+            dim: mode.dim.or(self.shared.dim),
+            follow_system: self.shared.follow_system || mode.follow_system,
+        }
+    }
 }
 
 /// One interface size; every text and icon role keeps its shipped ratio to it.
@@ -81,7 +127,7 @@ impl FontConfig {
 /// renderer's constant, so an unset field changes nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppearanceConfig {
-    pub colors: ColorOverrides,
+    pub colors: ColorConfig,
     pub blur: bool,
     pub font: FontConfig,
     pub layout: Layout,
@@ -93,7 +139,7 @@ pub struct AppearanceConfig {
 impl Default for AppearanceConfig {
     fn default() -> Self {
         Self {
-            colors: ColorOverrides::default(),
+            colors: ColorConfig::default(),
             blur: true,
             font: FontConfig::default(),
             layout: Layout::default(),
@@ -118,8 +164,20 @@ struct ThemeFile {
     motion: MotionFile,
 }
 
+/// `[colors]`'s own keys flatten into `shared`, so `[colors.dark]` and
+/// `[colors.light]` are the two subtables that overlay it.
 #[derive(serde::Deserialize, Default)]
 struct ColorsFile {
+    #[serde(flatten)]
+    shared: ColorTable,
+    #[serde(default)]
+    dark: ColorTable,
+    #[serde(default)]
+    light: ColorTable,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ColorTable {
     primary: Option<String>,
     fg: Option<String>,
     container: Option<String>,
@@ -134,6 +192,27 @@ struct ColorsFile {
     accent: Option<String>,
     dim: Option<String>,
     follow_system: Option<bool>,
+}
+
+impl ColorTable {
+    fn to_overrides(&self) -> ColorOverrides {
+        ColorOverrides {
+            primary: self.primary.as_deref().and_then(theme::parse_hex),
+            fg: self.fg.as_deref().and_then(theme::parse_hex),
+            container: self.container.as_deref().and_then(theme::parse_hex),
+            card: self.card.as_deref().and_then(theme::parse_color),
+            field: self.field.as_deref().and_then(theme::parse_color),
+            selection: self.selection.as_deref().and_then(theme::parse_color),
+            hover: self.hover.as_deref().and_then(theme::parse_color),
+            hairline: self.hairline.as_deref().and_then(theme::parse_color),
+            muted: self.muted.as_deref().and_then(theme::parse_color),
+            summary: self.summary.as_deref().and_then(theme::parse_color),
+            footer: self.footer.as_deref().and_then(theme::parse_color),
+            accent: self.accent.as_deref().and_then(theme::parse_color),
+            dim: self.dim.as_deref().and_then(theme::parse_color),
+            follow_system: self.follow_system.unwrap_or(false),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -198,20 +277,11 @@ impl AppearanceConfig {
             motion,
         } = file;
 
-        self.colors.primary = colors.primary.as_deref().and_then(theme::parse_hex);
-        self.colors.fg = colors.fg.as_deref().and_then(theme::parse_hex);
-        self.colors.container = colors.container.as_deref().and_then(theme::parse_hex);
-        assign_color!(self.colors.card, colors.card);
-        assign_color!(self.colors.field, colors.field);
-        assign_color!(self.colors.selection, colors.selection);
-        assign_color!(self.colors.hover, colors.hover);
-        assign_color!(self.colors.hairline, colors.hairline);
-        assign_color!(self.colors.muted, colors.muted);
-        assign_color!(self.colors.summary, colors.summary);
-        assign_color!(self.colors.footer, colors.footer);
-        assign_color!(self.colors.accent, colors.accent);
-        assign_color!(self.colors.dim, colors.dim);
-        assign!(self.colors.follow_system, colors.follow_system);
+        self.colors = ColorConfig {
+            shared: colors.shared.to_overrides(),
+            dark: colors.dark.to_overrides(),
+            light: colors.light.to_overrides(),
+        };
 
         assign!(self.blur, blur.enabled);
         assign!(self.font.size, font.size.and_then(|v| positive(v, 96.0)));
@@ -327,8 +397,8 @@ mod tests {
             reduced = true
             "##,
         );
-        assert_eq!(config.colors.primary, Some([0x7a, 0xa2, 0xf7]));
-        assert_eq!(config.colors.fg, None);
+        assert_eq!(config.colors.shared.primary, Some([0x7a, 0xa2, 0xf7]));
+        assert_eq!(config.colors.shared.fg, None);
         assert!(!config.blur);
         assert_eq!(config.layout.radius, 20.0);
         assert_eq!(config.layout.max_rows, 3);
@@ -369,15 +439,70 @@ mod tests {
             follow_system = false
             "##,
         );
-        assert_eq!(config.colors.card, Some([0x11, 0x22, 0x33, 0x80]));
-        assert_eq!(config.colors.muted, Some([0x44, 0x55, 0x66, 255]));
-        assert_eq!(config.colors.dim, Some([0, 0, 0, 255]));
-        assert_eq!(config.colors.accent, None);
+        assert_eq!(config.colors.shared.card, Some([0x11, 0x22, 0x33, 0x80]));
+        assert_eq!(config.colors.shared.muted, Some([0x44, 0x55, 0x66, 255]));
+        assert_eq!(config.colors.shared.dim, Some([0, 0, 0, 255]));
+        assert_eq!(config.colors.shared.accent, None);
+    }
+
+    #[test]
+    fn a_mode_table_layers_over_the_shared_keys() {
+        let config = parse(
+            r##"
+            [colors]
+            primary = "#7aa2f7"
+            fg = "#c0caf5"
+            card = "#24283b80"
+
+            [colors.dark]
+            fg = "#111111"
+            muted = "#222222"
+
+            [colors.light]
+            fg = "#eeeeee"
+            "##,
+        );
+
+        let dark = config.colors.for_mode(Mode::Dark);
+        assert_eq!(dark.primary, Some([0x7a, 0xa2, 0xf7]));
+        assert_eq!(dark.fg, Some([0x11, 0x11, 0x11]));
+        assert_eq!(dark.muted, Some([0x22, 0x22, 0x22, 255]));
+        // the shared surface survives both modes
+        assert_eq!(dark.card, Some([0x24, 0x28, 0x3b, 0x80]));
+
+        let light = config.colors.for_mode(Mode::Light);
+        assert_eq!(light.fg, Some([0xee, 0xee, 0xee]));
+        assert_eq!(light.primary, Some([0x7a, 0xa2, 0xf7]));
+        // a key the light table does not set keeps the shared value
+        assert_eq!(light.muted, None);
+    }
+
+    #[test]
+    fn follow_system_from_either_level_wins() {
+        let shared = parse("[colors]\nfollow_system = true\n[colors.dark]\nfg = \"#111111\"");
+        assert!(shared.colors.for_mode(Mode::Dark).follow_system);
+        // a mode flag follows through too, and the other level stays quiet
+        let mode = parse("[colors.light]\nfollow_system = true");
+        assert!(mode.colors.for_mode(Mode::Light).follow_system);
+        assert!(!mode.colors.for_mode(Mode::Dark).follow_system);
+    }
+
+    #[test]
+    fn the_core_mode_names_map_to_a_table() {
+        assert_eq!(Mode::from_wire(Some("light")), Mode::Light);
+        assert_eq!(Mode::from_wire(Some("dark")), Mode::Dark);
+        assert_eq!(Mode::from_wire(None), Mode::Dark);
+        assert_eq!(Mode::from_wire(Some("sepia")), Mode::Dark);
     }
 
     #[test]
     fn follow_system_is_a_plain_flag() {
-        assert!(parse("[colors]\nfollow_system = true").colors.follow_system);
+        assert!(
+            parse("[colors]\nfollow_system = true")
+                .colors
+                .shared
+                .follow_system
+        );
     }
 
     #[test]

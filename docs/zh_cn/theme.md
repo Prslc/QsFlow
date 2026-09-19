@@ -30,8 +30,9 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 | `container` | `surface_container_high` |
 
 壳目前实际使用 `primary`、`fg`、`container`；`bg` 与 `on_primary` 一并透传以备后用。
+core 还会发送解析后的 `mode`，用于选取 `theme.toml` 的按模式颜色表。
 
-没有 DMS 时使用内置深色调色板。面向 GNOME / KDE 的 freedesktop appearance portal
+没有 DMS 时使用内置深色调色板（`mode = "dark"`）。面向 GNOME / KDE 的 freedesktop appearance portal
 （`org.freedesktop.appearance` 的 `color-scheme` 与 `accent-color`，即 GTK/libadwaita 的方案）支持已在计划中。
 
 ## `~/.config/wayrun/theme.toml`
@@ -54,6 +55,8 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 | `container` | 系统主题 | 卡片填充。 |
 | `follow_system` | `false` | 忽略基础角色**及**下面全部表面，完全跟随系统调色板。 |
 
+`[colors]` 是共享层；`[colors.dark]` 与 `[colors.light]` 按模式在其上覆盖（见下）。
+
 表面的默认值是"对应角色 + 既定 alpha"；只有确实想改某个表面时才写该键，alpha 一并写在颜色里。
 
 | 键 | 派生自 | 默认值（alpha） |
@@ -71,6 +74,26 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 
 覆盖是逐字段的：设了哪个角色，该角色就不再跟随系统调色板；没设的角色继续实时跟随，
 因此 matugen / DMS 换色时其余部分仍会更新。整段不写等同于纯动态取色。
+
+#### 按模式覆盖
+
+手调的颜色是静态的，而系统调色板会在亮/暗之间切换。`[colors.dark]` 与 `[colors.light]`
+接受与 `[colors]` 相同的键，在该模式生效时叠加其上，因此只在一种模式下成立的颜色可以单独设置，
+其余保持共享：
+
+```toml
+[colors]
+primary = "#7aa2f7"          # 两种模式共享
+
+[colors.dark]
+fg = "#c0caf5"
+
+[colors.light]
+fg = "#1f2430"
+```
+
+生效模式由 core 解析（DMS 的 `mode`；无系统主题时为 `dark`），因此切换亮暗会实时跟随，无需重启。
+当前模式的表里没写的键，仍取 `[colors]` 的值。
 
 ### `[blur]`
 
