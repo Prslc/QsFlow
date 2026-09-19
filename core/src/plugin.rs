@@ -3,44 +3,18 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde::Deserialize;
 use serde_json::json;
 
 use crate::provider::external::HostMeta;
 use crate::system::icon::find_icon_path;
 use crate::wire::ResultItem;
 
+mod model;
+use model::{Config, HostCache, PendingHost};
+
+pub use model::Meta;
+
 const DEFAULT_CONFIG: &str = include_str!("../default-plugins.toml");
-
-#[derive(Deserialize)]
-struct Config {
-    plugins: Vec<PluginEntry>,
-}
-
-#[derive(Deserialize)]
-struct PluginEntry {
-    id: String,
-    keyword: String,
-    #[serde(default = "default_enabled")]
-    enabled: bool,
-    /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
-    /// is NOT compiled into the core: it is spawned on demand, `search`
-    /// requests are relayed verbatim, and its identity (name/icon/ready) is
-    /// discovered from the host's `list_plugins` response.
-    #[serde(default)]
-    command: Option<String>,
-}
-
-const fn default_enabled() -> bool {
-    true
-}
-
-pub struct Meta {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub icon: &'static str,
-    pub ready: &'static str,
-}
 
 pub trait Plugin: Send + Sync {
     fn meta(&self) -> &Meta;
@@ -93,81 +67,9 @@ struct Entry {
     pending: Option<PendingHost>,
 }
 
-#[derive(Clone)]
-struct PendingHost {
-    id: String,
-    command: String,
-}
-
 /// How many external hosts may be forked at once while resolving identities.
 /// Each is a fresh interpreter, so this is the memory ceiling of the walk.
 const DISCOVERY_CONCURRENCY: usize = 2;
-
-/// A discovered host identity, keyed by the configured command and stamped
-/// with the file's `(mtime, size)` so an edited plugin is re-discovered while
-/// an unchanged one is never forked. This is what lets a later start build the
-/// registry without touching a single host.
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-struct HostCache {
-    hosts: std::collections::HashMap<String, CachedHost>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CachedHost {
-    mtime: u64,
-    size: u64,
-    metas: Vec<HostMeta>,
-}
-
-impl HostCache {
-    fn path() -> Option<std::path::PathBuf> {
-        dirs::cache_dir().map(|dir| dir.join("wayrun/plugin-hosts.json"))
-    }
-
-    fn load() -> Self {
-        let Some(path) = Self::path() else {
-            return Self::default();
-        };
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
-    }
-
-    /// The cached identities for `command`, only while the file it names is
-    /// unchanged. `None` means the host must be asked.
-    fn fresh(&self, command: &str) -> Option<Vec<HostMeta>> {
-        let (mtime, size) = crate::provider::external::command_stamp(command)?;
-        let cached = self.hosts.get(command)?;
-        (cached.mtime == mtime && cached.size == size).then(|| cached.metas.clone())
-    }
-
-    fn record(&mut self, command: &str, metas: &[HostMeta]) {
-        let Some((mtime, size)) = crate::provider::external::command_stamp(command) else {
-            return;
-        };
-        self.hosts.insert(
-            command.to_string(),
-            CachedHost {
-                mtime,
-                size,
-                metas: metas.to_vec(),
-            },
-        );
-    }
-
-    fn save(&self) {
-        let Some(path) = Self::path() else {
-            return;
-        };
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(text) = serde_json::to_string(self) {
-            let _ = std::fs::write(path, text);
-        }
-    }
-}
 
 static CONFIG: tokio::sync::RwLock<Config> = tokio::sync::RwLock::const_new(Config {
     plugins: Vec::new(),
