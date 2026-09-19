@@ -28,9 +28,8 @@ fn find_db() -> Result<PathBuf> {
         home.join(".config/mozilla/firefox"),
     ];
 
-    // `read_dir` order is arbitrary and a machine can hold several profiles
-    // (a stale ESR beside the live release), so take the most recently written
-    // one instead of the first the filesystem happens to list.
+    // `read_dir` order is arbitrary and a machine can hold several profiles, so
+    // take the most recently written one instead of the first listed.
     let mut newest: Option<(SystemTime, PathBuf)> = None;
     for base in &bases {
         if let Ok(entries) = std::fs::read_dir(base) {
@@ -66,10 +65,8 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
 
         let sql = match mode {
             Mode::Bookmarks => {
-                // The bookmark's own title (`moz_bookmarks.title`) is what the
-                // user saved and may have edited; `moz_places.title` is only the
-                // page's last-visited title, which Firefox overwrites on every
-                // visit. Prefer the former and fall back to the latter.
+                // Prefer the bookmark's own title (user-edited) over
+                // `moz_places.title`, which Firefox overwrites each visit.
                 "
                 SELECT COALESCE(NULLIF(moz_bookmarks.title, ''), moz_places.title) AS title,
                        moz_places.url

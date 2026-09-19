@@ -77,10 +77,8 @@ fn run_cmd(params: Option<&Value>) -> Result<String, ()> {
     }
 }
 
-/// Handle a line as a JSON-RPC 2.0 request. Returns `true` if `line` was a
-/// JSON-RPC request (valid or not); `false` if it should fall through to the
-/// text protocol. `forgets` collects the tasks a `forget` spawns, so the caller
-/// can await their replies before the process exits.
+/// Handle a line as JSON-RPC 2.0. `true` if `line` was a request; `forgets`
+/// collects the spawned tasks so the caller can await their replies.
 pub async fn handle(
     line: &str,
     tx: &mpsc::Sender<String>,
@@ -121,13 +119,11 @@ pub async fn handle(
                 }
                 return true;
             };
-            // Await inline (request/response), unlike the streaming text-search
-            // path: a one-shot client gets its correlated response without
-            // holding stdin open.
+            // Await inline (request/response), unlike streaming search, so a
+            // one-shot client gets its reply without holding stdin open.
             if text.is_empty() {
-                // `top` is the dedicated most-used method; an empty `search`
-                // query is not a search. The text protocol owns its empty-line
-                // default, so this never affects the UI.
+                // `top` is the dedicated most-used method; an empty `search` is
+                // not a search. The text protocol owns its empty-line default.
                 if has_id {
                     respond(tx, id, Err(INVALID_PARAMS)).await;
                 }
@@ -169,9 +165,8 @@ pub async fn handle(
                 return true;
             };
             let removed = crate::system::usage::forget(&key).unwrap_or(false);
-            // The provider walk waits on external hosts (a wedged one holds it
-            // for the request timeout), so it must not hold the read loop: the
-            // reply carries the id and may land out of order.
+            // The provider walk waits on external hosts, so it must not hold the
+            // read loop: the reply carries the id and may land out of order.
             let tx = tx.clone();
             forgets.retain(|handle| !handle.is_finished());
             forgets.push(tokio::spawn(async move {
@@ -181,9 +176,8 @@ pub async fn handle(
                 }
             }));
         }
-        // `launch`, `copy` and `open` mirror the text verbs of the same name, so
-        // a client that speaks only JSON-RPC can drive the launcher without
-        // string command lines.
+        // `launch`, `copy` and `open` mirror the text verbs, so a JSON-RPC-only
+        // client can drive the launcher without string commands.
         "launch" => {
             let Ok(desktop_id) = string_param(params.as_ref(), "desktop_id") else {
                 if has_id {

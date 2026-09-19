@@ -23,10 +23,8 @@ pub trait Plugin: Send + Sync {
         query: &str,
         full: &str,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<ResultItem>>> + Send + '_>>;
-    /// Default view shown when the plugin is opened with its keyword and an
-    /// empty query. `Ok(None)` (or an empty list) keeps the identity card;
-    /// built-ins keep the default, external hosts override it with the
-    /// host's `top` method.
+    /// Default view for a keyword-only query. `Ok(None)` keeps the identity card;
+    /// external hosts override it with their `top` method.
     #[allow(clippy::type_complexity)] // same hand-rolled future type as `search`
     fn default_view(
         &self,
@@ -34,12 +32,8 @@ pub trait Plugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
-    /// Drop a result row's data (best effort, invoked by `forget`). Usage
-    /// history is handled by the caller; external hosts that own the row —
-    /// its `on_click` is a `run:` command invoking their `command` — relay a
-    /// core → host `forget` so they can delete their own data. `true` means
-    /// this provider owned the row and dropped it, which is what lets the UI
-    /// take it out of the list; the default has nothing to forget.
+    /// Drop a row's data (best effort, from `forget`); usage history is the
+    /// caller's. `true` means this provider owned the row and dropped it.
     fn forget(
         &self,
         _on_click: &str,
@@ -47,10 +41,8 @@ pub trait Plugin: Send + Sync {
         Box::pin(async { Ok(false) })
     }
 
-    /// Type-specific secondary commands for one of this plugin's rows, shown in
-    /// the shell's action panel. The core adds the launcher-level pin/unpin and
-    /// history removal itself, so a plugin declares only what is particular to
-    /// its rows: a file reveal, the entry's desktop actions, a copy-link.
+    /// Type-specific commands for one of this plugin's rows, shown in the action
+    /// panel. The core adds pin/unpin and history removal itself.
     fn actions(&self, _item: &ResultItem) -> Vec<crate::wire::ActionItem> {
         Vec::new()
     }
@@ -61,9 +53,8 @@ type PluginMap = HashMap<&'static str, Box<dyn Plugin>>;
 struct Entry {
     plugin: Box<dyn Plugin>,
     keyword: String,
-    /// Set while an external plugin still runs on its placeholder identity:
-    /// the host has not been asked for its name/icon yet, so startup does not
-    /// fork it. `resolve_pending` clears this on first use.
+    /// Set while an external plugin runs on its placeholder identity, so startup
+    /// forks nothing; `resolve_pending` clears it on first use.
     pending: Option<PendingHost>,
 }
 
@@ -89,9 +80,8 @@ async fn ensure_loaded() {
     }
 }
 
-/// Re-read `plugins.toml` and rebuild the registry. Called by the file watcher
-/// so resident mode picks up config edits without a core restart; the change
-/// is visible on the next search / `?` / `list_plugins`.
+/// Re-read `plugins.toml` and rebuild the registry, so resident mode picks up an
+/// edit without a restart; it lands on the next search / `?` / `list_plugins`.
 pub async fn reload() {
     let _guard = INIT.lock().await;
     do_reload().await;
@@ -105,10 +95,8 @@ async fn do_reload() {
     REGISTRY_READY.store(true, Ordering::Release);
 }
 
-/// Build registry entries from a config. External hosts are never contacted
-/// here: a plugin with a cached, still-fresh identity is built from it, and one
-/// without starts on a placeholder that [`resolve_pending`] settles on first
-/// use. So startup forks nothing, however many external plugins are declared.
+/// Build registry entries from a config without contacting a host: a cached
+/// identity is reused and the rest wait on [`resolve_pending`].
 fn build_entries(config: &Config) -> Vec<Entry> {
     let mut map: PluginMap = crate::provider::plugin_map();
     let mut entries = Vec::new();
@@ -158,11 +146,8 @@ fn build_entries(config: &Config) -> Vec<Entry> {
     entries
 }
 
-/// Ask the hosts of the external plugins still on their placeholder identity
-/// for their name/icon, bounded to [`DISCOVERY_CONCURRENCY`] at a time so the
-/// fan-out cannot fork every interpreter at once, and cache the answers. A
-/// `keyword` limits the walk to the plugin a search is about to use; `None`
-/// resolves them all (the `?` help table lists every name).
+/// Ask the placeholder hosts for their identity, bounded to
+/// [`DISCOVERY_CONCURRENCY`] forks and cached; `keyword` limits the walk.
 async fn resolve_pending(keyword: Option<&str>) {
     let _guard = INIT.lock().await;
     let pending: Vec<(usize, PendingHost)> = {
@@ -262,11 +247,8 @@ fn load_or_default() -> Config {
     config
 }
 
-/// Overlay a user config onto the shipped default. Known ids are updated
-/// (keyword/enabled, plus `command` when the user sets one); unknown ids are
-/// appended so external plugins can be declared purely from the user config
-/// without touching the core. Unknown ids without a host are still skipped at
-/// registry build.
+/// Overlay a user config on the shipped default: known ids take the user's
+/// keyword/enabled/command, unknown ids are appended (host-less ones skipped).
 fn merge_config(mut base: Config, user: Config) -> Config {
     for up in user.plugins {
         match base.plugins.iter_mut().find(|p| p.id == up.id) {
@@ -361,10 +343,8 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
         .collect()
 }
 
-/// Drop a result row's data across the registry (best effort). Only external
-/// hosts that own the `on_click` act on it (see `Plugin::forget`); `true` when
-/// one of them owned the row and dropped it, so `forget` can answer truthfully
-/// instead of the UI claiming a deletion nobody made.
+/// Drop a row across the registry. `true` when an external host owned and dropped
+/// it, so `forget` answers truthfully instead of claiming a deletion.
 pub async fn forget_row(on_click: &str) -> bool {
     ensure_loaded().await;
     let reg = REGISTRY.read().await;
@@ -385,17 +365,15 @@ pub async fn dispatch(input: &str) -> Vec<ResultItem> {
     decorate(items, scope).await
 }
 
-/// The scope a pin lives in: the exact trimmed query, so a pin surfaces only
-/// for the string it was created on and a bare keyword never summons it. `?` is
-/// the help table, not a result set, so it has no pins.
+/// A pin's scope is the exact trimmed query, so a bare keyword never summons it;
+/// `?` is help, not a result set, so it has no pins.
 fn pin_scope(input: &str) -> Option<&str> {
     let input = input.trim();
     (input != "?").then_some(input)
 }
 
-/// Prepend `scope`'s pins and attach each row's action panel. A pinned row is
-/// re-emitted from storage before its plugin runs, so its own copy in the fresh
-/// results is dropped to avoid a duplicate.
+/// Prepend the scope's pins and attach each row's actions. A pinned row is
+/// re-emitted from storage, so its fresh copy is dropped as a duplicate.
 pub async fn decorate(items: Vec<ResultItem>, scope: &str) -> Vec<ResultItem> {
     let pins: Vec<ResultItem> = crate::system::pins::get_pins(scope)
         .unwrap_or_default()
@@ -411,9 +389,8 @@ pub async fn decorate(items: Vec<ResultItem>, scope: &str) -> Vec<ResultItem> {
     out
 }
 
-/// Pins lead the results and their duplicates are dropped, so a pinned item
-/// appears once, at the top. Returns the merged list and the pinned `on_click`
-/// keys the action labels are derived from.
+/// Pins lead the results, deduplicated, so each appears once at the top. Returns
+/// the merged list and the pinned `on_click` keys the action labels use.
 fn merge_pins(
     mut pins: Vec<ResultItem>,
     mut results: Vec<ResultItem>,
@@ -432,9 +409,8 @@ fn merge_pins(
     (pins, pinned)
 }
 
-/// The first plugin that recognises a row and declares actions for it. Built-in
-/// rows carry no inline actions, so a type's menu is defined by its provider;
-/// an external host defines its own by putting `actions` on the row.
+/// The first plugin that recognises the row and declares actions for it, from
+/// its provider or the host's inline `actions`.
 async fn plugin_actions(item: &ResultItem) -> Vec<crate::wire::ActionItem> {
     let reg = REGISTRY.read().await;
     for entry in reg.iter() {
@@ -543,18 +519,16 @@ async fn search(input: &str) -> Vec<ResultItem> {
         .split_once(' ')
         .map_or(("", input), |(k, q)| (k.trim(), q.trim()));
 
-    // A keyword some plugin owns is a namespace of its own: a miss stays empty
-    // and never falls through to the default (app/command) providers. Only an
-    // unowned first word is ordinary query text.
+    // A keyword some plugin owns is its own namespace: a miss stays empty and
+    // never falls through to the default providers.
     let routed = !keyword.is_empty() && reg.iter().any(|entry| entry.keyword == keyword);
 
     if routed {
         if query.is_empty()
             && let Some(entry) = reg.iter().find(|entry| entry.keyword == keyword)
         {
-            // Keyword-only input opens the plugin: an external host may serve a
-            // default view (`top`); fall back to the identity card when it has
-            // none or returns nothing.
+            // Keyword-only input opens the plugin: a host may serve a default
+            // view (`top`), else the identity card.
             if let Ok(Some(items)) = entry.plugin.default_view().await
                 && !items.is_empty()
             {

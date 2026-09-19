@@ -40,8 +40,7 @@ struct DesktopAction {
 }
 
 /// One installed application, precomputed at first search and reused for the
-/// process lifetime (the same freshness tradeoff as runner's `path_binaries`
-/// cache). Lowercased fields avoid per-query re-lowering of every app.
+/// process lifetime; lowercased fields avoid per-query re-lowering.
 struct CachedApp {
     id: String,
     title: String,
@@ -117,9 +116,8 @@ impl Plugin for AppSearch {
         })
     }
 
-    /// An application row's declared `[Desktop Action …]` groups. The launched
-    /// file is the same one the row's `launch:` reads, so an action cannot name
-    /// a group that file lacks.
+    /// An application row's declared `[Desktop Action …]` groups, read from the
+    /// same file the row's `launch:` uses.
     fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
         let Some(id) = item
             .on_click
@@ -223,10 +221,8 @@ fn action_score(name_lower: &str, query_lower: &str) -> u32 {
     }
 }
 
-/// Score one match surface. Fields are tried in order with decaying
-/// weights: exact name, prefix, word-boundary (each query word prefixes a
-/// consecutive name word), plain substring, then edit-distance fuzziness.
-/// All string inputs must already be lowercased.
+/// Score one match surface, fields tried in order: exact name, prefix,
+/// word-boundary, substring, then edit-distance fuzz. Inputs must be lowercased.
 fn field_score(field_lower: &str, query_lower: &str, query_words: &[String]) -> u32 {
     // An empty query would prefix-match every field; treat it as no match so
     // the scorer cannot turn into a "list everything" path.
@@ -318,10 +314,8 @@ fn levenshtein(a: &[char], b: &[char]) -> usize {
     prev[b.len()]
 }
 
-/// Full app relevance. Name at full weight, comment at 0.5x, each keyword at
-/// 0.3x, `GenericName` prefix/contains, then the desktop id (`.desktop`
-/// stripped) — first non-zero tier wins. All string inputs must already be
-/// lowercased.
+/// Full app relevance: name, comment (0.5x), keywords (0.3x), `GenericName`,
+/// then the desktop id; first non-zero tier wins. Inputs must be lowercased.
 fn score_app(
     name_lower: &str,
     comment_lower: Option<&str>,
@@ -371,9 +365,8 @@ fn score_app(
     score
 }
 
-/// Read `[Desktop Entry]`'s `GenericName`/`Keywords` and the `[Desktop Action …]`
-/// groups its `Actions=` key declares. Values are localised through the file's
-/// own `Key[locale]=` entries, so an action row is titled in the user's language.
+/// Read `[Desktop Entry]`'s `GenericName`/`Keywords` and its `Actions=` groups,
+/// localised through the file's own `Key[locale]=` entries.
 fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
     let generic = entry
         .generic_name(locales)
@@ -410,8 +403,7 @@ fn parse_meta(entry: &DesktopEntry, locales: &[String]) -> DesktopMeta {
 }
 
 /// Read `GenericName`/`Keywords`/`Actions` from the `.desktop` file the XDG data
-/// dirs resolve for `id`; gio-rs binds no `GDesktopAppInfo`. Only the preferred
-/// file is read, so an action row cannot name a group the launched file lacks.
+/// dirs resolve for `id`; gio-rs binds no `GDesktopAppInfo`.
 fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     let locales = desktop_locales();
     let entry = crate::system::desktop_action::entry(id, Some(&locales))?;
@@ -419,11 +411,8 @@ fn desktop_meta(id: &str) -> Option<DesktopMeta> {
     Some(parse_meta(&entry, &locales))
 }
 
-/// The locale list gio itself localises `.desktop` keys with, straight from
-/// `g_get_language_names()` — so an action name cannot disagree with the
-/// `Name`/`Comment` gio hands back. The `.encoding` variants are dropped: the
-/// parser expects the `zh_CN` key shape, and `zh_CN.UTF-8` would match a bare
-/// `zh` before ever reaching `zh_CN`.
+/// The locale list gio localises `.desktop` keys with, from
+/// `g_get_language_names()`; `.encoding` variants are dropped so `zh_CN` matches.
 fn desktop_locales() -> Vec<String> {
     desktop_locales_from(gio::glib::language_names().into_iter().map(Into::into))
 }

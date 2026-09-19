@@ -4,8 +4,7 @@ use rusqlite::Connection;
 use crate::system::db::with_db;
 
 /// Pin one row to the top of one exact query (`""` is the empty-query history).
-/// The whole item is stored, because a pinned row is re-emitted before the
-/// plugin it came from runs.
+/// The whole item is stored, re-emitted before its plugin runs.
 pub fn pin(scope: &str, item_json: &str) -> Result<()> {
     with_db(|conn| pin_with(conn, scope, item_json))
 }

@@ -16,12 +16,8 @@ pub fn get_top(limit: i32) -> Result<Vec<serde_json::Value>> {
     with_db(|conn| get_top_with(conn, limit))
 }
 
-/// A row the host marked `ephemeral`, or one whose `on_click` is a clipboard
-/// write (`copy:`), is not a re-launchable target: the first is a deliberate
-/// choice (a one-shot search hit, say), the second carries the copied text
-/// rather than something to re-open. Neither belongs in the usage-ranked
-/// history. The field/scheme declares the semantics, so this holds for every
-/// source — built-in providers and external JSON-RPC hosts alike.
+/// An `ephemeral` row or a `copy:` write is not re-launchable and stays out of
+/// history; the field/scheme carries the semantics for every source.
 fn is_ephemeral(item: &serde_json::Value) -> bool {
     item["ephemeral"].as_bool().unwrap_or(false)
         || item["on_click"]
@@ -58,10 +54,8 @@ fn record_with(conn: &Connection, item_json: &str) -> Result<()> {
     Ok(())
 }
 
-/// Drop one history entry. Callers pass the row's `on_click`; resolve it to
-/// the title-keyed entry first so a merged row (same title, several actions)
-/// is removed whole instead of leaving its siblings behind as ghosts. `true`
-/// when a row was actually deleted (`forget`'s answer rides on this).
+/// Drop one history entry by its `on_click`, resolved through the row's title so
+/// a merged row (same title, several actions) is removed whole. `true` if deleted.
 fn forget_with(conn: &Connection, on_click: &str) -> Result<bool> {
     let title: Option<String> = conn
         .query_row(
@@ -94,9 +88,8 @@ fn get_top_with(conn: &Connection, limit: i32) -> Result<Vec<serde_json::Value>>
         .prepare("SELECT item_json FROM usage ORDER BY count DESC, last_used_at DESC LIMIT ?1")?;
     let rows = stmt.query_map([limit], |row| row.get::<_, String>(0))?;
 
-    // A corrupt row, or one with no `title` at all, is skipped, never emitted
-    // as `null`: `title` is required on the wire, so one bad entry would make
-    // the shell reject the whole history array. An empty title is a real row.
+    // A corrupt row, or one with no `title`, is skipped rather than emitted as
+    // `null`: `title` is required on the wire, and one bad entry rejects all.
     Ok(rows
         .filter_map(Result::ok)
         .filter_map(|json| serde_json::from_str::<serde_json::Value>(&json).ok())

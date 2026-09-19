@@ -44,10 +44,8 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     Ok(names.any(|name| name.is_ok_and(|name| name == column)))
 }
 
-/// One connection for the process lifetime: an empty query reads the history on
-/// every keystroke. Opened lazily, and left unset after a failure so a later
-/// call retries: a missing `$HOME`, a read-only dir or a full disk must degrade
-/// history to empty rather than panic the core.
+/// One connection for the process lifetime, opened lazily and left unset on
+/// failure (no `$HOME`, full disk) so history degrades to empty, not a panic.
 static DB: LazyLock<Mutex<Option<Connection>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Run `f` on the shared connection, surviving lock poisoning.
@@ -59,9 +57,8 @@ pub fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
     f(guard.as_ref().expect("opened just above"))
 }
 
-/// Migrate a database that lacks the `on_click` column, merging same-title
-/// rows (counts sum, the most recent item wins) so one app reached via
-/// `run:<exec>` and `launch:<id>` is a single entry.
+/// Migrate a database without the `on_click` column, merging same-title rows
+/// (counts sum, newest wins) so one app reached two ways is one entry.
 fn migrate_usage(conn: &Connection) -> Result<()> {
     if column_exists(conn, "usage", "on_click")? {
         return Ok(());

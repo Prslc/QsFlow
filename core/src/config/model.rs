@@ -16,9 +16,8 @@ pub struct WebSearch {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Font {
-    /// The family the UI shapes with; glyphs it lacks fall back to the system's
-    /// fonts, so a family covering only the scripts you read keeps the rest out
-    /// of memory.
+    /// The family the UI shapes with; missing glyphs fall back to the system, so
+    /// a family covering only the scripts you read keeps the rest out of memory.
     pub family: String,
 }
 

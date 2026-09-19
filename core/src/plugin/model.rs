@@ -13,10 +13,8 @@ pub struct PluginEntry {
     pub keyword: String,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
-    /// is NOT compiled into the core: it is spawned on demand, `search`
-    /// requests are relayed verbatim, and its identity (name/icon/ready) is
-    /// discovered from the host's `list_plugins` response.
+    /// External JSON-RPC host (resolved on PATH). When set, the plugin is not
+    /// compiled in: it is spawned per call and relays `search` to the host.
     #[serde(default)]
     pub command: Option<String>,
 }
@@ -38,10 +36,8 @@ pub struct PendingHost {
     pub command: String,
 }
 
-/// A discovered host identity, keyed by the configured command and stamped
-/// with the file's `(mtime, size)` so an edited plugin is re-discovered while
-/// an unchanged one is never forked. This is what lets a later start build the
-/// registry without touching a single host.
+/// A discovered host identity, keyed by command and stamped with the file's
+/// `(mtime, size)`, so an unchanged host is never forked again.
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct HostCache {
     hosts: std::collections::HashMap<String, CachedHost>,

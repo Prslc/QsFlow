@@ -1,9 +1,8 @@
 use crate::wire::ThemeConfig;
 use std::path::PathBuf;
 
-/// The Material palette DankMaterialShell generated with matugen for the
-/// current theme. It holds both modes at once and a `mode` selecting the one in
-/// use, so a light/dark switch is a plain file change.
+/// The Material palette DankMaterialShell generated with matugen. It holds both
+/// modes and a `mode` key, so a switch is a plain file change.
 pub fn dms_colors_path() -> Option<PathBuf> {
     Some(dirs::cache_dir()?.join("DankMaterialShell/dms-colors.json"))
 }

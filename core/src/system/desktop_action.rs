@@ -6,8 +6,7 @@ use freedesktop_desktop_entry::{DesktopEntry, get_languages_from_env};
 use crate::system::xdg;
 
 /// Every path a desktop id may live at, in XDG precedence order: the user's own
-/// data dir first, then `$XDG_DATA_DIRS` (which `fs::ensure_flatpak_data_dirs`
-/// has already padded with the flatpak exports).
+/// data dir first, then the padded `$XDG_DATA_DIRS`.
 fn candidates(id: &str) -> Vec<PathBuf> {
     let names: Vec<String> = if id.ends_with(".desktop") {
         vec![id.to_owned()]
@@ -26,17 +25,14 @@ pub fn find(id: &str) -> Option<PathBuf> {
 }
 
 /// The parsed entry for `id`, so every reader of `Icon=`/`GenericName=`/actions
-/// reads the same file `launch:` would. `locales` selects localised keys; `None`
-/// keeps only the generic ones.
+/// reads the same file `launch:` would; `locales` selects localised keys.
 pub fn entry(id: &str, locales: Option<&[String]>) -> Option<DesktopEntry> {
     let path = find(id)?;
     DesktopEntry::from_path(&path, locales).ok()
 }
 
-/// The icon of the application a Wayland `app_id` names. A window's app id is
-/// not always an icon name (`org.gnome.Nautilus`, `org.mozilla.firefox`), so the
-/// id's `.desktop` file wins when one exists; otherwise the id is tried as a
-/// theme icon name directly.
+/// The icon of the app a Wayland `app_id` names: the id's `.desktop` file wins
+/// when one exists, otherwise the id is tried as a theme icon name.
 pub fn icon_for_app_id(app_id: &str) -> Option<String> {
     if app_id.is_empty() {
         return None;
@@ -89,9 +85,8 @@ impl<'a> Codes<'a> {
                 Some('%') => out.push('%'),
                 Some('c') => out.push_str(self.name.as_deref().unwrap_or("")),
                 Some('k') => out.push_str(&self.path),
-                // `%f`/`%u`/`%F`/`%U` stand for a file or URI this row does not
-                // carry, `%i` was handled above, and anything else is unknown:
-                // all of them drop out.
+                // `%f`/`%u`/`%F`/`%U` stand for a file this row does not carry
+                // and `%i` was handled above; every other code drops out.
                 Some(_) | None => {}
             }
         }
@@ -102,11 +97,8 @@ impl<'a> Codes<'a> {
     }
 }
 
-/// The argv of one `Exec=`, with its field codes expanded. The split is
-/// `g_shell_parse_argv` — the same function gio parses `Exec=` with on the
-/// `launch:` path — because the spec's argument quoting is not the shell's:
-/// `Exec=foo "a;b"` is two arguments with a literal semicolon, and nothing in
-/// the line is ever syntax.
+/// The argv of one `Exec=`, field codes expanded. The split is
+/// `g_shell_parse_argv`, because the spec's quoting is not the shell's.
 fn expand(exec: &str, entry: &DesktopEntry, action_id: &str, path: &Path) -> Vec<String> {
     let Ok(parsed) = gio::glib::shell_parse_argv(exec) else {
         return Vec::new();

@@ -24,9 +24,8 @@ const PAPIRUS_SIZES: &[&str] = &[
     "16x16", "8x8",
 ];
 
-/// Theme precedence, then categories and sizes, for the generic scan. `Papirus`
-/// ships an icon for most app/action names and is the only theme installed with
-/// full coverage here.
+/// Theme precedence, then categories and sizes, for the generic scan. Papirus
+/// has the widest coverage here and leads.
 const THEMES: &[&str] = &["Papirus", "breeze", "Adwaita", "hicolor"];
 const THEME_CATEGORIES: &[&str] = &["places", "apps", "mimetypes", "devices", "panel", "actions"];
 const ICON_SIZES: &[&str] = &[
@@ -146,10 +145,8 @@ fn do_find(name: &str) -> Option<String> {
     if name.starts_with('/') {
         return Some(name.to_string());
     }
-    // `papirus:<name>` — explicit Papirus theme reference for external hosts;
-    // `papirus:<category>/<name>` scopes the lookup to one category first.
-    // The UI only renders absolute paths, so resolve here rather than passing
-    // the scheme through to the wire.
+    // `papirus:<name>` (or `papirus:<category>/<name>`) is an explicit Papirus
+    // reference; resolve it here, the UI renders only absolute paths.
     if let Some(spec) = name.strip_prefix("papirus:") {
         return find_papirus(spec).or_else(fallback);
     }

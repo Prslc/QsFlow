@@ -32,9 +32,8 @@ impl Plugin for Runner {
     }
 }
 
-/// Split `full` into a command token and trailing args. The first
-/// whitespace-separated token is the candidate executable; the rest is
-/// preserved so a match runs with its arguments (e.g. `nvim src/main.rs`).
+/// Split `full` into a command token and trailing args: the first whitespace
+/// token is the candidate executable, the rest runs with it.
 fn split_command(input: &str) -> (String, String) {
     let trimmed = input.trim();
     match trimmed.find(char::is_whitespace) {
@@ -46,10 +45,8 @@ fn split_command(input: &str) -> (String, String) {
     }
 }
 
-/// `(name, full path)` for every executable on `$PATH`, first match wins (shell
-/// resolution order). Scanned once per process, then cached. Names containing
-/// a `.` are skipped (dodges `.so`/`.sh`/versioned-library noise); most daily
-/// commands are dot-free.
+/// `(name, full path)` for every executable on `$PATH`, first match wins, scanned
+/// once per process. Dot-containing names are skipped as library noise.
 fn path_binaries() -> &'static Vec<(String, String)> {
     static LIST: LazyLock<Vec<(String, String)>> = LazyLock::new(scan_path);
     &LIST

@@ -5,9 +5,8 @@ use tokio::sync::mpsc;
 /// a config-only reload.
 const RELOAD_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(400);
 
-/// Watch the parent dir (for atomic rename saves) AND the file itself (for
-/// in-place writes, which a directory watch never reports). Deleted/recreated
-/// files are still caught by the directory's create events.
+/// Watch the parent dir (atomic rename saves) AND the file (in-place writes,
+/// which a directory watch never reports); recreations arrive as create events.
 pub fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Path) {
     if let Some(dir) = path.parent() {
         let _ = watcher.watch(dir, notify::RecursiveMode::NonRecursive);
@@ -17,10 +16,8 @@ pub fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path:
     }
 }
 
-/// Watch the DMS palette file so a theme change is picked up live even while
-/// the core is resident (which otherwise reads the theme once at start). On a
-/// change it reloads the theme and re-emits a `{"type":"theme",...}` message to
-/// the UI over the same mpsc; the UI rebinds its colors and re-renders.
+/// Watch the DMS palette and re-emit a theme message to the UI on change, since
+/// a resident core otherwise reads the theme once at start.
 pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatcher> {
     let path = crate::system::theme::dms_colors_path()?;
     let tx_theme = tx.clone();
@@ -64,9 +61,8 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
     Some(watcher)
 }
 
-/// Watch `~/.config/wayrun/config.toml` and reload core behaviour on change.
-/// The registry is rebuilt too, because a provider resolves its settings (the
-/// web-search engine) when it is built.
+/// Watch `config.toml` and reload behaviour; the registry is rebuilt too,
+/// because a provider resolves its settings when it is built.
 pub fn watch_config() -> Option<notify::RecommendedWatcher> {
     // Touch the config so the template exists and is watched from the start.
     let _ = crate::config::get();
@@ -104,9 +100,8 @@ pub fn watch_config() -> Option<notify::RecommendedWatcher> {
     Some(watcher)
 }
 
-/// Watch `~/.config/wayrun/plugins.toml` and reload the plugin registry on
-/// change (resident mode would otherwise keep the config read at startup
-/// forever). Debounced: editors typically fire several events per save.
+/// Watch `plugins.toml` and reload the registry (resident mode would otherwise
+/// keep the startup config forever). Debounced: a save fires several events.
 pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
     let path = crate::system::fs::get_home()
         .ok()?

@@ -102,9 +102,8 @@ fn match_path(_entry_name: &str, entry_path: &str, query: &str) -> bool {
         .all(|token| path_lower.contains(token))
 }
 
-/// Walk filter: skip hidden dirs and build caches everywhere, and skip the
-/// three roots at depth 1 of the home root (they are walked on their own) so a
-/// hit under them is not emitted twice.
+/// Walk filter: skip hidden dirs and build caches, and skip the three roots at
+/// depth 1 under `~` (they are walked on their own), so nothing is doubled.
 fn keep_entry(name: &str, depth: usize) -> bool {
     if name.starts_with('.') || name == "node_modules" || name == "target" || name == "__pycache__"
     {

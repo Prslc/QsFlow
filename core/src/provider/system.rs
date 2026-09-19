@@ -56,9 +56,8 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         ),
     ];
 
-    // Prefix match only: the fallback chain short-circuits on the first
-    // non-empty plugin, so a loose mid-word hit would shadow app-search's
-    // whole-name matches for the same query.
+    // Prefix match only: the fallback chain short-circuits on the first non-empty
+    // plugin, so a mid-word hit would shadow app-search.
     commands
         .iter()
         .filter(|(name, keyword, _, _)| {

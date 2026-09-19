@@ -17,9 +17,8 @@ pub fn execute_command(cmd: &str) {
         .ok();
 }
 
-/// Join an argv into a `sh` command line, quoting the tokens that need it.
-/// The `run:` on_click path is parsed by a shell, so an argv that is safe as
-/// argv must be re-quoted before it becomes a command string.
+/// Join an argv into a `sh` command line, quoting tokens that need it: the `run:`
+/// path is parsed by a shell, so safe argv must be re-quoted.
 pub fn shell_join(argv: &[String]) -> String {
     argv.iter()
         .map(|token| shell_quote(token))
@@ -44,9 +43,8 @@ fn shell_quote(token: &str) -> String {
     format!("'{}'", token.replace('\'', r"'\''"))
 }
 
-/// Run an argv detached from the backend — no shell, because a `.desktop` file's
-/// `Exec=` already *is* argv: putting it through `sh -c` would make a `;` or a
-/// `$` inside one argument syntax again.
+/// Run an argv detached, no shell: a `.desktop` `Exec=` already is argv, and
+/// `sh -c` would make a `;` or `$` inside an argument syntax again.
 pub fn execute_argv(argv: &[String]) {
     let Some((program, args)) = argv.split_first() else {
         return;
@@ -62,10 +60,8 @@ pub fn execute_argv(argv: &[String]) {
         .ok();
 }
 
-/// Launch an application by desktop id via `GLib`'s `GAppInfo` (`g_app_info_launch`)
-/// — no shell, no external `gio` binary. Re-fetches the registered `GAppInfo`
-/// so Exec quoting, field codes, env and `DBusActivatable` single-instance are
-/// all honoured. Falls back silently (no-op) if the id is not found.
+/// Launch an app by desktop id via GLib's `GAppInfo`, honoring Exec quoting,
+/// field codes, env and `DBusActivatable`; a no-op when the id is unknown.
 pub fn launch_app(desktop_id: &str) {
     for app in gio::AppInfo::all() {
         if app.id().as_deref() == Some(desktop_id) {
@@ -81,9 +77,8 @@ pub fn open_uri(uri: &str) {
     let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
 }
 
-/// Show a file in the file manager. `org.freedesktop.FileManager1.ShowItems`
-/// selects the file itself; when no manager implements it, fall back to opening
-/// the containing directory (the usual `xdg-open` behaviour).
+/// Show a file in the file manager: `org.freedesktop.FileManager1.ShowItems`
+/// selects it, else fall back to opening the containing directory.
 pub fn reveal(uri: &str) {
     if reveal_via_file_manager(uri) {
         return;
@@ -118,10 +113,8 @@ fn reveal_via_file_manager(uri: &str) -> bool {
         .is_ok()
 }
 
-/// Write text to the Wayland clipboard via `wl-copy` (no shell involved).
-/// The `copy:` scheme carries JSON (`{"text":…}`) so the line protocol
-/// survives embedded newlines/quotes; parse failure or a missing `wl-copy`
-/// is a silent no-op.
+/// Write text to the Wayland clipboard via `wl-copy`, no shell. The `copy:`
+/// scheme carries JSON, so a parse failure or missing `wl-copy` is a no-op.
 pub fn copy_json(payload: &str) {
     let Ok(req) = serde_json::from_str::<CopyRequest>(payload) else {
         return;

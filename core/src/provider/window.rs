@@ -33,8 +33,7 @@ impl Plugin for WindowPlugin {
 }
 
 /// Fuzzy-match the query against every open window's title/app_id and emit a
-/// `run:` row that focuses the winner. The compositor backend is picked from
-/// the environment; without one the provider is simply empty.
+/// `run:` row that focuses the winner; empty without a compositor backend.
 fn do_search(query: &str) -> Vec<ResultItem> {
     if query.is_empty() {
         return Vec::new();

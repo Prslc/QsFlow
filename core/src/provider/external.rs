@@ -19,9 +19,8 @@ pub struct HostMeta {
     pub ready: String,
 }
 
-/// `(mtime, size)` of the resolved `command`, used to tell whether a cached
-/// host identity is still valid. `None` when the command cannot be resolved or
-/// stat'd, in which case the cache is never trusted.
+/// `(mtime, size)` of the resolved `command`, to validate a cached identity.
+/// `None` when it cannot be resolved or stat'd, so the cache is not trusted.
 pub fn command_stamp(command: &str) -> Option<(u64, u64)> {
     let path = resolve_command(command);
     let meta = std::fs::metadata(path).ok()?;
@@ -34,11 +33,8 @@ pub fn command_stamp(command: &str) -> Option<(u64, u64)> {
     Some((mtime, meta.len()))
 }
 
-/// A plugin whose results come from an external JSON-RPC subprocess declared
-/// in `plugins.toml` via `command`. The core is a generic client: it spawns
-/// `command`, relays `search`, and discovers the plugin's identity from the
-/// host's `list_plugins` response. It has no compiled-in knowledge of the
-/// plugin — the same binary can serve any number of ids.
+/// A plugin backed by an external JSON-RPC host declared via `command`. The core
+/// is a generic client: it spawns the host and relays `search` to it.
 pub struct External {
     meta: Meta,
     command: String,
@@ -51,9 +47,8 @@ fn leak(s: String) -> &'static str {
 }
 
 impl External {
-    /// Build from the configured id + host command + host-discovered identity.
-    /// `None` identity (host missing or not self-describing) degrades to the
-    /// id as display name; search still relays and just yields no results.
+    /// Build from the configured id, host command and discovered identity. A
+    /// missing identity degrades to the id as display name.
     pub fn new(id: &str, command: String, discovered: Option<HostMeta>) -> Self {
         let (name, icon, ready) = match discovered {
             Some(m) => (m.name, m.icon, m.ready),
@@ -63,9 +58,8 @@ impl External {
                 format!("External plugin via {command}"),
             ),
         };
-        // The UI only renders absolute paths (`file://` + icon), so the host's
-        // identity icon — a `papirus:` spec or a theme name — is resolved here
-        // rather than leaking an unresolved spec into `Meta`.
+        // The UI renders only absolute paths, so a `papirus:` spec or theme name
+        // is resolved here rather than leaking into `Meta`.
         let icon = if icon.is_empty() {
             icon
         } else {
@@ -116,15 +110,12 @@ impl Plugin for External {
     }
 }
 
-/// Ceiling for one host call: a stalled host must cost the launcher seconds,
-/// never the session. Discovery holds `plugin::INIT` until it returns, so a
-/// stall there would block every later search and `?` behind it.
+/// Ceiling for one host call: a stalled host must cost seconds, never the
+/// session. Discovery holds `plugin::INIT` until it returns.
 const HOST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// One JSON-RPC request/response round trip against `command`: spawn, write the
-/// request, close stdin, reap, return the first response line (any line that
-/// parses). `None` when the host is missing, stalled past [`HOST_TIMEOUT`], or
-/// produced no parseable output.
+/// One JSON-RPC round trip against `command`: spawn, write, close stdin, reap,
+/// return the first parseable response line; `None` on a missing/stalled host.
 async fn rpc_call(command: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
     rpc_call_within(command, request, HOST_TIMEOUT).await
 }
@@ -181,10 +172,8 @@ async fn rpc_call_within(
         .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
 }
 
-/// Ask the host who it serves. Returns every plugin it describes via
-/// `list_plugins`; empty when the host is missing, stalled, or does not
-/// self-describe — and then its keyword is simply not registered, so a query
-/// for it falls through to the default providers instead of hanging.
+/// Ask the host who it serves. Empty when the host is missing, stalled or not
+/// self-describing, so a query for it falls through instead of hanging.
 pub async fn discover(command: &str) -> Vec<HostMeta> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -224,9 +213,8 @@ pub async fn discover(command: &str) -> Vec<HostMeta> {
         .collect()
 }
 
-/// Normalize a host response's `result` array into rows, resolving each
-/// icon to what the UI can render. `None` when the response has no usable
-/// `result` array.
+/// Normalize a host response's `result` array into rows, resolving each icon to
+/// what the UI can render. `None` when there is no usable `result` array.
 fn parse_result_items(response: &serde_json::Value, icon: &str) -> Option<Vec<ResultItem>> {
     let items = response.get("result")?.as_array()?;
     let mut parsed: Vec<ResultItem> = items
@@ -263,9 +251,8 @@ async fn query_external(
     Ok(parse_result_items(&response, icon).unwrap_or_default())
 }
 
-/// Ask the host for its default view (its `top` method). `Ok(None)` when the
-/// host has no such method (`-32601`), it errored, or produced no usable
-/// result — the caller falls back to the identity card.
+/// Ask the host for its default view (its `top` method). `Ok(None)` when it has
+/// no such method, errored, or returned nothing, so the caller shows the card.
 async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option<Vec<ResultItem>>> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -283,8 +270,7 @@ async fn query_default(command: &str, plugin: &str, icon: &str) -> Result<Option
 }
 
 /// First shell token of a `run:` payload (argv0), or `None` for any other
-/// scheme. Hosts emit single-token commands (plugins.toml contract), so a
-/// plain whitespace split is sufficient.
+/// scheme; hosts emit single-token commands, so a whitespace split suffices.
 fn run_argv0(on_click: &str) -> Option<&str> {
     let rest = on_click.strip_prefix("run:")?;
     if rest.is_empty() {
@@ -310,10 +296,8 @@ fn resolve_command(command: &str) -> String {
     command.to_string()
 }
 
-/// Relay a row's removal to the host that owns it: `on_click` must be a `run:`
-/// command whose first token is this host's `command`. `true` means the host
-/// owned the row and acknowledged it; `-32601` ("not mine") and host failures
-/// are `false`, because usage history was already removed either way.
+/// Relay a row's removal to its host: `on_click` must be a `run:` command whose
+/// first token is this host's `command`. `true` when the host acknowledged it.
 async fn forget_external(command: &str, on_click: &str) -> Result<bool> {
     let Some(argv0) = run_argv0(on_click) else {
         return Ok(false);
@@ -331,9 +315,8 @@ async fn forget_external(command: &str, on_click: &str) -> Result<bool> {
     let response = rpc_call(command, &request).await;
     Ok(response.is_some_and(|reply| reply.get("error").is_none()))
 }
-/// Resolve one result icon to the absolute path the UI renders. Empty falls back
-/// to the plugin's own icon; any spec — an absolute path (passes through), a
-/// `papirus:` reference or a theme name — goes through the one resolver.
+/// Resolve one result icon to an absolute path: empty falls back to the plugin's
+/// icon, and any spec goes through the one resolver.
 fn resolve_item_icon(icon: &str, fallback: Option<String>) -> Option<String> {
     if icon.is_empty() {
         return fallback;

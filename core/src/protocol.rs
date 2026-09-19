@@ -54,15 +54,12 @@ pub async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
     }
 }
 
-/// Drain sentinel: the writer flushes and returns when it sees this. Dropping
-/// every sender is not an option — the watchers hold clones for the process
-/// lifetime — so the read loop sends it to finish the thread.
+/// Drain sentinel: the writer flushes and returns. The watchers hold sender
+/// clones for the process lifetime, so the read loop must send it explicitly.
 const DRAIN: &str = "\0";
 
-/// Own stdout for the process lifetime: one channel, so no two producers can
-/// interleave half a line. A plain thread, not a tokio task, because the writer
-/// must outlive the runtime: a joined `std::io::stdout()` thread can flush the
-/// last response, while a runtime task may be dropped mid-flush.
+/// Own stdout for the process lifetime: one channel, so no two producers
+/// interleave. A plain thread, because it must outlive the runtime to flush.
 fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut stdout = std::io::stdout();
@@ -106,9 +103,8 @@ pub async fn serve() -> Result<()> {
 
     let mut reader = BufReader::new(io::stdin()).lines();
     let mut search: Option<JoinHandle<()>> = None;
-    // `forget` walks the external hosts and waits on them, so it runs in a task;
-    // the handles are awaited before returning so a one-shot client still gets
-    // its reply.
+    // `forget` waits on external hosts, so it runs in a task; the handles are
+    // awaited before returning so a one-shot client still gets its reply.
     let mut forgets: Vec<JoinHandle<()>> = Vec::new();
 
     while let Some(line) = reader.next_line().await? {
@@ -146,9 +142,8 @@ pub async fn serve() -> Result<()> {
         }
     }
 
-    // A pending text search or forget still holds a sender clone; reap them,
-    // then drain the writer so a one-shot client gets its last response before
-    // the process exits.
+    // A pending search or forget still holds a sender clone; reap them, then
+    // drain the writer so a one-shot client gets its last response.
     if let Some(handle) = search.take() {
         handle.abort();
         let _ = handle.await;
@@ -163,9 +158,8 @@ pub async fn serve() -> Result<()> {
     Ok(())
 }
 
-/// The empty query: the full ranked history, uncapped so deleting a row
-/// actually converges. The empty-query scope's pins lead it, and every row
-/// carries its action panel like a search result.
+/// The empty query: the full, uncapped history so deleting a row converges,
+/// with the scope's pins leading and every row's action panel attached.
 async fn emit_history(tx: &mpsc::Sender<String>) {
     let items: Vec<crate::wire::ResultItem> = system::usage::get_top(i32::MAX)
         .unwrap_or_default()
