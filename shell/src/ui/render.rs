@@ -14,6 +14,8 @@ use crate::ui::text::TextEngine;
 const TITLE_SIZE: f32 = 14.0;
 const SUMMARY_SIZE: f32 = 12.0;
 const SUGGESTION_SIZE: f32 = 11.0;
+/// The pinned-row badge drawn at the row's right edge.
+const BADGE_SIZE: f32 = 15.0;
 pub const QUERY_SIZE: f32 = 18.0;
 pub const ICON_SIZE: f32 = 30.0;
 /// The search field's inner insets: the container's 14, the magnifier's 22, the
@@ -687,13 +689,15 @@ fn draw_list(
         }
 
         let labels_x = icon_x + ICON_SIZE + 12.0;
-        // The selected row's ↵ hint is part of the layout: the labels must
-        // leave room for it, so a long title cannot run underneath it.
+        // The selected row's ↵ hint and the pinned badge are part of the
+        // layout: the labels must leave room for both, so a long title cannot
+        // run underneath either.
         let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
             .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);
-        let labels_max = (rect.right() - 10.0 - labels_x - enter_w).max(0.0);
+        let badge_w = row.badge.as_deref().map_or(0.0, |_| BADGE_SIZE + 8.0);
+        let labels_max = (rect.right() - 10.0 - labels_x - enter_w - badge_w).max(0.0);
 
         let title = text.fit(
             &row.title,
@@ -756,6 +760,18 @@ fn draw_list(
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,
                 None,
+            );
+        }
+
+        if let Some(path) = row.badge.as_deref() {
+            let x = rect.right() - 10.0 - enter_w - BADGE_SIZE;
+            icons.draw_tinted(
+                pixmap,
+                path,
+                (canvas.px(x), canvas.px(rect.center_y() - BADGE_SIZE / 2.0)),
+                (BADGE_SIZE * canvas.scale).round() as u32,
+                state.entrance(now),
+                theme.primary,
             );
         }
     }

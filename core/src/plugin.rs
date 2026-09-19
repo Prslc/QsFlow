@@ -532,6 +532,9 @@ fn attach_actions(
         return;
     };
     let is_pinned = pinned.iter().any(|pin| pin == &on_click);
+    if is_pinned {
+        item.badge = find_icon_path("pin");
+    }
 
     let mut actions: Vec<crate::models::ActionItem> = Vec::new();
     if is_pinned {
@@ -604,6 +607,7 @@ async fn search(input: &str) -> Vec<ResultItem> {
                     icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
                     ephemeral: false,
                     actions: Vec::new(),
+                    badge: None,
                 }
             })
             .collect();
@@ -638,6 +642,7 @@ async fn search(input: &str) -> Vec<ResultItem> {
                 icon: find_icon_path(meta.icon).or_else(|| Some(String::new())),
                 ephemeral: false,
                 actions: Vec::new(),
+                badge: None,
             }];
         }
 
@@ -680,6 +685,7 @@ mod tests {
             icon: None,
             ephemeral: false,
             actions: Vec::new(),
+            badge: None,
         }
     }
 
@@ -859,6 +865,7 @@ mod tests {
         assert!(row.actions[0].on_click.starts_with("pin:"));
         assert!(row.actions[0].on_click.contains(r#""scope":"b""#));
         assert_eq!(row.actions[1].on_click, "forget:launch:firefox.desktop");
+        assert!(row.badge.is_none(), "an unpinned row carries no badge");
     }
 
     #[test]
@@ -885,6 +892,7 @@ mod tests {
             titles,
             ["Unpin", "Remove from history", "Reveal in file manager"]
         );
+        assert!(row.badge.is_some(), "a pinned row carries the pin badge");
     }
 
     #[test]

@@ -30,6 +30,8 @@ pub struct Row {
     pub ephemeral: bool,
     /// The secondary commands the action panel offers for this row.
     pub actions: Vec<ActionItem>,
+    /// A status glyph drawn at the row's right edge (a pin for a pinned row).
+    pub badge: Option<String>,
 }
 
 /// The keyboard-driven action panel (Wox-style) opened with Shift+Enter over the
@@ -698,6 +700,7 @@ impl State {
                 icon: item.icon.filter(|spec| !spec.is_empty()),
                 ephemeral: item.ephemeral,
                 actions: item.actions,
+                badge: item.badge,
             })
             .collect();
 
@@ -720,6 +723,7 @@ impl State {
                     && row.on_click == item.on_click
                     && row.icon.as_deref() == item.icon.as_deref().filter(|s| !s.is_empty())
                     && row.actions == item.actions
+                    && row.badge == item.badge
             })
     }
 
@@ -904,6 +908,7 @@ mod tests {
             icon: icon.map(str::to_string),
             ephemeral: false,
             actions: Vec::new(),
+            badge: None,
         }
     }
 
@@ -1326,6 +1331,24 @@ mod tests {
         state.close_actions();
         assert!(state.menu.is_none());
         assert_eq!(state.content_height(), state.appearance.layout.content_h(2));
+    }
+
+    #[test]
+    fn a_pinned_row_keeps_its_badge_and_offers_unpin() {
+        let mut state = state();
+        let mut row = item("YouTube", None, Some("https://youtube.com/"), None);
+        row.badge = Some("/usr/share/icons/Papirus/24x24/actions/pin.svg".to_string());
+        row.actions = vec![ActionItem {
+            title: "Unpin".to_string(),
+            on_click: r#"unpin:{"scope":"b youtube","on_click":"https://youtube.com/"}"#
+                .to_string(),
+            icon: None,
+        }];
+        state.apply_results(vec![row], std::time::Instant::now());
+
+        assert!(state.rows[0].badge.is_some());
+        assert!(state.open_actions());
+        assert_eq!(state.selected_action().unwrap().title, "Unpin");
     }
 
     #[test]

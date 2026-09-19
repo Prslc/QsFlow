@@ -175,6 +175,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                     icon: app.icon_path(),
                     ephemeral: false,
                     actions: Vec::new(),
+                    badge: None,
                 },
             ));
         }
@@ -192,6 +193,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                         icon: app.icon_path(),
                         ephemeral: false,
                         actions: Vec::new(),
+                        badge: None,
                     },
                 ));
             }

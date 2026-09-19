@@ -100,6 +100,7 @@ fn row(compositor: &dyn Compositor, window: Window) -> ResultItem {
             .or_else(|| Some(String::new())),
         ephemeral: true,
         actions: Vec::new(),
+        badge: None,
     }
 }
 

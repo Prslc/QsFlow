@@ -72,6 +72,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         icon: Some(icon.clone()),
         ephemeral: true,
         actions: Vec::new(),
+        badge: None,
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
@@ -88,6 +89,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                     icon: Some(icon.clone()),
                     ephemeral: true,
                     actions: Vec::new(),
+                    badge: None,
                 }),
         );
     }
@@ -107,6 +109,7 @@ mod tests {
             icon: None,
             ephemeral: true,
             actions: Vec::new(),
+            badge: None,
         }
     }
 

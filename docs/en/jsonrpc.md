@@ -125,7 +125,7 @@ keyword+space identity hint. The hint stays otherwise:
 
 `search` and `top` return an array of items. Every item is an object with these
 keys — the first five are always present (`null` for an absent optional field),
-and `actions` only when non-empty:
+and `actions`/`badge` only when set:
 
 | Key | Type | Meaning |
 |-----|------|---------|
@@ -135,6 +135,7 @@ and `actions` only when non-empty:
 | `icon` | string \| null | absolute path to an icon image; see [Icon specs](#icon-specs) |
 | `ephemeral` | bool | when true, selecting this row is not recorded in usage history |
 | `actions` | array | optional secondary commands for the UI's `Shift+Enter` panel |
+| `badge` | string \| null | optional status glyph at the row's right edge (a pin for a pinned row) |
 
 An `actions` entry is `{"title": string, "on_click": string, "icon"?: string}`,
 with the same icon-spec resolution as a row's `icon`. The core attaches

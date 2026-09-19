@@ -71,6 +71,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
             icon: find_icon_path(icon).or_else(|| Some(String::new())),
             ephemeral: true,
             actions: Vec::new(),
+            badge: None,
         })
         .collect()
 }

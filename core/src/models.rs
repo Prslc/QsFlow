@@ -27,6 +27,10 @@ pub struct ResultItem {
     /// the core before emitting; a host may supply its own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<ActionItem>,
+    /// A small status glyph shown at the row's right edge (a pin for a pinned
+    /// row), resolved to an absolute path like `icon`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]

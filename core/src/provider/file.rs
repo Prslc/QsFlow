@@ -172,6 +172,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
                 icon: find_icon_path(icon).or_else(|| Some(String::new())),
                 ephemeral: false,
                 actions: Vec::new(),
+                badge: None,
             });
 
             if results.len() >= 50 {
@@ -200,6 +201,7 @@ mod tests {
             icon: None,
             ephemeral: false,
             actions: Vec::new(),
+            badge: None,
         }
     }
 

@@ -25,6 +25,10 @@ pub struct ResultItem {
     /// The row's action panel, resolved by the core.
     #[serde(default)]
     pub actions: Vec<ActionItem>,
+    /// A small status glyph at the row's right edge (a pin for a pinned row),
+    /// already an absolute path.
+    #[serde(default)]
+    pub badge: Option<String>,
 }
 
 /// The `{"type":"theme","data":{…}}` payload. `bg`/`on_primary` are not modelled

@@ -78,6 +78,7 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
             icon: Some(String::new()),
             ephemeral: true,
             actions: Vec::new(),
+            badge: None,
         });
 
         if results.len() >= 50 {

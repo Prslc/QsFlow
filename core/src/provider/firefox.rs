@@ -107,6 +107,7 @@ async fn do_search(mode: Mode, query: &str) -> Result<Vec<ResultItem>> {
                 icon: firefox_icon.clone(),
                 ephemeral: false,
                 actions: Vec::new(),
+                badge: None,
             })
         })?;
 
@@ -195,6 +196,7 @@ mod tests {
             icon: None,
             ephemeral: false,
             actions: Vec::new(),
+            badge: None,
         };
         let actions = copy_url_action(&row);
         assert_eq!(actions[0].title, "Copy URL");
