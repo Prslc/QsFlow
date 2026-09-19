@@ -34,7 +34,7 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - **二级菜单与置顶** — `Shift+Enter` 打开按类型区分的动作菜单（定位文件、运行
   Desktop Action、复制链接）；“置顶”让结果在其关键词下始终排在前面。
 - **可主题化** — 跟随 DankMaterialShell 的 Material You 调色板，并可用
-  `theme.toml` 覆盖配色、模糊、布局与动效。
+  `theme.toml` 覆盖配色、模糊、布局、字体与动效。
 - **可扩展** — TOML 插件注册表，以及外部 JSON-RPC 主机。
 
 ## 环境要求
@@ -67,7 +67,7 @@ wayrun
 
 - [使用说明](usage.md) —— 前缀、按键与剪贴板。
 - [常驻模式](resident.md) —— systemd 单元与 IPC 动词。
-- [主题](theme.md) —— 系统主题与 `theme.toml`（配色、模糊、布局、动效）。
+- [主题](theme.md) —— 系统主题与 `theme.toml`（配色、模糊、布局、字体、动效）。
 - [配置](config.md) —— `config.toml`（搜索引擎、超时、上限）。
 - [插件](plugins.md) —— `plugins.toml`、内置插件与外部 JSON-RPC 主机。
 - [JSON-RPC 2.0](jsonrpc.md) —— 通信协议与结果项 schema。

@@ -48,6 +48,11 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 | `primary` | 系统主题 |
 | `fg` | 系统主题 |
 | `container` | 系统主题 |
+| `follow_system` | `false` |
+
+覆盖与动态取色的关系是逐字段的：设了哪个角色，该角色就不再跟随系统调色板；没设的角色继续实时跟随，
+因此 matugen / DMS 换色时其余部分仍会更新。`follow_system = true` 会忽略上面三个颜色、完全跟随
+系统调色板，便于临时挂起覆盖而不必删掉配置。整段不写等同于纯动态取色。
 
 ### `[blur]`
 
@@ -77,21 +82,53 @@ layer-rule {
 
 | 键 | 类型 | 默认值 | 范围 | 含义 |
 | --- | --- | --- | --- | --- |
+| `dim_color` | 颜色 | `#000000` | `#rrggbb` | 背景压暗的颜色。 |
 | `dim_alpha` | float | `0.30` | 0–1 | 卡片下方背景的暗化程度。 |
 | `card_alpha` | float | `0.72` | 0–1 | 卡片填充透明度。越低越透，磨砂感越强。 |
+| `field_alpha` | float | `0.08` | 0–1 | 搜索框在卡片上的填充透明度。 |
+| `selection_alpha` | float | `0.15` | 0–1 | 选中行的底色透明度。 |
+| `hover_alpha` | float | `0.08` | 0–1 | 悬停行的底色透明度。 |
+| `hairline_alpha` | float | `0.35` | 0–1 | 卡片描边透明度。 |
+| `accent_alpha` | float | `1.0` | 0–1 | 选中行强调条的透明度。 |
+| `muted_alpha` | float | `0.55` | 0–1 | 占位符、放大镜、✕ 与按键提示。 |
+| `summary_alpha` | float | `0.7` | 0–1 | 结果行摘要文字。 |
+| `footer_alpha` | float | `0.5` | 0–1 | 底部提示文字。 |
 
 ### `[layout]`
 
 | 键 | 类型 | 默认值 | 范围 | 含义 |
 | --- | --- | --- | --- | --- |
 | `radius` | float | `16.0` | ≥ 0 | 卡片圆角。内层圆角会随之收缩，避免越界。 |
+| `field_radius` | float | 派生（9.0） | ≥ 0 | 搜索框圆角；默认由 `radius` 派生，仍受卡片圆角限制。 |
+| `row_radius` | float | 派生（8.0） | ≥ 0 | 结果行底色圆角。 |
+| `chip_radius` | float | 派生（6.0） | ≥ 0 | 关键词 chip 圆角。 |
+| `hairline_width` | float | `1.0` | 0–8 | 卡片描边宽度。 |
+| `accent_width` | float | `3.0` | 0–40 | 选中行强调条宽度。 |
+| `accent_height` | float | `28.0` | 0–200 | 选中行强调条高度。 |
 | `width_ratio` | float | `0.38` | > 0 | 卡片宽度占输出宽度的比例。 |
 | `width_min` | float | `560.0` | > 0 | 宽度下限。 |
 | `width_max` | float | `760.0` | > 0 | 宽度上限。 |
 | `top_ratio` | float | `0.28` | 0–1 | 卡片顶部占输出高度的比例。 |
+| `align` | string | `center` | `left`/`center`/`right` | 在输出上的水平锚点。 |
+| `offset_x` | float | `0.0` | 任意 | 宽度与锚点算定后的水平微调。 |
+| `offset_y` | float | `0.0` | 任意 | `top_ratio` 算定后的垂直微调。 |
 | `max_rows` | int | `5` | 1–8 | 可见结果行数。 |
 
-若解析后 `width_min` 大于 `width_max`，会把 `width_min` 拉到 `width_max`。
+若解析后 `width_min` 大于 `width_max`，会把 `width_min` 拉到 `width_max`。`align` 无法识别时保留默认值。
+
+### `[font]`
+
+文字与图标的逻辑像素尺寸。字体族**不在这里**：它属于文本 shaping，位于 `config.toml` 的
+`[font].family`。
+
+| 键 | 类型 | 默认值 | 范围 | 含义 |
+| --- | --- | --- | --- | --- |
+| `query_size` | float | `18.0` | 1–96 | 查询文本与占位符。 |
+| `title_size` | float | `14.0` | 1–96 | 结果行标题。 |
+| `summary_size` | float | `12.0` | 1–96 | 结果行摘要。 |
+| `suggestion_size` | float | `11.0` | 1–96 | 底部提示、面板标题与关键词 chip。 |
+| `icon_size` | float | `30.0` | 1–256 | 结果行图标框。 |
+| `badge_size` | float | `15.0` | 1–256 | 行的状态徽标。 |
 
 ### `[motion]`
 
@@ -109,21 +146,48 @@ layer-rule {
 primary = "#7aa2f7"
 fg = "#c0caf5"
 container = "#24283b"
+follow_system = false
 
 [blur]
 enabled = true
 
 [appearance]
+dim_color = "#000000"
 dim_alpha = 0.30
 card_alpha = 0.72
+field_alpha = 0.08
+selection_alpha = 0.15
+hover_alpha = 0.08
+hairline_alpha = 0.35
+accent_alpha = 1.0
+muted_alpha = 0.55
+summary_alpha = 0.7
+footer_alpha = 0.5
 
 [layout]
 radius = 16.0
+field_radius = 9.0
+row_radius = 8.0
+chip_radius = 6.0
+hairline_width = 1.0
+accent_width = 3.0
+accent_height = 28.0
 width_ratio = 0.38
 width_min = 560.0
 width_max = 760.0
 top_ratio = 0.28
+align = "center"
+offset_x = 0.0
+offset_y = 0.0
 max_rows = 5
+
+[font]
+query_size = 18.0
+title_size = 14.0
+summary_size = 12.0
+suggestion_size = 11.0
+icon_size = 30.0
+badge_size = 15.0
 
 [motion]
 entrance_ms = 240

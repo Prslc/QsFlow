@@ -44,6 +44,9 @@ impl Theme {
 
     /// The system theme with `theme.toml`'s per-field overrides on top.
     pub fn overlay(system: Self, colors: &ColorOverrides) -> Self {
+        if colors.follow_system {
+            return system;
+        }
         Self {
             primary: colors.primary.unwrap_or(system.primary),
             fg: colors.fg.unwrap_or(system.fg),
@@ -113,10 +116,27 @@ mod tests {
             primary: Some([0xaa, 0xbb, 0xcc]),
             fg: None,
             container: Some([0x11, 0x22, 0x33]),
+            follow_system: false,
         };
         let theme = Theme::overlay(system, &colors);
         assert_eq!(theme.primary, [0xaa, 0xbb, 0xcc]);
         assert_eq!(theme.fg, [4, 5, 6]);
         assert_eq!(theme.container, [0x11, 0x22, 0x33]);
+    }
+
+    #[test]
+    fn follow_system_ignores_every_override() {
+        let system = Theme {
+            primary: [1, 2, 3],
+            fg: [4, 5, 6],
+            container: [7, 8, 9],
+        };
+        let colors = ColorOverrides {
+            primary: Some([0xaa, 0xbb, 0xcc]),
+            fg: Some([0x11, 0x22, 0x33]),
+            container: Some([0x44, 0x55, 0x66]),
+            follow_system: true,
+        };
+        assert_eq!(Theme::overlay(system, &colors), system);
     }
 }

@@ -8,7 +8,7 @@ use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 
-use super::canvas::{BADGE_SIZE, Canvas, ICON_SIZE, Rect, SUMMARY_SIZE, TITLE_SIZE};
+use super::canvas::{Canvas, Rect};
 
 pub(super) fn draw_list(
     canvas: &Canvas,
@@ -20,7 +20,9 @@ pub(super) fn draw_list(
     now: Instant,
 ) {
     let theme = state.theme;
-    let layout = state.appearance.layout;
+    let appearance = &state.appearance;
+    let layout = appearance.layout;
+    let font = appearance.font;
     let left = layout.card_x(surface) + geom::PAD;
     let width = layout.card_w(surface) - 2.0 * geom::PAD;
     let top = layout.rows_top(surface);
@@ -51,25 +53,25 @@ pub(super) fn draw_list(
                 pixmap,
                 path,
                 canvas.px(icon_x),
-                canvas.px(rect.center_y() - ICON_SIZE / 2.0),
-                (ICON_SIZE * canvas.scale).round() as u32,
+                canvas.px(rect.center_y() - font.icon_size / 2.0),
+                (font.icon_size * canvas.scale).round() as u32,
                 state.entrance(now),
             );
         }
 
-        let labels_x = icon_x + ICON_SIZE + 12.0;
+        let labels_x = icon_x + font.icon_size + 12.0;
         // The selected row's ↵ hint and the pinned badge are part of the layout:
         // the labels must leave room for both.
         let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
             .map_or(0.0, |shaped| shaped.width / canvas.scale + 12.0);
-        let badge_w = row.badge.as_deref().map_or(0.0, |_| BADGE_SIZE + 8.0);
+        let badge_w = row.badge.as_deref().map_or(0.0, |_| font.badge_size + 8.0);
         let labels_max = (rect.right() - 10.0 - labels_x - enter_w - badge_w).max(0.0);
 
         let title = text.fit(
             &row.title,
-            TITLE_SIZE * canvas.scale,
+            font.title_size * canvas.scale,
             Weight::BOLD,
             labels_max * canvas.scale,
         );
@@ -77,7 +79,7 @@ pub(super) fn draw_list(
         let summary = row.summary.as_deref().map(|summary| {
             text.fit(
                 summary,
-                SUMMARY_SIZE * canvas.scale,
+                font.summary_size * canvas.scale,
                 Weight::NORMAL,
                 labels_max * canvas.scale,
             )
@@ -113,7 +115,7 @@ pub(super) fn draw_list(
             text.draw(
                 pixmap,
                 summary,
-                state.fade(theme.fg, 0.7, now),
+                state.fade(theme.fg, appearance.summary_alpha, now),
                 canvas.px(labels_x),
                 canvas.px(labels_top + title_h + 2.0),
                 Some(clip),
@@ -124,7 +126,7 @@ pub(super) fn draw_list(
             text.draw(
                 pixmap,
                 check,
-                state.fade(theme.primary, 0.55, now),
+                state.fade(theme.primary, appearance.muted_alpha, now),
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,
                 None,
@@ -132,12 +134,15 @@ pub(super) fn draw_list(
         }
 
         if let Some(path) = row.badge.as_deref() {
-            let x = rect.right() - 10.0 - enter_w - BADGE_SIZE;
+            let x = rect.right() - 10.0 - enter_w - font.badge_size;
             icons.draw_tinted(
                 pixmap,
                 path,
-                (canvas.px(x), canvas.px(rect.center_y() - BADGE_SIZE / 2.0)),
-                (BADGE_SIZE * canvas.scale).round() as u32,
+                (
+                    canvas.px(x),
+                    canvas.px(rect.center_y() - font.badge_size / 2.0),
+                ),
+                (font.badge_size * canvas.scale).round() as u32,
                 state.entrance(now),
                 theme.primary,
             );

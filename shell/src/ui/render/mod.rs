@@ -9,7 +9,6 @@ use crate::ui::text::TextEngine;
 use self::canvas::{Canvas, Rect};
 
 pub use self::bench::bench;
-pub use self::canvas::ICON_SIZE;
 pub use self::field::{caret_rect, draw_caret};
 
 mod bench;
@@ -30,10 +29,11 @@ pub(super) fn draw_row_chrome(
     state: &State,
     now: Instant,
 ) {
-    let layout = state.appearance.layout;
+    let appearance = &state.appearance;
+    let layout = appearance.layout;
     let background = match (selected, hovered) {
-        (true, _) => Some(state.fade(state.theme.primary, 0.15, now)),
-        (false, true) => Some(state.fade(state.theme.primary, 0.08, now)),
+        (true, _) => Some(state.fade(state.theme.primary, appearance.selection_alpha, now)),
+        (false, true) => Some(state.fade(state.theme.primary, appearance.hover_alpha, now)),
         (false, false) => None,
     };
     if let Some(background) = background {
@@ -45,12 +45,12 @@ pub(super) fn draw_row_chrome(
             pixmap,
             Rect {
                 x: rect.x + 3.0,
-                y: rect.center_y() - 14.0,
-                w: 3.0,
-                h: 28.0,
+                y: rect.center_y() - layout.accent_height / 2.0,
+                w: layout.accent_width,
+                h: layout.accent_height,
             },
-            1.5,
-            state.fade(state.theme.primary, 1.0, now),
+            layout.accent_radius(),
+            state.fade(state.theme.primary, appearance.accent_alpha, now),
         );
     }
 }
@@ -76,7 +76,9 @@ pub fn draw(
     };
     let surface = state.surface;
     let theme = state.theme;
-    let layout = state.appearance.layout;
+    let appearance = &state.appearance;
+    let layout = appearance.layout;
+    let dim_rgb = appearance.dim_color;
 
     let card = Rect {
         x: layout.card_x(surface),
@@ -89,7 +91,15 @@ pub fn draw(
     // leaves the dim in place; an animation or fresh frame repaints it all.
     let dim = state.dim_alpha(now);
     if full {
-        canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
+        canvas.fill_all(
+            pixmap,
+            [
+                dim_rgb[0],
+                dim_rgb[1],
+                dim_rgb[2],
+                (dim * 255.0).round() as u8,
+            ],
+        );
     } else {
         // A shrink has to erase the old card's rows too, so the region spans the
         // union of the previous and current bottoms, not just the current card.
@@ -103,12 +113,13 @@ pub fn draw(
                 h: base_bottom - card.y,
             },
             dim,
+            dim_rgb,
         );
     }
     mark("clear");
 
-    // The card: a translucent fill with a 1px white hairline. The hairline is a
-    // *ring*, not a base fill, which would raise the interior's alpha.
+    // The card: a translucent fill with a 1px hairline. The hairline is a *ring*,
+    // not a base fill, which would raise the interior's alpha.
     canvas.fill_round(
         pixmap,
         Rect {
@@ -118,7 +129,7 @@ pub fn draw(
             h: card.h - 2.0,
         },
         layout.radius - 1.0,
-        state.fade(theme.container, state.appearance.card_alpha, now),
+        state.fade(theme.container, appearance.card_alpha, now),
     );
     canvas.stroke_round(
         pixmap,
@@ -129,8 +140,8 @@ pub fn draw(
             h: card.h - 1.0,
         },
         layout.hairline_radius(),
-        1.0,
-        state.fade([255, 255, 255], 0.35, now),
+        layout.hairline_width,
+        state.fade([255, 255, 255], appearance.hairline_alpha, now),
     );
 
     mark("card");
@@ -139,7 +150,7 @@ pub fn draw(
         pixmap,
         field,
         layout.field_radius(),
-        state.fade(theme.fg, 0.08, now),
+        state.fade(theme.fg, appearance.field_alpha, now),
     );
 
     mark("shapes");
@@ -165,7 +176,7 @@ pub fn draw(
     let bottom = card.y + card.h;
     let mut band = None;
     if full && bottom < resting {
-        canvas.restore_dim_below(pixmap, bottom, surface, dim);
+        canvas.restore_dim_below(pixmap, bottom, surface, dim, dim_rgb);
         band = Some(bottom);
     }
 

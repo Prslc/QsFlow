@@ -299,7 +299,8 @@ impl Shell {
             BackendEvent::Results(items) => {
                 let now = Instant::now();
                 self.app.apply_results(items, now);
-                let size = (crate::ui::render::ICON_SIZE * self.app.scale_factor()).round() as u32;
+                let size =
+                    (self.app.appearance.font.icon_size * self.app.scale_factor()).round() as u32;
                 let fg = self.app.theme.fg;
                 for row in &self.app.rows {
                     if let Some(path) = &row.icon {

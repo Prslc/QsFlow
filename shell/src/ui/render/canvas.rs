@@ -4,13 +4,6 @@ use tiny_skia::{
 
 use crate::ui::geom;
 
-pub const TITLE_SIZE: f32 = 14.0;
-pub const SUMMARY_SIZE: f32 = 12.0;
-pub const SUGGESTION_SIZE: f32 = 11.0;
-/// The pinned-row badge drawn at the row's right edge.
-pub const BADGE_SIZE: f32 = 15.0;
-pub const QUERY_SIZE: f32 = 18.0;
-pub const ICON_SIZE: f32 = 30.0;
 /// The search field's inner insets (container 14, magnifier 22, spacing 12 and
 /// input 8); the IME needs it to place the caret rectangle.
 pub const TEXT_INSET: f32 = 14.0 + 22.0 + 12.0 + 8.0;
@@ -47,12 +40,12 @@ impl Canvas {
 
     /// Overwrite `rect` with the backdrop dim. `BlendMode::Source` replaces, so
     /// a region repaint can put the dim back without applying it twice.
-    pub fn restore_dim(&self, pixmap: &mut Pixmap, rect: Rect, dim: f32) {
+    pub fn restore_dim(&self, pixmap: &mut Pixmap, rect: Rect, dim: f32, rgb: [u8; 3]) {
         let Some(path) = round_rect(rect.scaled(self.scale), 0.0) else {
             return;
         };
 
-        let mut paint = Self::paint([0, 0, 0, (dim * 255.0).round() as u8]);
+        let mut paint = Self::paint([rgb[0], rgb[1], rgb[2], (dim * 255.0).round() as u8]);
         paint.blend_mode = BlendMode::Source;
         pixmap.fill_path(
             &path,
@@ -65,7 +58,14 @@ impl Canvas {
 
     /// The band below `y` is backdrop. A growing payload lays rows out at final
     /// size while the card still animates, so they paint below its edge.
-    pub fn restore_dim_below(&self, pixmap: &mut Pixmap, y: f32, surface: (u32, u32), dim: f32) {
+    pub fn restore_dim_below(
+        &self,
+        pixmap: &mut Pixmap,
+        y: f32,
+        surface: (u32, u32),
+        dim: f32,
+        rgb: [u8; 3],
+    ) {
         self.restore_dim(
             pixmap,
             Rect {
@@ -75,6 +75,7 @@ impl Canvas {
                 h: surface.1 as f32 - y,
             },
             dim,
+            rgb,
         );
     }
 
@@ -283,6 +284,7 @@ mod tests {
             32.0,
             (64, 64),
             crate::config::AppearanceConfig::default().dim_alpha,
+            [0, 0, 0],
         );
 
         let below = pixmap.pixel(32, 40).unwrap();
@@ -345,6 +347,7 @@ mod tests {
             10.0,
             (64, 64),
             crate::config::AppearanceConfig::default().dim_alpha,
+            [0, 0, 0],
         );
         assert_eq!(pixmap.pixel(32, 19).unwrap().alpha(), 255, "above the band");
         assert_eq!(
@@ -395,6 +398,7 @@ mod tests {
             0.0,
             (64, 64),
             crate::config::AppearanceConfig::default().dim_alpha,
+            [0, 0, 0],
         );
         // every row is the dim, including the first one
         for y in [0, 1, 63] {

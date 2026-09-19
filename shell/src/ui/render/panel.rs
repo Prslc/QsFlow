@@ -8,7 +8,7 @@ use crate::ui::geom;
 use crate::ui::icons::IconCache;
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, ICON_SIZE, Rect, SUGGESTION_SIZE, TITLE_SIZE};
+use super::canvas::{Canvas, Rect};
 
 /// The action panel (Shift+Enter): the parent row's title as a header, then the
 /// row's secondary commands as list rows in the same fixed window.
@@ -26,11 +26,12 @@ pub(super) fn draw_actions(
     };
     let theme = state.theme;
     let layout = state.appearance.layout;
+    let font = state.appearance.font;
     let left = layout.card_x(surface) + geom::PAD;
     let width = layout.card_w(surface) - 2.0 * geom::PAD;
 
     if let Some(title) = state.menu_parent_title() {
-        let size = SUGGESTION_SIZE * canvas.scale;
+        let size = font.suggestion_size * canvas.scale;
         let shaped = text.fit(title, size, Weight::BOLD, width * canvas.scale);
         let y = layout.rows_top(surface);
         let clip = [
@@ -77,15 +78,15 @@ pub(super) fn draw_actions(
                 path,
                 (
                     canvas.px(icon_x),
-                    canvas.px(rect.center_y() - ICON_SIZE / 2.0),
+                    canvas.px(rect.center_y() - font.icon_size / 2.0),
                 ),
-                (ICON_SIZE * canvas.scale).round() as u32,
+                (font.icon_size * canvas.scale).round() as u32,
                 state.entrance(now),
                 theme.fg,
             );
         }
 
-        let labels_x = icon_x + ICON_SIZE + 12.0;
+        let labels_x = icon_x + font.icon_size + 12.0;
         let enter = selected.then(|| text.shape("↵", 13.0 * canvas.scale, Weight::NORMAL));
         let enter_w = enter
             .as_ref()
@@ -93,7 +94,7 @@ pub(super) fn draw_actions(
         let labels_max = (rect.right() - 10.0 - labels_x - enter_w).max(0.0);
         let title = text.fit(
             &action.title,
-            TITLE_SIZE * canvas.scale,
+            font.title_size * canvas.scale,
             Weight::NORMAL,
             labels_max * canvas.scale,
         );
@@ -117,7 +118,7 @@ pub(super) fn draw_actions(
             text.draw(
                 pixmap,
                 check,
-                state.fade(theme.primary, 0.55, now),
+                state.fade(theme.primary, state.appearance.muted_alpha, now),
                 canvas.px(rect.right() - 10.0) - check.width,
                 canvas.px(rect.center_y()) - check.height / 2.0,
                 None,

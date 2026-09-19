@@ -4,6 +4,15 @@ pub const SEARCH_H: f32 = 52.0;
 pub const GAP: f32 = 10.0;
 pub const FOOTER_H: f32 = 28.0;
 
+/// The card's horizontal anchor on the output.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
 /// The runtime geometry, overridable from `theme.toml`. The defaults reproduce
 /// the original metrics, so an untouched config renders the same frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -12,7 +21,17 @@ pub struct Layout {
     pub width_min: f32,
     pub width_max: f32,
     pub top_ratio: f32,
+    pub align: Align,
+    pub offset_x: f32,
+    pub offset_y: f32,
     pub radius: f32,
+    /// Explicit inner radii; `None` keeps the base each one derives from.
+    pub field_radius: Option<f32>,
+    pub row_radius: Option<f32>,
+    pub chip_radius: Option<f32>,
+    pub hairline_width: f32,
+    pub accent_width: f32,
+    pub accent_height: f32,
     pub max_rows: usize,
 }
 
@@ -23,7 +42,16 @@ impl Default for Layout {
             width_min: 560.0,
             width_max: 760.0,
             top_ratio: 0.28,
+            align: Align::Center,
+            offset_x: 0.0,
+            offset_y: 0.0,
             radius: 16.0,
+            field_radius: None,
+            row_radius: None,
+            chip_radius: None,
+            hairline_width: 1.0,
+            accent_width: 3.0,
+            accent_height: 28.0,
             max_rows: 5,
         }
     }
@@ -44,13 +72,19 @@ impl Layout {
     }
 
     pub fn card_x(&self, surface: (u32, u32)) -> f32 {
-        (((surface.0 as f32) - self.card_w(surface)) / 2.0).round()
+        let width = self.card_w(surface);
+        let base = match self.align {
+            Align::Left => 0.0,
+            Align::Center => ((surface.0 as f32) - width) / 2.0,
+            Align::Right => (surface.0 as f32) - width,
+        };
+        (base + self.offset_x).round()
     }
 
     /// Fixed card top: results only extend the card downward, so the search bar
     /// never moves when the row count changes.
     pub fn card_top(&self, surface: (u32, u32)) -> f32 {
-        ((surface.1 as f32) * self.top_ratio).round()
+        ((surface.1 as f32) * self.top_ratio + self.offset_y).round()
     }
 
     /// The ✕ button's circle in logical pixels: centre x, centre y, radius. The
@@ -222,20 +256,28 @@ impl Layout {
 
     /// Nested radii stay inside the card: at the default 16 they are the
     /// designed 9/8/6, and a smaller card radius pulls them in with it.
-    fn inner(&self, base: f32) -> f32 {
-        base.min((self.radius - 1.0).max(0.0))
+    fn inner(&self, base: f32, explicit: Option<f32>) -> f32 {
+        explicit
+            .unwrap_or(base)
+            .min((self.radius - 1.0).max(0.0))
+            .max(0.0)
     }
 
     pub fn field_radius(&self) -> f32 {
-        self.inner(9.0)
+        self.inner(9.0, self.field_radius)
     }
 
     pub fn row_radius(&self) -> f32 {
-        self.inner(8.0)
+        self.inner(8.0, self.row_radius)
     }
 
     pub fn chip_radius(&self) -> f32 {
-        self.inner(6.0)
+        self.inner(6.0, self.chip_radius)
+    }
+
+    /// The selected row's accent bar, a pill half as wide as it is thick.
+    pub fn accent_radius(&self) -> f32 {
+        self.accent_width / 2.0
     }
 }
 
@@ -349,5 +391,49 @@ mod tests {
         assert_eq!(l.row_radius(), 7.0);
         assert_eq!(l.chip_radius(), 6.0);
         assert_eq!(l.hairline_radius(), 7.5);
+    }
+
+    #[test]
+    fn align_and_offsets_place_the_card() {
+        let surface = (1920, 1080);
+        let center = Layout::default();
+        let width = center.card_w(surface);
+        assert_eq!(center.card_x(surface), ((1920.0 - width) / 2.0).round());
+        assert_eq!(center.card_top(surface), (1080.0_f32 * 0.28).round());
+
+        let left = Layout {
+            align: Align::Left,
+            offset_x: 20.0,
+            ..Layout::default()
+        };
+        assert_eq!(left.card_x(surface), 20.0);
+
+        let right = Layout {
+            align: Align::Right,
+            ..Layout::default()
+        };
+        assert_eq!(right.card_x(surface), (1920.0_f32 - width).round());
+
+        let shifted = Layout {
+            offset_y: -30.0,
+            ..Layout::default()
+        };
+        assert_eq!(
+            shifted.card_top(surface),
+            (1080.0_f32 * 0.28 - 30.0).round()
+        );
+    }
+
+    #[test]
+    fn an_explicit_inner_radius_is_pulled_inside_the_card() {
+        let l = Layout {
+            radius: 10.0,
+            field_radius: Some(20.0),
+            row_radius: Some(4.0),
+            ..Layout::default()
+        };
+        assert_eq!(l.field_radius(), 9.0);
+        assert_eq!(l.row_radius(), 4.0);
+        assert_eq!(l.accent_radius(), 1.5);
     }
 }

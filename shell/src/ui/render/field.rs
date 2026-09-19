@@ -6,7 +6,7 @@ use tiny_skia::Pixmap;
 use crate::app::{Hover, State};
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, QUERY_SIZE, Rect, SUGGESTION_SIZE, TEXT_INSET};
+use super::canvas::{Canvas, Rect, TEXT_INSET};
 
 pub(super) fn draw_magnifier(
     canvas: &Canvas,
@@ -19,7 +19,7 @@ pub(super) fn draw_magnifier(
     // box, drawn rather than loaded.
     let x = field.x + 14.0;
     let y = field.center_y() - 11.0;
-    let color = state.fade(state.theme.fg, 0.55, now);
+    let color = state.fade(state.theme.fg, state.appearance.muted_alpha, now);
 
     canvas.stroke_circle(pixmap, (x + 9.0, y + 9.0), 6.2, 2.0, color);
     canvas.stroke_line(
@@ -53,7 +53,7 @@ pub(super) fn draw_query(
 ) {
     let area = text_area(field);
     let (x, width) = area;
-    let size = QUERY_SIZE * canvas.scale;
+    let size = state.appearance.font.query_size * canvas.scale;
     let (fg, hint) = (state.theme.fg, state.theme.fg);
     let clip = [
         canvas.px(x),
@@ -69,7 +69,7 @@ pub(super) fn draw_query(
         text.draw(
             pixmap,
             &shaped,
-            state.fade(hint, 0.55, now),
+            state.fade(hint, state.appearance.muted_alpha, now),
             canvas.px(x),
             canvas.px(top),
             Some(clip),
@@ -147,12 +147,13 @@ fn caret_box(state: &State, text: &mut TextEngine) -> (Rect, f32) {
         layout.card_w(surface),
     );
     let scale = state.scale_factor();
-    let before = text.shape(state.before_caret(), QUERY_SIZE * scale, Weight::MEDIUM);
+    let query_size = state.appearance.font.query_size;
+    let before = text.shape(state.before_caret(), query_size * scale, Weight::MEDIUM);
     let area = text_area(field);
     let shift = scroll_for(area.0 + before.width / scale, area);
 
     // The caret is 1px wide at the *line box* height, not at the font size.
-    let line_height = (QUERY_SIZE * crate::ui::text::LINE_HEIGHT).round();
+    let line_height = (query_size * crate::ui::text::LINE_HEIGHT).round();
     (
         Rect {
             x: area.0 + before.width / scale - shift,
@@ -197,7 +198,7 @@ pub(super) fn draw_toolbar(
     text: &mut TextEngine,
     now: Instant,
 ) {
-    let font = SUGGESTION_SIZE * canvas.scale;
+    let font = state.appearance.font.suggestion_size * canvas.scale;
     let (cx, cy, r) = state.appearance.layout.clear_circle(state.surface);
     // A keyword prefix implies a non-empty query, so the ✕ is always drawn when
     // the chip is: the chip sits against the button's left edge.
@@ -224,7 +225,7 @@ pub(super) fn draw_toolbar(
         text.draw(
             pixmap,
             &shaped,
-            state.fade(state.theme.fg, 0.55, now),
+            state.fade(state.theme.fg, state.appearance.muted_alpha, now),
             canvas.px(circle.x + r) - shaped.width / 2.0 + 0.5,
             canvas.px(circle.center_y()) - shaped.height / 2.0 + canvas.px(1.5),
             None,

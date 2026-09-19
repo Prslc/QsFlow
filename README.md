@@ -44,7 +44,7 @@ registry, the JSON-RPC protocol and the usage database.
   file, run a desktop action, copy a link); `Pin to top` keeps a result first
   under its keyword.
 - **Themeable** — follows DankMaterialShell's Material You palette, with
-  `theme.toml` overrides for colors, blur, layout and motion.
+  `theme.toml` overrides for colors, blur, layout, typography and motion.
 - **Extensible** — a TOML plugin registry plus external JSON-RPC hosts.
 
 ## Requirements
@@ -79,7 +79,7 @@ resident mode the hotkey toggles the surface and dismiss hides it.
 - [Usage](docs/en/usage.md) — prefixes, keybindings, and the clipboard.
 - [Resident mode](docs/en/resident.md) — the systemd unit and the IPC verbs.
 - [Theme](docs/en/theme.md) — the system theme and `theme.toml` (colors, blur,
-  layout, motion).
+  layout, typography, motion).
 - [Config](docs/en/config.md) — `config.toml` (search engine, timeouts, caps).
 - [Plugins](docs/en/plugins.md) — `plugins.toml`, the built-ins, and external
   JSON-RPC hosts.

@@ -7,7 +7,7 @@ use crate::app::State;
 use crate::ui::geom;
 use crate::ui::text::TextEngine;
 
-use super::canvas::{Canvas, SUGGESTION_SIZE};
+use super::canvas::Canvas;
 
 /// The footer's left hint: the panel's keys when open, the launch keys once rows
 /// exist, a distinct "No results" for an empty search, else history help.
@@ -50,7 +50,7 @@ pub(super) fn draw_footer(
     // card itself animates to.
     let layout = state.appearance.layout;
     let y = layout.card_top(surface) + state.content_height() - geom::PAD - geom::FOOTER_H;
-    let size = SUGGESTION_SIZE * canvas.scale;
+    let size = state.appearance.font.suggestion_size * canvas.scale;
     let left = layout.card_x(surface) + geom::PAD;
 
     let shaped = text.shape(hints, size, Weight::NORMAL);
@@ -63,7 +63,11 @@ pub(super) fn draw_footer(
             } else {
                 state.theme.fg
             },
-            if no_match { 0.7 } else { 0.5 },
+            if no_match {
+                0.7
+            } else {
+                state.appearance.footer_alpha
+            },
             now,
         ),
         canvas.px(left),
