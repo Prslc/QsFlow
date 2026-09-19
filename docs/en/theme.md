@@ -64,6 +64,23 @@ card's rounded rectangle as a region to blur behind. The compositor does the
 work; that is the frosted look. A compositor without the protocol ignores the
 region, so this setting then has no visible effect.
 
+On niri the effect needs one more thing. niri auto-enables **xray** for a
+client's `ext-background-effect` request, which blurs the wallpaper and ignores
+the windows below. For the card to blur the content actually behind it, add a
+layer rule that turns xray off:
+
+```kdl
+layer-rule {
+    match namespace="WayRun"
+    background-effect {
+        xray false
+    }
+}
+```
+
+The namespace is `WayRun`. niri recomputes non-xray blur whenever the content
+underneath changes, so it is costlier than the default.
+
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Declare the blur region. `false` declares nothing, so the backdrop stays sharp; the card's translucent fill is unchanged. |

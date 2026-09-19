@@ -55,6 +55,20 @@ WayRun 的配色方式，以及 `~/.config/wayrun/theme.toml` 控制的内容。
 `ext-background-effect-v1` 时，壳把卡片的圆角矩形作为区域交给合成器，由合成器模糊其背后的内容，
 这就是磨砂观感的来源。合成器若没有该协议，会忽略该区域，此设置也就没有可见效果。
 
+在 niri 上还需要额外一条规则。对于客户端通过 `ext-background-effect` 发起的请求，niri 会**默认自动开启 xray**，
+即只模糊壁纸、忽略下方窗口。若要让卡片模糊其真正背后的内容，需要加一条关闭 xray 的 layer rule：
+
+```kdl
+layer-rule {
+    match namespace="WayRun"
+    background-effect {
+        xray false
+    }
+}
+```
+
+其中 namespace 为 `WayRun`。非 xray 模糊会在其下方内容变化时重新计算，因此开销高于默认。
+
 | 键 | 类型 | 默认值 | 含义 |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | 是否向合成器声明背景模糊区域。`false` 时不再声明，背景保持清晰；卡片的半透明填充不变。 |
