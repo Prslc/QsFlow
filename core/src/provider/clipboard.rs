@@ -73,7 +73,7 @@ fn parse_entries(query: &str, raw: &str) -> Vec<ResultItem> {
             summary: None,
             on_click: Some(format!("run:sh -c 'cliphist decode {id} | wl-copy'")),
             icon: Some(String::new()),
-            ephemeral: false,
+            ephemeral: true,
         });
 
         if results.len() >= 50 {
@@ -96,6 +96,7 @@ mod tests {
         assert_eq!(entries[0].title, "hello world");
         assert!(entries[0].on_click.as_ref().unwrap().contains("decode 1"));
         assert_eq!(entries[1].title, "screenshot");
+        assert!(entries.iter().all(|e| e.ephemeral));
     }
 
     #[test]

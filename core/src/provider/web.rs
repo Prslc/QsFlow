@@ -51,7 +51,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
         summary: Some("Search on Google".to_string()),
         on_click: Some(format!("https://www.google.com/search?q={query}")),
         icon: Some(icon.clone()),
-        ephemeral: false,
+        ephemeral: true,
     }];
 
     if let Some(suggestions) = json.get(1).and_then(|s| s.as_array()) {
@@ -67,7 +67,7 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
                     summary: Some("Search on Google".to_string()),
                     on_click: Some(format!("https://www.google.com/search?q={phrase}")),
                     icon: Some(icon.clone()),
-                    ephemeral: false,
+                    ephemeral: true,
                 }),
         );
     }

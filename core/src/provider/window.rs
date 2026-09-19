@@ -110,7 +110,7 @@ fn do_search(query: &str) -> Vec<ResultItem> {
                         .as_ref()
                         .and_then(|a| find_icon_path(a))
                         .or_else(|| Some(String::new())),
-                    ephemeral: false,
+                    ephemeral: true,
                 },
             ));
         }
