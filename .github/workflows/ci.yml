@@ -6,11 +6,13 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - "images/**"
       - "LICENSE"
   pull_request:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - "images/**"
       - "LICENSE"
 
 concurrency:
