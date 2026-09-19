@@ -237,14 +237,13 @@ pub fn draw(
     let surface = state.surface;
     let theme = state.theme;
 
-    canvas.fill_all(pixmap, [0, 0, 0, 0]);
-    mark("clear");
-
+    // One full-surface fill, not two: `Pixmap::fill` overwrites every pixel, so
+    // the base can be the dim itself. The first frame of a show has `dim == 0`
+    // and wants the transparent clear; every later frame is the dim, and paying
+    // for both was a redundant 2.07M-pixel write per frame.
     let dim = state.dim_alpha(now);
-    if dim > 0.001 {
-        canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
-    }
-    mark("dim");
+    canvas.fill_all(pixmap, [0, 0, 0, (dim * 255.0).round() as u8]);
+    mark("clear");
 
     let card = Rect {
         x: geom::card_x(surface),
@@ -1031,6 +1030,26 @@ mod tests {
             0,
             "ends before 15,15"
         );
+    }
+
+    #[test]
+    fn the_base_fill_is_the_dim_with_no_clear_under_it() {
+        let mut state = State::new();
+        state.surface = (64, 64);
+        // Start at the settled end state so the dim is at full strength.
+        state.reduce_motion = true;
+
+        let mut pixmap = Pixmap::new(64, 64).unwrap();
+        let mut text = TextEngine::new();
+        let mut icons = IconCache::new();
+        draw(&mut pixmap, &state, &mut text, &mut icons, Instant::now());
+
+        // Above the card (its top is 0.28·64 ≈ 18) only the dim exists. A single
+        // fill has to leave exactly the dim there; a lost dim or a leftover
+        // clear shows up as alpha 0.
+        let pixel = pixmap.pixel(0, 0).unwrap();
+        assert_eq!(pixel.alpha(), 77, "the dim is the base");
+        assert_eq!((pixel.red(), pixel.green(), pixel.blue()), (0, 0, 0));
     }
 
     #[test]

@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use cosmic_text::{
     Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight,
 };
@@ -18,9 +21,25 @@ pub struct Shaped {
     pub height: f32,
 }
 
+/// The shaped-line cache key: the text plus its size (as bits — `f32` is not
+/// `Eq`) and weight. A card redraw reshapes the same row titles on every
+/// animation frame, so a hit is the common case.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ShapeKey {
+    text: String,
+    size: u32,
+    weight: Weight,
+}
+
+/// Distinct lines kept before the cache is dropped wholesale. A show's live set
+/// is tiny (five rows, the query, the footer); the cap only guards a long typing
+/// session, and `clear_cache` frees everything on dismiss anyway.
+const SHAPE_CACHE_MAX: usize = 256;
+
 pub struct TextEngine {
     font_system: FontSystem,
     cache: SwashCache,
+    shapes: HashMap<ShapeKey, Rc<Shaped>>,
 }
 
 impl TextEngine {
@@ -28,19 +47,42 @@ impl TextEngine {
         Self {
             font_system: FontSystem::new(),
             cache: SwashCache::new(),
+            shapes: HashMap::new(),
         }
     }
 
-    /// Drop the rasterised-glyph bitmaps. The `FontSystem`'s font database is
-    /// process-lifetime (rebuilding it costs ~70ms), but the glyph cache grows
-    /// with every distinct glyph and size a show draws, so the resident shell
-    /// frees it on dismiss the way it frees the icon caches.
+    /// Drop the rasterised-glyph bitmaps and the shaped-line cache. The
+    /// `FontSystem`'s font database is process-lifetime (rebuilding it costs
+    /// ~70ms), but the glyph cache grows with every distinct glyph and size a
+    /// show draws, so the resident shell frees it on dismiss the way it frees
+    /// the icon caches.
     pub fn clear_cache(&mut self) {
         self.cache = SwashCache::new();
+        self.shapes.clear();
     }
 
-    /// Shape one unwrapped line at `size`.
-    pub fn shape(&mut self, text: &str, size: f32, weight: Weight) -> Shaped {
+    /// Shape one unwrapped line at `size`, returning a handle to the cached
+    /// layout. The same line, size and weight is shaped once; every later frame
+    /// that draws it is a hash lookup.
+    pub fn shape(&mut self, text: &str, size: f32, weight: Weight) -> Rc<Shaped> {
+        let key = ShapeKey {
+            text: text.to_string(),
+            size: size.to_bits(),
+            weight,
+        };
+        if let Some(shaped) = self.shapes.get(&key) {
+            return Rc::clone(shaped);
+        }
+
+        let shaped = Rc::new(self.shape_uncached(text, size, weight));
+        if self.shapes.len() >= SHAPE_CACHE_MAX {
+            self.shapes.clear();
+        }
+        self.shapes.insert(key, Rc::clone(&shaped));
+        shaped
+    }
+
+    fn shape_uncached(&mut self, text: &str, size: f32, weight: Weight) -> Shaped {
         let line_height = (size * LINE_HEIGHT).round();
         let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_height));
         // No constraints: a single line, whatever its width (long titles are
@@ -66,7 +108,7 @@ impl TextEngine {
     /// Shape one line, eliding it with `…` so it fits `max_width`. A line that
     /// already fits is shaped as-is, which is the common case and costs one
     /// shape; only an overlong line pays the truncation search.
-    pub fn fit(&mut self, text: &str, size: f32, weight: Weight, max_width: f32) -> Shaped {
+    pub fn fit(&mut self, text: &str, size: f32, weight: Weight, max_width: f32) -> Rc<Shaped> {
         let full = self.shape(text, size, weight);
         if full.width <= max_width {
             return full;
@@ -79,7 +121,8 @@ impl TextEngine {
 
         // The largest char-boundary prefix that leaves room for the ellipsis,
         // found by binary search over the byte boundaries so a long string
-        // costs a handful of shapes rather than one per character.
+        // costs a handful of shapes rather than one per character. The prefix
+        // shapes are cached, so a later frame only pays the search.
         let mut boundaries: Vec<usize> = text.char_indices().map(|(index, _)| index).collect();
         boundaries.push(text.len());
         let (mut low, mut high) = (0, boundaries.len() - 1);
@@ -113,7 +156,9 @@ impl TextEngine {
         let width = pixmap.width() as i32;
         let height = pixmap.height() as i32;
         let data = pixmap.data_mut();
-        let Self { font_system, cache } = self;
+        let Self {
+            font_system, cache, ..
+        } = self;
 
         for run in shaped.buffer.layout_runs() {
             // `glyph.y` is the offset within the line box, not the baseline:
@@ -210,6 +255,22 @@ fn blend(data: &mut [u8], width: i32, height: i32, x: i32, y: i32, color: [u8; 4
 mod tests {
     use super::{TextEngine, blend};
     use cosmic_text::Weight;
+
+    #[test]
+    fn the_same_line_is_shaped_once() {
+        let mut engine = TextEngine::new();
+        let first = engine.shape("Firefox", 14.0, Weight::BOLD);
+        let second = engine.shape("Firefox", 14.0, Weight::BOLD);
+        assert!(std::rc::Rc::ptr_eq(&first, &second), "cache hit");
+
+        // a different size is a different key
+        let other = engine.shape("Firefox", 12.0, Weight::BOLD);
+        assert!(!std::rc::Rc::ptr_eq(&first, &other));
+        // and a cleared cache re-shapes
+        engine.clear_cache();
+        let after = engine.shape("Firefox", 14.0, Weight::BOLD);
+        assert!(!std::rc::Rc::ptr_eq(&first, &after));
+    }
 
     #[test]
     fn a_fitting_line_is_shaped_unchanged() {

@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, PixmapRef, PremultipliedColorU8, Transform};
 
 pub struct IconCache {
-    /// (path, box size) → premultiplied RGBA bitmap. `None`: unreadable.
-    entries: HashMap<(String, u32), Option<Pixmap>>,
+    /// path → (box size → premultiplied RGBA bitmap). The outer key is a
+    /// `String` so the per-frame lookup can borrow the path as `&str`; the
+    /// inner value is `None` for an unreadable file.
+    entries: HashMap<String, HashMap<u32, Option<Pixmap>>>,
 }
 
 impl IconCache {
@@ -26,7 +28,9 @@ impl IconCache {
     /// mode happens while the launcher is still hidden.
     pub fn warm(&mut self, path: &str, size: u32) {
         self.entries
-            .entry((path.to_string(), size))
+            .entry(path.to_string())
+            .or_default()
+            .entry(size)
             .or_insert_with(|| render(path, size));
     }
 
@@ -42,9 +46,16 @@ impl IconCache {
         size: u32,
         opacity: f32,
     ) {
+        // `get_mut` on the outer map borrows the path as `&str`, so a cache hit
+        // (every row, every frame) allocates nothing.
+        if !self.entries.contains_key(path) {
+            self.entries.insert(path.to_string(), HashMap::new());
+        }
         let icon = self
             .entries
-            .entry((path.to_string(), size))
+            .get_mut(path)
+            .expect("just inserted")
+            .entry(size)
             .or_insert_with(|| render(path, size));
 
         let Some(icon) = icon else { return };
