@@ -1,5 +1,7 @@
+use std::io::Write as _;
+
 use anyhow::Result;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -50,23 +52,36 @@ pub async fn emit(tx: &mpsc::Sender<String>, payload: &serde_json::Value) {
     }
 }
 
+/// Drain sentinel: the writer flushes and returns when it sees this. Dropping
+/// every sender is not an option — the watchers hold clones for the process
+/// lifetime — so the read loop sends it to finish the thread.
+const DRAIN: &str = "\0";
+
 /// Own stdout for the process lifetime: one channel, so no two producers can
-/// interleave half a line.
-fn spawn_writer(mut rx: mpsc::Receiver<String>) {
-    tokio::spawn(async move {
-        let mut stdout = io::stdout();
-        while let Some(json) = rx.recv().await {
-            let _ = stdout.write_all(json.as_bytes()).await;
-            let _ = stdout.write_all(b"\n").await;
-            let _ = stdout.flush().await;
+/// interleave half a line. A plain thread, not a tokio task, because the writer
+/// must outlive the runtime: a joined `std::io::stdout()` thread can flush the
+/// last response, while a runtime task may be dropped mid-flush.
+fn spawn_writer(mut rx: mpsc::Receiver<String>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut stdout = std::io::stdout();
+        while let Some(json) = rx.blocking_recv() {
+            if json == DRAIN {
+                break;
+            }
+            if stdout.write_all(json.as_bytes()).is_err()
+                || stdout.write_all(b"\n").is_err()
+            {
+                break;
+            }
+            let _ = stdout.flush();
         }
-    });
+    })
 }
 
 /// Serve the line protocol until stdin closes.
 pub async fn serve() -> Result<()> {
     let (tx, rx) = mpsc::channel::<String>(32);
-    spawn_writer(rx);
+    let writer = spawn_writer(rx);
 
     emit(
         &tx,
@@ -128,9 +143,19 @@ pub async fn serve() -> Result<()> {
         }
     }
 
+    // A pending text search or forget still holds a sender clone; reap them,
+    // then drain the writer so a one-shot client gets its last response before
+    // the process exits.
+    if let Some(handle) = search.take() {
+        handle.abort();
+        let _ = handle.await;
+    }
     for handle in forgets {
         let _ = handle.await;
     }
+
+    let _ = tx.send(DRAIN.to_string()).await;
+    let _ = writer.join();
 
     Ok(())
 }
