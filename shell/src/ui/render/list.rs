@@ -42,31 +42,9 @@ pub(super) fn draw_list(
 
         let selected = index == state.selected;
         let hovered = state.hovered == Some(Hover::Row(index));
-        let background = match (selected, hovered) {
-            (true, _) => Some(state.fade(theme.primary, 0.15, now)),
-            (false, true) => Some(state.fade(theme.primary, 0.08, now)),
-            (false, false) => None,
-        };
-        if let Some(background) = background {
-            canvas.fill_round(pixmap, rect, layout.row_radius(), background);
-        }
+        super::draw_row_chrome(canvas, pixmap, rect, selected, hovered, state, now);
 
-        // Always 3px wide so the icon sits at the same x on every row; only the
-        // selected row paints it.
-        if selected {
-            canvas.fill_round(
-                pixmap,
-                Rect {
-                    x: rect.x + 3.0,
-                    y: rect.center_y() - 14.0,
-                    w: 3.0,
-                    h: 28.0,
-                },
-                1.5,
-                state.fade(theme.primary, 1.0, now),
-            );
-        }
-
+        // A constant icon x, so the accent bar never shifts it.
         let icon_x = rect.x + 11.0;
         if let Some(path) = row.icon.as_deref() {
             icons.draw(

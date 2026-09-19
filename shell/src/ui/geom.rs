@@ -54,6 +54,15 @@ impl Layout {
         ((surface.1 as f32) * self.top_ratio).round()
     }
 
+    /// The ✕ button's circle in surface-local logical pixels: centre x, centre y
+    /// and radius. The toolbar draws it and `State::clear_hit` claims it, so
+    /// both read the same numbers.
+    pub fn clear_circle(&self, surface: (u32, u32)) -> (f32, f32, f32) {
+        let right = self.card_x(surface) + self.card_w(surface) - PAD - 8.0;
+        let center_y = self.card_top(surface) + PAD + SEARCH_H / 2.0;
+        (right - 13.0, center_y, 13.0)
+    }
+
     /// The y of the first list row: the card's padding, the search field and the
     /// column's spacing.
     pub fn rows_top(&self, surface: (u32, u32)) -> f32 {

@@ -196,26 +196,28 @@ pub fn draw_caret(pixmap: &mut Pixmap, state: &State, text: &mut TextEngine, now
 pub(super) fn draw_toolbar(
     canvas: &Canvas,
     pixmap: &mut Pixmap,
-    field: Rect,
     state: &State,
     text: &mut TextEngine,
     now: Instant,
 ) {
     let font = SUGGESTION_SIZE * canvas.scale;
-    let mut right = field.right() - 8.0;
+    let (cx, cy, r) = state.appearance.layout.clear_circle(state.surface);
+    // A keyword prefix implies a non-empty query, so the ✕ is always drawn when
+    // the chip is: the chip sits against the button's left edge.
+    let right = cx - r - 6.0;
 
     if !state.query.is_empty() {
         let circle = Rect {
-            x: right - 26.0,
-            y: field.center_y() - 13.0,
-            w: 26.0,
-            h: 26.0,
+            x: cx - r,
+            y: cy - r,
+            w: 2.0 * r,
+            h: 2.0 * r,
         };
         let hovered = state.hovered == Some(Hover::Clear);
         canvas.fill_round(
             pixmap,
             circle,
-            13.0,
+            r,
             state.fade(state.theme.fg, if hovered { 0.18 } else { 0.10 }, now),
         );
 
@@ -226,11 +228,10 @@ pub(super) fn draw_toolbar(
             pixmap,
             &shaped,
             state.fade(state.theme.fg, 0.55, now),
-            canvas.px(circle.x + 13.0) - shaped.width / 2.0 + 0.5,
+            canvas.px(circle.x + r) - shaped.width / 2.0 + 0.5,
             canvas.px(circle.center_y()) - shaped.height / 2.0 + canvas.px(1.5),
             None,
         );
-        right = circle.x - 6.0;
     }
 
     let Some(prefix) = state.keyword_prefix() else {
@@ -239,7 +240,7 @@ pub(super) fn draw_toolbar(
     let shaped = text.shape(prefix, font, Weight::BOLD);
     let chip = Rect {
         x: right - shaped.width / canvas.scale - 16.0,
-        y: field.center_y() - 12.0,
+        y: cy - 12.0,
         w: shaped.width / canvas.scale + 16.0,
         h: 24.0,
     };

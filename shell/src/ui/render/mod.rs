@@ -19,6 +19,42 @@ mod footer;
 mod list;
 mod panel;
 
+/// The highlight shared by the result list and the action panel: a primary tint
+/// for the selected or hovered row, plus the accent bar on the selected one.
+pub(super) fn draw_row_chrome(
+    canvas: &Canvas,
+    pixmap: &mut Pixmap,
+    rect: Rect,
+    selected: bool,
+    hovered: bool,
+    state: &State,
+    now: Instant,
+) {
+    let layout = state.appearance.layout;
+    let background = match (selected, hovered) {
+        (true, _) => Some(state.fade(state.theme.primary, 0.15, now)),
+        (false, true) => Some(state.fade(state.theme.primary, 0.08, now)),
+        (false, false) => None,
+    };
+    if let Some(background) = background {
+        canvas.fill_round(pixmap, rect, layout.row_radius(), background);
+    }
+
+    if selected {
+        canvas.fill_round(
+            pixmap,
+            Rect {
+                x: rect.x + 3.0,
+                y: rect.center_y() - 14.0,
+                w: 3.0,
+                h: 28.0,
+            },
+            1.5,
+            state.fade(state.theme.primary, 1.0, now),
+        );
+    }
+}
+
 pub fn draw(
     pixmap: &mut Pixmap,
     state: &State,
@@ -114,7 +150,7 @@ pub fn draw(
 
     field::draw_magnifier(&canvas, pixmap, field, state, now);
     field::draw_query(&canvas, pixmap, field, state, text, now);
-    field::draw_toolbar(&canvas, pixmap, field, state, text, now);
+    field::draw_toolbar(&canvas, pixmap, state, text, now);
     mark("query");
 
     if state.menu.is_some() {

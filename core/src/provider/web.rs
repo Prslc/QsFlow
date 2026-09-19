@@ -6,6 +6,8 @@ use crate::plugin::{Meta, Plugin};
 use crate::system::icon::find_icon_path;
 use anyhow::{Context, Result};
 
+use super::copy_url_action;
+
 pub struct WebSearch;
 
 impl Plugin for WebSearch {
@@ -30,22 +32,6 @@ impl Plugin for WebSearch {
     fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
         copy_url_action(item)
     }
-}
-
-/// A URL row's extra command: copy the link instead of opening it.
-fn copy_url_action(item: &ResultItem) -> Vec<ActionItem> {
-    let Some(url) = item
-        .on_click
-        .as_deref()
-        .filter(|on_click| on_click.starts_with("http"))
-    else {
-        return Vec::new();
-    };
-    vec![ActionItem {
-        title: "Copy URL".to_string(),
-        on_click: format!("copy:{}", serde_json::json!({ "text": url })),
-        icon: Some("edit-copy".to_string()),
-    }]
 }
 
 async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
@@ -92,35 +78,4 @@ async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     }
 
     Ok(results)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(on_click: Option<&str>) -> ResultItem {
-        ResultItem {
-            title: "x".to_string(),
-            summary: None,
-            on_click: on_click.map(str::to_string),
-            icon: None,
-            ephemeral: true,
-            actions: Vec::new(),
-            badge: None,
-        }
-    }
-
-    #[test]
-    fn a_url_row_offers_a_copy_link() {
-        let actions: Vec<ActionItem> = copy_url_action(&row(Some("https://example.com")));
-        assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].title, "Copy URL");
-        assert_eq!(
-            actions[0].on_click,
-            r#"copy:{"text":"https://example.com"}"#
-        );
-
-        assert!(copy_url_action(&row(Some("run:ls"))).is_empty());
-        assert!(copy_url_action(&row(None)).is_empty());
-    }
 }

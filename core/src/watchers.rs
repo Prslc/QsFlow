@@ -1,10 +1,14 @@
 use notify::Watcher;
 use tokio::sync::mpsc;
 
+/// A plugin reload re-forks every external host, so it is debounced longer than
+/// a config-only reload.
+const RELOAD_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// Watch the parent dir (for atomic rename saves) AND the file itself (for
 /// in-place writes, which a directory watch never reports). Deleted/recreated
 /// files are still caught by the directory's create events.
-fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Path) {
+pub fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Path) {
     if let Some(dir) = path.parent() {
         let _ = watcher.watch(dir, notify::RecursiveMode::NonRecursive);
     }
@@ -84,7 +88,7 @@ pub fn watch_plugins() -> Option<notify::RecommendedWatcher> {
         if !ev.paths.iter().any(|p| p == &watch_path) {
             return;
         }
-        if last_reload.elapsed() < std::time::Duration::from_millis(400) {
+        if last_reload.elapsed() < RELOAD_DEBOUNCE {
             return;
         }
         last_reload = std::time::Instant::now();

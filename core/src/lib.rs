@@ -8,6 +8,10 @@ mod rpc;
 mod system;
 mod watchers;
 
+/// Watch a file plus its parent directory; shared by the core's own watchers
+/// and the shell's `theme.toml` watcher.
+pub use watchers::watch_targets;
+
 /// `--list-plugins` prints the registry and exits; otherwise serve the protocol.
 async fn serve_or_list() -> Result<()> {
     if std::env::args().any(|a| a == "--list-plugins") {

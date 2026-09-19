@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use crate::config::AppearanceConfig;
 use crate::session::model::{ActionItem, ResultItem};
-use crate::ui::geom;
 use crate::ui::theme::Theme;
 
 /// Launch dismissals wait this long before the surface goes away.
@@ -643,17 +642,15 @@ impl State {
         self.anchor = None;
     }
 
-    /// Whether a surface-local point is on the ✕ button. The numbers mirror the
-    /// renderer: a 26px disc inset 8px from the field's right edge.
+    /// Whether a surface-local point is on the ✕ button, whose circle comes from
+    /// `Layout::clear_circle` so the hit test cannot drift from what is drawn.
     pub fn clear_hit(&self, x: f32, y: f32) -> bool {
         if self.query.is_empty() {
             return false;
         }
 
-        let layout = &self.appearance.layout;
-        let right = layout.card_x(self.surface) + layout.card_w(self.surface) - geom::PAD - 8.0;
-        let center_y = layout.card_top(self.surface) + geom::PAD + geom::SEARCH_H / 2.0;
-        (x - (right - 13.0)).abs() <= 13.0 && (y - center_y).abs() <= 13.0
+        let (cx, cy, r) = self.appearance.layout.clear_circle(self.surface);
+        (x - cx).abs() <= r && (y - cy).abs() <= r
     }
 
     /// The text before the caret, which is what the IME wants as surrounding
@@ -893,7 +890,7 @@ pub fn whole_rows(accum: &mut f32, delta: f32) -> i32 {
 mod tests {
     use super::*;
     use crate::session::model::ResultItem;
-    use crate::ui::geom::Layout;
+    use crate::ui::geom::{self, Layout};
 
     fn item(
         title: &str,

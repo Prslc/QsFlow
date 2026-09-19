@@ -14,6 +14,8 @@ use crate::plugin::{Meta, Plugin};
 use crate::system::fs::get_home;
 use crate::system::icon::find_icon_path;
 
+use super::copy_url_action;
+
 enum Mode {
     Bookmarks,
     History,
@@ -146,22 +148,6 @@ macro_rules! firefox_plugin {
     };
 }
 
-/// A bookmark/history row's extra command: copy the link instead of opening it.
-fn copy_url_action(item: &ResultItem) -> Vec<ActionItem> {
-    let Some(url) = item
-        .on_click
-        .as_deref()
-        .filter(|on_click| on_click.starts_with("http"))
-    else {
-        return Vec::new();
-    };
-    vec![ActionItem {
-        title: "Copy URL".to_string(),
-        on_click: format!("copy:{}", serde_json::json!({ "text": url })),
-        icon: Some("edit-copy".to_string()),
-    }]
-}
-
 firefox_plugin!(
     FirefoxBookmarks,
     Bookmarks,
@@ -185,24 +171,5 @@ mod tests {
     async fn empty_query_matches_nothing() {
         assert!(do_search(Mode::Bookmarks, "").await.unwrap().is_empty());
         assert!(do_search(Mode::History, "").await.unwrap().is_empty());
-    }
-
-    #[test]
-    fn a_bookmark_row_offers_a_copy_link() {
-        let row = ResultItem {
-            title: "Example".to_string(),
-            summary: None,
-            on_click: Some("https://example.com".to_string()),
-            icon: None,
-            ephemeral: false,
-            actions: Vec::new(),
-            badge: None,
-        };
-        let actions = copy_url_action(&row);
-        assert_eq!(actions[0].title, "Copy URL");
-        assert_eq!(
-            actions[0].on_click,
-            r#"copy:{"text":"https://example.com"}"#
-        );
     }
 }

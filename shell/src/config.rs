@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use notify::Watcher;
+use wayrun_core::watch_targets;
 
 use crate::ui::geom::Layout;
 use crate::ui::theme;
@@ -173,6 +173,10 @@ fn clamp01(v: f32) -> Option<f32> {
     v.is_finite().then(|| v.clamp(0.0, 1.0))
 }
 
+/// A config reload is cheap, so it is debounced shorter than the core's plugin
+/// reload.
+const CONFIG_DEBOUNCE: Duration = Duration::from_millis(300);
+
 /// Watch `theme.toml` and hand each parsed config to the shell's event loop.
 /// Debounced: editors typically fire several events per save.
 pub fn watch(tx: calloop::channel::Sender<AppearanceConfig>) -> Option<notify::RecommendedWatcher> {
@@ -194,7 +198,7 @@ pub fn watch(tx: calloop::channel::Sender<AppearanceConfig>) -> Option<notify::R
         if !ev.paths.iter().any(|p| p == &watch_path) {
             return;
         }
-        if last.elapsed() < Duration::from_millis(300) {
+        if last.elapsed() < CONFIG_DEBOUNCE {
             return;
         }
         last = Instant::now();
@@ -204,17 +208,6 @@ pub fn watch(tx: calloop::channel::Sender<AppearanceConfig>) -> Option<notify::R
 
     watch_targets(&mut watcher, &path);
     Some(watcher)
-}
-
-/// Watch the parent dir (for atomic rename saves) AND the file itself (for
-/// in-place writes, which a directory watch never reports).
-fn watch_targets(watcher: &mut notify::RecommendedWatcher, path: &std::path::Path) {
-    if let Some(dir) = path.parent() {
-        let _ = watcher.watch(dir, notify::RecursiveMode::NonRecursive);
-    }
-    if path.exists() {
-        let _ = watcher.watch(path, notify::RecursiveMode::NonRecursive);
-    }
 }
 
 #[cfg(test)]
