@@ -16,11 +16,12 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS usage (
         item_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS pins (
+        id INTEGER PRIMARY KEY,
         scope TEXT NOT NULL,
         on_click TEXT NOT NULL,
         item_json TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY (scope, on_click)
+        UNIQUE (scope, on_click)
     );";
 
 fn db_path() -> Result<PathBuf> {
@@ -33,7 +34,15 @@ fn open_conn() -> Result<Connection> {
     let conn = Connection::open(db_path()?)?;
     conn.execute_batch(SCHEMA)?;
     migrate_usage(&conn)?;
+    migrate_pins(&conn)?;
     Ok(conn)
+}
+
+/// Whether `table` already has a column named `column`.
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut names = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    Ok(names.any(|name| name.is_ok_and(|name| name == column)))
 }
 
 /// One connection for the process lifetime: an empty query reads the history on
@@ -55,15 +64,7 @@ pub(crate) fn with_db<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> 
 /// rows (counts sum, the most recent item wins) so one app reached via
 /// `run:<exec>` and `launch:<id>` is a single entry.
 fn migrate_usage(conn: &Connection) -> Result<()> {
-    let has_on_click: bool = {
-        let mut stmt = conn.prepare("PRAGMA table_info(usage)")?;
-        let names: Vec<String> = stmt
-            .query_map([], |r| r.get::<_, String>(1))?
-            .filter_map(Result::ok)
-            .collect();
-        names.iter().any(|n| n == "on_click")
-    };
-    if has_on_click {
+    if column_exists(conn, "usage", "on_click")? {
         return Ok(());
     }
 
@@ -116,6 +117,30 @@ fn migrate_usage(conn: &Connection) -> Result<()> {
             item_json
         ])?;
     }
+    Ok(())
+}
+
+/// Give a pins table created before the explicit `id` the integer primary key
+/// its ordering now uses, copying the rows across in insertion order.
+fn migrate_pins(conn: &Connection) -> Result<()> {
+    if column_exists(conn, "pins", "id")? {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "ALTER TABLE pins RENAME TO pins_old;
+         CREATE TABLE pins (
+            id INTEGER PRIMARY KEY,
+            scope TEXT NOT NULL,
+            on_click TEXT NOT NULL,
+            item_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (scope, on_click)
+         );
+         INSERT INTO pins (scope, on_click, item_json, created_at)
+             SELECT scope, on_click, item_json, created_at FROM pins_old ORDER BY rowid;
+         DROP TABLE pins_old;",
+    )?;
     Ok(())
 }
 
@@ -175,6 +200,43 @@ mod tests {
             conn.query_row("SELECT count(*) FROM usage", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
             1
+        );
+    }
+
+    #[test]
+    fn migrate_pins_adds_the_id_primary_key_and_keeps_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE pins (
+                scope TEXT NOT NULL,
+                on_click TEXT NOT NULL,
+                item_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (scope, on_click)
+            );
+            INSERT INTO pins (scope, on_click, item_json) VALUES
+                ('a', 'run:a', '{\"title\":\"A\"}'),
+                ('a', 'run:b', '{\"title\":\"B\"}');",
+        )
+        .unwrap();
+
+        migrate_pins(&conn).unwrap();
+
+        assert!(column_exists(&conn, "pins", "id").unwrap());
+        let (count, max_id): (i64, i64) = conn
+            .query_row("SELECT count(*), coalesce(max(id), 0) FROM pins", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(max_id, 2, "ids are assigned in insertion order");
+        // the (scope, on_click) uniqueness survives the rewrite
+        assert!(
+            conn.execute(
+                "INSERT INTO pins (scope, on_click, item_json) VALUES ('a','run:a','{}')",
+                [],
+            )
+            .is_err()
         );
     }
 }

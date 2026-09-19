@@ -23,8 +23,8 @@ pub fn get_pins(scope: &str) -> Result<Vec<serde_json::Value>> {
 fn pin_with(conn: &Connection, scope: &str, item_json: &str) -> Result<()> {
     let item: serde_json::Value = serde_json::from_str(item_json)?;
     let on_click = item["on_click"].as_str().context("item missing on_click")?;
-    // Delete-and-insert, not an upsert: `datetime('now')` is second-resolution,
-    // so only a fresh rowid makes a re-pin actually rise to the top.
+    // Delete-and-insert, not an upsert: a re-pin must get a fresh `id` so it
+    // rises to the top of `id`-descending order.
     conn.execute(
         "DELETE FROM pins WHERE scope = ?1 AND on_click = ?2",
         rusqlite::params![scope, on_click],
@@ -48,7 +48,7 @@ fn unpin_with(conn: &Connection, scope: &str, on_click: &str) -> Result<bool> {
 fn get_pins_with(conn: &Connection, scope: &str) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
         "SELECT item_json FROM pins WHERE scope = ?1
-         ORDER BY created_at DESC, rowid DESC",
+         ORDER BY id DESC",
     )?;
     let rows = stmt.query_map([scope], |row| row.get::<_, String>(0))?;
     // Same heal the history has: a corrupt row is skipped rather than emitted as
