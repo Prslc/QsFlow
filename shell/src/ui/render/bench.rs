@@ -1,0 +1,91 @@
+use std::time::Instant;
+
+use tiny_skia::{Color, FillRule, Pixmap, Transform};
+
+use crate::config::AppearanceConfig;
+
+use super::canvas::{Canvas, Rect, round_rect};
+
+/// A micro-benchmark for the software rasteriser, run by `wayrun bench`.
+pub fn bench() {
+    let mut pixmap = Pixmap::new(1920, 1080).unwrap();
+    let repeats = 20;
+
+    let at = Instant::now();
+    for _ in 0..repeats {
+        pixmap.fill(Color::from_rgba8(
+            0,
+            0,
+            0,
+            (AppearanceConfig::default().dim_alpha * 255.0).round() as u8,
+        ));
+    }
+    println!("pixmap.fill (2.07M px): {:?}/frame", at.elapsed() / repeats);
+
+    let square = Rect {
+        x: 595.0,
+        y: 302.0,
+        w: 730.0,
+        h: 460.0,
+    };
+    let square_path = round_rect(square, 0.0).unwrap();
+    let paint = Canvas::paint([36, 40, 59, 184]);
+    let at = Instant::now();
+    for _ in 0..repeats {
+        pixmap.fill_path(
+            &square_path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+    println!(
+        "fill_path square  {}x{}: {:?}/frame",
+        square.w,
+        square.h,
+        at.elapsed() / repeats
+    );
+
+    let round_path = round_rect(square, 16.0).unwrap();
+    let at = Instant::now();
+    for _ in 0..repeats {
+        pixmap.fill_path(
+            &round_path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+    println!(
+        "fill_path rounded {}x{}: {:?}/frame",
+        square.w,
+        square.h,
+        at.elapsed() / repeats
+    );
+
+    let tiny = Rect {
+        x: 610.0,
+        y: 316.0,
+        w: 700.0,
+        h: 52.0,
+    };
+    let tiny_path = round_rect(tiny, 9.0).unwrap();
+    let at = Instant::now();
+    for _ in 0..repeats {
+        pixmap.fill_path(
+            &tiny_path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+    println!(
+        "fill_path field   {}x{}: {:?}/frame",
+        tiny.w,
+        tiny.h,
+        at.elapsed() / repeats
+    );
+}
