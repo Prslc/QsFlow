@@ -26,7 +26,11 @@ impl Plugin for WebSearch {
         _full: &str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<ResultItem>>> + Send + '_>> {
         let query = query.to_string();
-        Box::pin(async move { do_search(&query).await })
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || do_search(&query))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::Error::from(e)))
+        })
     }
 
     fn actions(&self, item: &ResultItem) -> Vec<ActionItem> {
@@ -34,16 +38,17 @@ impl Plugin for WebSearch {
     }
 }
 
-async fn do_search(query: &str) -> Result<Vec<ResultItem>> {
+fn do_search(query: &str) -> Result<Vec<ResultItem>> {
     if query.is_empty() {
         return Ok(vec![]);
     }
 
-    let url = format!("https://suggestqueries.google.com/complete/search?client=firefox&q={query}");
-    let response = reqwest::get(&url)
-        .await
+    let response = minreq::get("https://suggestqueries.google.com/complete/search?client=firefox")
+        .with_param("q", query)
+        .with_timeout(5)
+        .send()
         .context("fetching web suggestions")?;
-    let json: Vec<serde_json::Value> = response.json().await.context("parsing web suggestions")?;
+    let json: Vec<serde_json::Value> = response.json().context("parsing web suggestions")?;
 
     // one resolved engine icon shared by every row (header + suggestions)
     let icon = find_icon_path("google").unwrap_or_default();

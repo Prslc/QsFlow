@@ -11,7 +11,6 @@ gio = "0.22.9"
 itertools = "0.15"
 nucleo = "0.5.0"
 notify = "8.2"
-reqwest = { version = "0.13.2", features = ["blocking", "form", "json"] }
 rusqlite = "0.38.0"
 rustc-hash = "2.1.3"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -21,3 +20,4 @@ tokio = { version = "1.50.0", features = ["full"] }
 toml = "1.1.2"
 walkdir = "2.5.0"
 freedesktop-desktop-entry = { version = "0.8", default-features = false }
+minreq = { version = "3.0.0", default-features = false, features = ["https-native-tls", "json-using-serde", "urlencoding", "proxy"] }
