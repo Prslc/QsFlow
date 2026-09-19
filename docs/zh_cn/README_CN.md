@@ -68,6 +68,7 @@ wayrun
 - [使用说明](usage.md) —— 前缀、按键与剪贴板。
 - [常驻模式](resident.md) —— systemd 单元与 IPC 动词。
 - [主题](theme.md) —— 系统主题与 `theme.toml`（配色、模糊、布局、动效）。
+- [配置](config.md) —— `config.toml`（搜索引擎、超时、上限）。
 - [插件](plugins.md) —— `plugins.toml`、内置插件与外部 JSON-RPC 主机。
 - [JSON-RPC 2.0](jsonrpc.md) —— 通信协议与结果项 schema。
 

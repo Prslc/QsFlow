@@ -96,6 +96,8 @@ pub async fn serve() -> Result<()> {
     // and plugin-registry updates.
     let _theme_watcher = watchers::watch_theme(&tx);
 
+    let _config_watcher = watchers::watch_config();
+
     let _plugins_watcher = watchers::watch_plugins();
 
     // Drop copy:-keyed history rows; idempotent, and usage::record keeps new

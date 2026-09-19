@@ -80,6 +80,7 @@ resident mode the hotkey toggles the surface and dismiss hides it.
 - [Resident mode](docs/en/resident.md) — the systemd unit and the IPC verbs.
 - [Theme](docs/en/theme.md) — the system theme and `theme.toml` (colors, blur,
   layout, motion).
+- [Config](docs/en/config.md) — `config.toml` (search engine, timeouts, caps).
 - [Plugins](docs/en/plugins.md) — `plugins.toml`, the built-ins, and external
   JSON-RPC hosts.
 - [JSON-RPC 2.0](docs/en/jsonrpc.md) — the wire protocol and the result schema.

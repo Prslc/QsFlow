@@ -1,0 +1,27 @@
+# WayRun core behaviour. Every key is optional: a missing file or key keeps the
+# built-in default shown here. The file is watched, so an edit applies live.
+
+[web_search]
+# Search backend: "google" or "duckduckgo".
+engine = "google"
+timeout_ms = 5000
+
+[hosts]
+# Per-call deadline for an external JSON-RPC host, and how many hosts are
+# forked at once while discovering their identities.
+timeout_ms = 5000
+discovery_concurrency = 2
+
+[results]
+# Rows kept per provider.
+apps = 50
+runner = 20
+windows = 50
+
+[files]
+# Walk depth under the home directory.
+depth = 3
+
+[history]
+# Rows returned by the `top` RPC method.
+top = 20

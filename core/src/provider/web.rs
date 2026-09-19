@@ -39,11 +39,11 @@ const DUCKDUCKGO: Engine = Engine {
     suggest_url: "https://duckduckgo.com/ac/?type=list",
 };
 
-fn resolve(engine: Option<&str>) -> &'static Engine {
+fn resolve(engine: &str) -> &'static Engine {
     match engine {
-        Some("duckduckgo") => &DUCKDUCKGO,
-        Some("google") | None => &GOOGLE,
-        Some(other) => {
+        "duckduckgo" => &DUCKDUCKGO,
+        "google" => &GOOGLE,
+        other => {
             eprintln!("wayrun-core: unknown search engine {other:?}; using google");
             &GOOGLE
         }
@@ -61,7 +61,7 @@ fn meta_of(engine: &Engine) -> Meta {
 
 /// The identity the registry lists for `web-search` without building the
 /// plugin, so a disabled entry still shows the configured engine.
-pub fn meta_for(engine: Option<&str>) -> Meta {
+pub fn meta_for(engine: &str) -> Meta {
     meta_of(resolve(engine))
 }
 
@@ -71,12 +71,18 @@ pub struct WebSearch {
 }
 
 impl WebSearch {
-    pub fn new(engine: Option<&str>) -> Self {
-        let engine = resolve(engine);
+    pub fn new() -> Self {
+        let engine = resolve(&crate::config::web_search_engine());
         Self {
             engine,
             meta: meta_of(engine),
         }
+    }
+}
+
+impl Default for WebSearch {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -115,9 +121,17 @@ fn do_search(engine: &Engine, query: &str) -> Result<Vec<ResultItem>> {
         return Ok(vec![]);
     }
 
+    // minreq's timeout is whole seconds; round up so a sub-second setting still
+    // gives the request a chance.
+    let timeout_s = crate::config::get()
+        .web_search
+        .timeout_ms
+        .div_ceil(1000)
+        .max(1);
+
     let response = minreq::get(engine.suggest_url)
         .with_param("q", query)
-        .with_timeout(5)
+        .with_timeout(timeout_s)
         .send()
         .context("fetching web suggestions")?;
     let json: Vec<serde_json::Value> = response.json().context("parsing web suggestions")?;
@@ -169,10 +183,9 @@ mod tests {
 
     #[test]
     fn an_unknown_engine_falls_back_to_google() {
-        assert_eq!(resolve(None).name, "Google");
-        assert_eq!(resolve(Some("google")).name, "Google");
-        assert_eq!(resolve(Some("duckduckgo")).name, "DuckDuckGo");
-        assert_eq!(resolve(Some("nope")).name, "Google");
+        assert_eq!(resolve("google").name, "Google");
+        assert_eq!(resolve("duckduckgo").name, "DuckDuckGo");
+        assert_eq!(resolve("nope").name, "Google");
     }
 
     #[test]

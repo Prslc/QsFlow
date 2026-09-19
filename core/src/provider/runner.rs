@@ -138,7 +138,7 @@ fn do_search(input: &str) -> Vec<ResultItem> {
         }
     }
 
-    crate::provider::rank_results(results, false, 20)
+    crate::provider::rank_results(results, false, crate::config::get().results.runner)
 }
 
 #[cfg(test)]

@@ -64,6 +64,46 @@ pub fn watch_theme(tx: &mpsc::Sender<String>) -> Option<notify::RecommendedWatch
     Some(watcher)
 }
 
+/// Watch `~/.config/wayrun/config.toml` and reload core behaviour on change.
+/// The registry is rebuilt too, because a provider resolves its settings (the
+/// web-search engine) when it is built.
+pub fn watch_config() -> Option<notify::RecommendedWatcher> {
+    // Touch the config so the template exists and is watched from the start.
+    let _ = crate::config::get();
+    let path = crate::config::path()?;
+    let handle = tokio::runtime::Handle::current();
+    let watch_path = path.clone();
+    let now = std::time::Instant::now();
+    let mut last_reload = now
+        .checked_sub(std::time::Duration::from_secs(1))
+        .unwrap_or(now);
+
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(ev) = res else { return };
+        // React to writes, not reads: the reload reads this file, so an
+        // unfiltered Access event would re-trigger the watcher forever.
+        if matches!(ev.kind, notify::EventKind::Access(_)) {
+            return;
+        }
+        if !ev.paths.iter().any(|p| p == &watch_path) {
+            return;
+        }
+        if last_reload.elapsed() < RELOAD_DEBOUNCE {
+            return;
+        }
+        last_reload = std::time::Instant::now();
+        let handle = handle.clone();
+        handle.spawn(async move {
+            crate::config::reload();
+            crate::plugin::reload().await;
+        });
+    })
+    .ok()?;
+
+    watch_targets(&mut watcher, &path);
+    Some(watcher)
+}
+
 /// Watch `~/.config/wayrun/plugins.toml` and reload the plugin registry on
 /// change (resident mode would otherwise keep the config read at startup
 /// forever). Debounced: editors typically fire several events per save.

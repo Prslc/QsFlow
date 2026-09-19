@@ -28,7 +28,6 @@ keyword = "h"
 [[plugins]]
 id = "web-search"
 keyword = "s"
-engine = "google"
 
 [[plugins]]
 id = "file-search"

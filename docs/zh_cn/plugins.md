@@ -17,7 +17,6 @@ enabled = true
 | `id` | 是 | 该条目配置的插件。可以是内置 id，也可以是外部主机上报的 id。 |
 | `keyword` | 是 | 路由到该插件的前缀。`""` 表示它是**默认**提供者。 |
 | `enabled` | 否 | 默认 `true`。设为 `false` 可禁用而不删除条目。 |
-| `engine` | 否 | 仅 `web-search` 使用：`google`（默认）或 `duckduckgo`。其他插件忽略。 |
 | `command` | 否 | 外部 JSON-RPC 2.0 主机，见下文。 |
 
 调整条目顺序即可改变优先级。未识别或已删除的 id 会被忽略。内置 id 且未写 `command` 时使用编译进的插件；
@@ -40,7 +39,7 @@ enabled = true
 | `runner` | `r` | 模糊匹配 `$PATH` 可执行文件；可带参数。 |
 | `firefox-bookmarks` | `b` | Firefox 书签。 |
 | `firefox-history` | `h` | Firefox 历史。 |
-| `web-search` | `s` | 网页搜索建议（默认 Google，可用 `engine` 切为 DuckDuckGo）。 |
+| `web-search` | `s` | 网页搜索建议（引擎在 `config.toml` 中设置）。 |
 | `file-search` | `f` | 主目录下的文件。 |
 | `path-search` | `d` | 目录与路径。 |
 | `clipboard` | `c` | 剪贴板历史。 |

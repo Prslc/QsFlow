@@ -23,10 +23,6 @@ struct PluginEntry {
     keyword: String,
     #[serde(default = "default_enabled")]
     enabled: bool,
-    /// Search backend for `web-search` (`google`/`duckduckgo`); ignored by
-    /// every other plugin. Unknown values fall back to google.
-    #[serde(default)]
-    engine: Option<String>,
     /// External JSON-RPC host binary (resolved on PATH). When set, the plugin
     /// is NOT compiled into the core: it is spawned on demand, `search`
     /// requests are relayed verbatim, and its identity (name/icon/ready) is
@@ -102,10 +98,6 @@ struct PendingHost {
     id: String,
     command: String,
 }
-
-/// How many external hosts may be forked at once while resolving identities.
-/// Each is a fresh interpreter, so this is the memory ceiling of the walk.
-const DISCOVERY_CONCURRENCY: usize = 2;
 
 /// A discovered host identity, keyed by the configured command and stamped
 /// with the file's `(mtime, size)` so an edited plugin is re-discovered while
@@ -222,7 +214,7 @@ fn build_entries(config: &Config) -> Vec<Entry> {
         }
         if p.id == "web-search" {
             entries.push(Entry {
-                plugin: Box::new(crate::provider::web::WebSearch::new(p.engine.as_deref())),
+                plugin: Box::new(crate::provider::web::WebSearch::new()),
                 keyword: p.keyword.clone(),
                 pending: None,
             });
@@ -261,7 +253,7 @@ fn build_entries(config: &Config) -> Vec<Entry> {
 }
 
 /// Ask the hosts of the external plugins still on their placeholder identity
-/// for their name/icon, bounded to [`DISCOVERY_CONCURRENCY`] at a time so the
+/// for their name/icon, bounded to `hosts.discovery_concurrency` at a time so the
 /// fan-out cannot fork every interpreter at once, and cache the answers. A
 /// `keyword` limits the walk to the plugin a search is about to use; `None`
 /// resolves them all (the `?` help table lists every name).
@@ -301,7 +293,9 @@ async fn resolve_pending(keyword: Option<&str>) {
     }
 
     if !stale.is_empty() {
-        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(DISCOVERY_CONCURRENCY));
+        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            crate::config::get().hosts.discovery_concurrency,
+        ));
         let mut hosts = tokio::task::JoinSet::new();
         for command in stale {
             let permits = permits.clone();
@@ -365,7 +359,7 @@ fn load_or_default() -> Config {
 }
 
 /// Overlay a user config onto the shipped default. Known ids are updated
-/// (keyword/enabled, plus `engine`/`command` when the user sets one); unknown ids are
+/// (keyword/enabled, plus `command` when the user sets one); unknown ids are
 /// appended so external plugins can be declared purely from the user config
 /// without touching the core. Unknown ids without a host are still skipped at
 /// registry build.
@@ -375,9 +369,6 @@ fn merge_config(mut base: Config, user: Config) -> Config {
             Some(dp) => {
                 dp.keyword = up.keyword;
                 dp.enabled = up.enabled;
-                if up.engine.is_some() {
-                    dp.engine = up.engine;
-                }
                 if up.command.is_some() {
                     dp.command = up.command;
                 }
@@ -435,7 +426,7 @@ pub async fn list_plugins() -> Vec<(String, String, String, String, bool)> {
                     p.enabled,
                 )
             } else if p.id == "web-search" {
-                let m = crate::provider::web::meta_for(p.engine.as_deref());
+                let m = crate::provider::web::meta_for(&crate::config::web_search_engine());
                 (
                     p.id.clone(),
                     m.name.to_string(),
@@ -742,41 +733,6 @@ mod tests {
         assert_eq!(merged.plugins[0].keyword, "calc");
         assert!(!merged.plugins[0].enabled);
         assert!(merged.plugins[0].command.is_none());
-    }
-
-    #[test]
-    fn default_config_picks_the_google_engine() {
-        let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
-        let web = config
-            .plugins
-            .iter()
-            .find(|p| p.id == "web-search")
-            .unwrap();
-        assert_eq!(web.engine.as_deref(), Some("google"));
-    }
-
-    #[test]
-    fn user_selects_the_search_engine() {
-        let base = parse(
-            r#"
-            [[plugins]]
-            id = "web-search"
-            keyword = "s"
-            engine = "google"
-            "#,
-        );
-        let user = parse(
-            r#"
-            [[plugins]]
-            id = "web-search"
-            keyword = "s"
-            engine = "duckduckgo"
-            "#,
-        );
-        assert_eq!(
-            merge_config(base, user).plugins[0].engine.as_deref(),
-            Some("duckduckgo")
-        );
     }
 
     #[test]

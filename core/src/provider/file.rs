@@ -137,7 +137,7 @@ fn do_search(query: &str, matcher: fn(&str, &str, &str) -> bool) -> Vec<ResultIt
         }
 
         let walker = WalkDir::new(root)
-            .max_depth(3)
+            .max_depth(crate::config::get().files.depth)
             .into_iter()
             .filter_entry(|e| keep_entry(&e.file_name().to_string_lossy(), e.depth()));
 

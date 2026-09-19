@@ -139,11 +139,12 @@ pub async fn handle(
             }
         }
         "top" => {
-            let items: Vec<crate::models::ResultItem> = crate::system::usage::get_top(20)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|value| serde_json::from_value(value).ok())
-                .collect();
+            let items: Vec<crate::models::ResultItem> =
+                crate::system::usage::get_top(crate::config::get().history.top)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|value| serde_json::from_value(value).ok())
+                    .collect();
             let items = crate::plugin::decorate(items, "").await;
             if has_id {
                 respond(tx, id, Ok(json!(items))).await;
