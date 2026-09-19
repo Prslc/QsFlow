@@ -44,3 +44,13 @@ Each is clamped to 1–200.
 | `top` | `20` | Rows returned by the `top` RPC method (1–200). |
 
 The empty-query history the launcher shows is never capped.
+
+## `[font]`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `family` | `Source Han Sans CN` | Primary shaping family, or a generic name (`serif`, `sans-serif`, `monospace`). |
+
+The shell reads this at startup, so a change takes effect on the next launch
+(`systemctl --user restart wayrun-launcher`). A non-CJK family avoids mapping a
+CJK font when you never draw CJK text.

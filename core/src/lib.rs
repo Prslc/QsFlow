@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-mod config;
+pub mod config;
 mod models;
 mod plugin;
 mod protocol;

@@ -43,3 +43,13 @@
 | `top` | `20` | `top` RPC 方法返回的行数（1–200）。 |
 
 启动器展示的空查询历史不会被截断。
+
+## `[font]`
+
+| 键 | 默认 | 含义 |
+| --- | --- | --- |
+| `family` | `Source Han Sans CN` | 主排版字体族，或通用名（`serif`、`sans-serif`、`monospace`）。 |
+
+壳在启动时读取该值，因此修改后需下次启动生效
+（`systemctl --user restart wayrun-launcher`）。在不绘制 CJK 文本时，使用非 CJK
+字体族可避免映射 CJK 字体。

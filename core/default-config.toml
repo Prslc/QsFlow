@@ -25,3 +25,8 @@ depth = 3
 [history]
 # Rows returned by the `top` RPC method.
 top = 20
+
+[font]
+# Primary shaping family, or a generic name (serif, sans-serif, monospace).
+# A non-CJK family avoids mapping a CJK font when the UI never draws CJK text.
+family = "Source Han Sans CN"

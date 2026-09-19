@@ -6,10 +6,6 @@ use cosmic_text::{
 };
 use tiny_skia::Pixmap;
 
-/// The machine's CJK-capable sans default; cosmic-text falls back per glyph for
-/// anything it lacks.
-pub const FAMILY: &str = "Source Han Sans CN";
-
 /// The card's line height as a multiple of the font size.
 pub const LINE_HEIGHT: f32 = 1.2;
 
@@ -40,14 +36,20 @@ pub struct TextEngine {
     font_system: FontSystem,
     cache: SwashCache,
     shapes: HashMap<ShapeKey, Rc<Shaped>>,
+    family: String,
 }
 
 impl TextEngine {
     pub fn new() -> Self {
+        Self::with_family(wayrun_core::config::get().font.family)
+    }
+
+    pub fn with_family(family: String) -> Self {
         Self {
             font_system: FontSystem::new(),
             cache: SwashCache::new(),
             shapes: HashMap::new(),
+            family,
         }
     }
 
@@ -89,7 +91,7 @@ impl TextEngine {
         // clipped by the caller).
         buffer.set_size(&mut self.font_system, None, None);
 
-        let attrs = Attrs::new().family(Family::Name(FAMILY)).weight(weight);
+        let attrs = Attrs::new().family(family_of(&self.family)).weight(weight);
         buffer.set_text(&mut self.font_system, text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut self.font_system, false);
 
@@ -228,6 +230,19 @@ impl TextEngine {
     }
 }
 
+/// Map a configured family onto cosmic-text's generic families; anything else
+/// is a named family.
+fn family_of(family: &str) -> Family<'_> {
+    match family {
+        "serif" => Family::Serif,
+        "sans-serif" => Family::SansSerif,
+        "cursive" => Family::Cursive,
+        "fantasy" => Family::Fantasy,
+        "monospace" => Family::Monospace,
+        name => Family::Name(name),
+    }
+}
+
 /// Source-over one straight-alpha pixel into a premultiplied RGBA buffer.
 fn blend(data: &mut [u8], width: i32, height: i32, x: i32, y: i32, color: [u8; 4], alpha: u8) {
     if alpha == 0 || x < 0 || y < 0 || x >= width || y >= height {
@@ -286,7 +301,7 @@ mod tests {
 
     #[test]
     fn the_same_line_is_shaped_once() {
-        let mut engine = TextEngine::new();
+        let mut engine = TextEngine::with_family("Source Han Sans CN".to_string());
         let first = engine.shape("Firefox", 14.0, Weight::BOLD);
         let second = engine.shape("Firefox", 14.0, Weight::BOLD);
         assert!(std::rc::Rc::ptr_eq(&first, &second), "cache hit");
@@ -302,7 +317,7 @@ mod tests {
 
     #[test]
     fn a_fitting_line_is_shaped_unchanged() {
-        let mut engine = TextEngine::new();
+        let mut engine = TextEngine::with_family("Source Han Sans CN".to_string());
         let full = engine.shape("Short", 14.0, Weight::NORMAL);
         let fitted = engine.fit("Short", 14.0, Weight::NORMAL, full.width + 1.0);
         assert_eq!(fitted.width, full.width);
@@ -310,7 +325,7 @@ mod tests {
 
     #[test]
     fn an_overlong_line_is_elided_to_the_limit() {
-        let mut engine = TextEngine::new();
+        let mut engine = TextEngine::with_family("Source Han Sans CN".to_string());
         let long = "a title that is far too long to ever fit on one card row";
         let full = engine.shape(long, 14.0, Weight::BOLD);
         let max = full.width / 3.0;

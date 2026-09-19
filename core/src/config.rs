@@ -12,6 +12,7 @@ pub struct Config {
     pub results: Results,
     pub files: Files,
     pub history: History,
+    pub font: Font,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +43,13 @@ pub struct Files {
 #[derive(Clone, Debug, PartialEq)]
 pub struct History {
     pub top: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Font {
+    /// Primary shaping family. A non-CJK family avoids mapping a CJK font when
+    /// the UI never draws CJK text.
+    pub family: String,
 }
 
 impl Default for WebSearch {
@@ -84,6 +92,14 @@ impl Default for History {
     }
 }
 
+impl Default for Font {
+    fn default() -> Self {
+        Self {
+            family: "Source Han Sans CN".to_string(),
+        }
+    }
+}
+
 #[derive(serde::Deserialize, Default)]
 struct ConfigFile {
     #[serde(default)]
@@ -96,6 +112,8 @@ struct ConfigFile {
     files: FilesFile,
     #[serde(default)]
     history: HistoryFile,
+    #[serde(default)]
+    font: FontFile,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -125,6 +143,11 @@ struct FilesFile {
 #[derive(serde::Deserialize, Default)]
 struct HistoryFile {
     top: Option<i32>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct FontFile {
+    family: Option<String>,
 }
 
 impl Config {
@@ -170,6 +193,9 @@ impl Config {
         }
         if let Some(n) = file.history.top {
             self.history.top = n.clamp(1, 200);
+        }
+        if let Some(family) = file.font.family.filter(|f| !f.trim().is_empty()) {
+            self.font.family = family;
         }
     }
 }
@@ -251,12 +277,16 @@ mod tests {
 
             [files]
             depth = 5
+
+            [font]
+            family = "Noto Sans"
             "#,
         );
         assert_eq!(config.web_search.engine, "duckduckgo");
         assert_eq!(config.web_search.timeout_ms, 2000);
         assert_eq!(config.results.runner, 10);
         assert_eq!(config.files.depth, 5);
+        assert_eq!(config.font.family, "Noto Sans");
         // untouched defaults survive
         assert_eq!(config.results.apps, 50);
         assert_eq!(config.hosts.timeout_ms, 5000);

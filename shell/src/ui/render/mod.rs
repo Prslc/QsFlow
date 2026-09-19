@@ -206,7 +206,7 @@ mod tests {
         state.reduce_motion = true;
 
         let mut pixmap = Pixmap::new(64, 64).unwrap();
-        let mut text = TextEngine::new();
+        let mut text = TextEngine::with_family("Source Han Sans CN".to_string());
         let mut icons = IconCache::new();
         draw(
             &mut pixmap,
@@ -230,7 +230,7 @@ mod tests {
         state.surface = (1600, 1080);
         state.reduce_motion = true;
 
-        let mut text = TextEngine::new();
+        let mut text = TextEngine::with_family("Source Han Sans CN".to_string());
         let mut icons = IconCache::new();
         let mut pixmap = Pixmap::new(1600, 1080).unwrap();
         // A sentinel everywhere: a region repaint must leave the backdrop alone.
@@ -270,7 +270,7 @@ mod tests {
         // The previous card was 200px taller than the current one.
         state.last_card_bottom = state.appearance.layout.card_top(state.surface) + card_h + 200.0;
 
-        let mut text = TextEngine::new();
+        let mut text = TextEngine::with_family("Source Han Sans CN".to_string());
         let mut icons = IconCache::new();
         let mut pixmap = Pixmap::new(1600, 1080).unwrap();
         pixmap.fill(Color::from_rgba8(255, 0, 255, 255));
