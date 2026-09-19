@@ -28,6 +28,7 @@ highlighted one.
 | Key | Action |
 | --- | --- |
 | `Enter` | launch the selected result |
+| `Shift+Enter` | open the selected result's action panel |
 | `↑` / `↓` | move the selection |
 | `PageUp` / `PageDown` | move by a page |
 | `Home` / `End` | move the caret to the start/end of the query |
@@ -35,5 +36,28 @@ highlighted one.
 | `Shift+←/→` | extend the selection |
 | `Ctrl+C` / `Ctrl+X` | copy the selection to the clipboard |
 | `Ctrl+V` | paste |
-| `Delete` | forget the selected history item |
-| `Esc` | dismiss |
+| `Delete` | delete the character after the caret |
+| `Esc` | dismiss (or close the action panel) |
+
+## Action panel
+
+`Shift+Enter` opens a Wox-style second level for the highlighted row: a list of
+the commands that type of result offers. Its entries come from the plugin that
+produced the row, so a file row offers "Reveal in file manager", an application
+row lists its `[Desktop Action …]` groups, a bookmark or search hit offers "Copy
+URL", and an external host may attach its own. Every actionable row also gets
+the launcher-level **Pin to top** / **Unpin** and **Remove from history**.
+
+While the panel is open, `↑`/`↓` (and the wheel) move through it, `Enter` runs
+the highlighted command, and `Esc` or `Shift+Enter` closes it. Typing closes the
+panel and returns to the results.
+
+## Pinned results
+
+**Pin to top** stores the row under the exact query it was pinned on — the whole
+trimmed input, keyword included — and re-emits it at the top the next time that
+same string is searched. Pinning Firefox on `firefox` leads the results for
+`firefox`, but not for `fire` or a bare keyword; pinning on `b firefox` leads
+only `b firefox`. The empty query is its own scope, so a pin made there leads the
+history. The original copy in the fresh results is dropped, so a pinned row
+appears once. **Unpin** takes it back out; the pins live in `usage.db`.

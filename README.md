@@ -39,7 +39,10 @@ registry, the JSON-RPC protocol and the usage database.
 - **Quick search** — files and paths, Firefox bookmarks and history, clipboard
   history, web suggestions, `$PATH` commands, open niri windows, system commands,
   and inline math.
-- **Usage history** — most-used items on an empty query; `Delete` forgets one.
+- **Usage history** — most-used items on an empty query.
+- **Action panel & pins** — `Shift+Enter` opens a per-type action menu (reveal a
+  file, run a desktop action, copy a link); `Pin to top` keeps a result first
+  under its keyword.
 - **Themeable** — follows DankMaterialShell's Material You palette, with
   `theme.toml` overrides for colors, blur, layout and motion.
 - **Extensible** — a TOML plugin registry plus external JSON-RPC hosts.

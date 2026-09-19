@@ -30,7 +30,9 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
   启动（正确处理 Exec 引号、字段码与 `DBusActivatable`），并逐行解析 Flatpak 与主题图标。
 - **快速搜索** — 文件与路径、Firefox 书签与历史、剪贴板历史、网页建议、`$PATH`
   命令、打开的 niri 窗口、系统命令，以及即时计算。
-- **使用历史** — 留空时展示高频项，按 `Delete` 删除。
+- **使用历史** — 留空时展示高频项。
+- **二级菜单与置顶** — `Shift+Enter` 打开按类型区分的动作菜单（定位文件、运行
+  Desktop Action、复制链接）；“置顶”让结果在其关键词下始终排在前面。
 - **可主题化** — 跟随 DankMaterialShell 的 Material You 调色板，并可用
   `theme.toml` 覆盖配色、模糊、布局与动效。
 - **可扩展** — TOML 插件注册表，以及外部 JSON-RPC 主机。

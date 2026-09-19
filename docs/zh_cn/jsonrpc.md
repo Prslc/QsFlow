@@ -20,6 +20,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `action` | `{"desktop_id","action_id"}` | `null`（运行 desktop 文件里的一个 `[Desktop Action …]` 组） |
 | `launch` | `{"desktop_id"}` | `null`（经 GLib 的 `GAppInfo` 启动） |
 | `open` | `{"uri"}` | `null`（用默认处理器打开） |
+| `reveal` | `{"uri"}` | `null`（在文件管理器中显示文件） |
+| `pin` | `{"scope","item"}` | `{"pinned": bool}`（把结果项置顶到某条精确查询） |
+| `unpin` | `{"scope","on_click"}` | `{"unpinned": bool}` |
 | `copy` | `{"text"}` | `null`（写入 Wayland 剪贴板） |
 | `resolve_icon` | `{"name"}` | 图标规范对应的绝对路径 |
 | `list_plugins` | — | 插件元数据；见 [schema](#插件元数据list_plugins) |
@@ -38,6 +41,11 @@ core 还会向该主机转发一条 `forget` 请求，让主机删除自己的�
 `forget` 方法的主机会回 `-32601`，这算「不是我的行」——UI 会把这类行留在列表里，
 而不是声称完成了一次没人做过的删除。主机遍历在自己的任务里跑，慢的或卡住的主机
 不会占住 stdin 循环，它的回复只是晚一点到，仍带着自己的 `id`。
+
+`pin` 把结果项按一条**精确查询字符串**（`scope` 是整段去除首尾空白的输入；`""` 表示空查询
+历史）以其 `on_click` 为键保存，`unpin` 删除。之后 `search` 的 `text` 去除首尾空白后等于该
+字符串时，才会把这些置顶项按最近置顶优先排在前面，与新鲜结果去重，并补上它们的 `actions`；
+只输入关键词不会命中。结果项 JSON 整体存储，因为置顶行会在其插件运行之前就被重新发出。
 
 无 `id` 的请求是通知（仅副作用，不返回响应）。未知方法返回 `-32601`；畸形请求
 `-32600`；参数错误 `-32602`。
@@ -104,8 +112,8 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 
 ## 结果项
 
-`search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——五个键**始终都在**，
-缺省的可选字段为 `null`（而非省略）：
+`search` 和 `top` 返回结果项数组。每个结果项是含以下键的对象——前五个**始终都在**，
+缺省的可选字段为 `null`（而非省略）；`actions` 仅在非空时出现：
 
 | 键 | 类型 | 含义 |
 |-----|------|------|
@@ -114,6 +122,15 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"top","params":{"plugin":"todo"},"id":1
 | `on_click` | string \| null | Enter 绑定的动作；见下方 scheme |
 | `icon` | string \| null | 图标图像的绝对路径；见 [图标规范](#图标规范) |
 | `ephemeral` | bool | 为 true 时，选中该项不记入使用历史 |
+| `actions` | array | 可选，UI `Shift+Enter` 二级菜单的次级命令 |
+
+`actions` 元素为 `{"title": string, "on_click": string, "icon"?: string}`，
+`icon` 与结果行的 `icon` 采用同样的规范解析。core 补上启动器级别的
+置顶/取消置顶与移除历史两项，产出该行的内置 provider 再补上类型专属项（文件定位、
+`[Desktop Action …]`、复制链接），外部宿主自带的项排在其后。外部宿主可以直接在结果项上
+输出 `actions`，UI 无需理解 scheme 即可渲染。二级菜单专属 scheme 有
+`pin:{"scope","item"}`、`unpin:{"scope","on_click"}`、`forget:<on_click>` 与
+`reveal:<uri>`；所有行 scheme（`run:`、`launch:`、`copy:`、`action:`、URL）同样可用。
 
 `on_click` 的 scheme：
 

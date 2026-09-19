@@ -21,6 +21,9 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"search","params":{"text":"firefox"},"i
 | `action` | `{"desktop_id","action_id"}` | `null` (runs one `[Desktop Action …]` group of a desktop file) |
 | `launch` | `{"desktop_id"}` | `null` (launches through GLib's `GAppInfo`) |
 | `open` | `{"uri"}` | `null` (opens with the default handler) |
+| `reveal` | `{"uri"}` | `null` (shows a file in the file manager) |
+| `pin` | `{"scope","item"}` | `{"pinned": bool}` (pins an item to an exact query) |
+| `unpin` | `{"scope","on_click"}` | `{"unpinned": bool}` |
 | `copy` | `{"text"}` | `null` (writes the Wayland clipboard) |
 | `resolve_icon` | `{"name"}` | absolute path for an icon spec |
 | `list_plugins` | — | plugin metadata; see [schema](#plugin-metadata-list_plugins) |
@@ -43,6 +46,13 @@ and a host without a `forget` method answers `-32601`, which counts as "not
 mine" — the UI keeps such a row in the list rather than claiming a deletion
 nobody made. The host walk runs in a task of its own, so a slow or wedged host
 cannot hold the stdin loop; its reply simply lands later, carrying its `id`.
+
+`pin` stores an item under an exact query string (`scope` is the whole trimmed
+input; `""` is the empty-query history), keyed by its `on_click`; `unpin` removes
+it. A later `search` whose `text` trims to that same string prepends the pins,
+most recently pinned first, deduplicated against the fresh results, and decorates
+them with their `actions`; a bare keyword does not match. The item JSON is
+stored whole, because a pinned row is re-emitted before its plugin runs.
 
 A request without an `id` is a notification (side effect only, no response).
 Unknown methods return `-32601`; malformed requests `-32600`; bad params
@@ -114,7 +124,8 @@ keyword+space identity hint. The hint stays otherwise:
 ## Result items
 
 `search` and `top` return an array of items. Every item is an object with these
-keys — all five are always present (`null` for an absent optional field):
+keys — the first five are always present (`null` for an absent optional field),
+and `actions` only when non-empty:
 
 | Key | Type | Meaning |
 |-----|------|---------|
@@ -123,6 +134,17 @@ keys — all five are always present (`null` for an absent optional field):
 | `on_click` | string \| null | action bound to Enter; see the schemes below |
 | `icon` | string \| null | absolute path to an icon image; see [Icon specs](#icon-specs) |
 | `ephemeral` | bool | when true, selecting this row is not recorded in usage history |
+| `actions` | array | optional secondary commands for the UI's `Shift+Enter` panel |
+
+An `actions` entry is `{"title": string, "on_click": string, "icon"?: string}`,
+with the same icon-spec resolution as a row's `icon`. The core attaches
+the launcher-level pin/unpin and history-removal entries, the owning built-in
+provider adds its type-specific ones (a file reveal, a `[Desktop Action …]`
+group, a copy-link), and a host's own entries are kept after them. External hosts
+may emit `actions` directly on a result; the UI renders them without knowing the
+scheme. The panel-only schemes are `pin:{"scope","item"}`,
+`unpin:{"scope","on_click"}`, `forget:<on_click>` and `reveal:<uri>`; every row
+scheme (`run:`, `launch:`, `copy:`, `action:`, a URL) also works.
 
 `on_click` schemes:
 
