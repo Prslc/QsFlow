@@ -62,8 +62,6 @@ pub struct State {
     /// `surface × this` and a viewport maps it back onto the logical size, so
     /// `scale` above is not used for sizing.
     pub fractional: Option<f32>,
-    /// Whether the layer surface currently exists.
-    pub visible: bool,
     /// Whether the entrance animation has been started by the first drawn
     /// frame. The layer surface is configured a round trip after `shown`, so
     /// starting at the request would swallow the fade's first frames.
@@ -106,7 +104,6 @@ impl State {
             surface: (1920, 1080),
             scale: 1,
             fractional: None,
-            visible: false,
             entrance_started: false,
             reduce_motion: std::env::var_os("WAYRUN_REDUCED_MOTION").is_some(),
             hovered: None,
@@ -193,7 +190,6 @@ impl State {
     }
 
     pub fn shown(&mut self, now: Instant) {
-        self.visible = true;
         self.query.clear();
         self.caret = 0;
         self.anchor = None;
@@ -225,7 +221,6 @@ impl State {
     }
 
     pub fn hidden(&mut self) {
-        self.visible = false;
         self.dismiss_at = None;
         // The surface is gone, so nothing is composing on it any more.
         self.preedit = None;

@@ -1,7 +1,5 @@
 target/
-run
-bin/
-core/bin
 .cargo-home/
 .run/
 AGENTS.md
+AGENTS.md.bak
