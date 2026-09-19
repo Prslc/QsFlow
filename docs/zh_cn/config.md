@@ -17,5 +17,5 @@
 | `family` | `Source Han Sans CN` | 主排版字体族，或通用名（`serif`、`sans-serif`、`monospace`）。 |
 
 壳在启动时读取 `family`，因此修改后需下次启动生效
-（`systemctl --user restart wayrun-launcher`）。在不绘制 CJK 文本时，使用非 CJK
-字体族可避免映射 CJK 字体。
+（`systemctl --user restart wayrun-launcher`）。缺字会逐字回退到系统字体，因此只覆盖
+你常用文字的字体族，能让从不绘制的字体不占用内存。

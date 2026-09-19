@@ -6,7 +6,8 @@
 engine = "google"
 
 [font]
-# Primary shaping family, or a generic name (serif, sans-serif, monospace).
-# A non-CJK family avoids mapping a CJK font when the UI never draws CJK text.
-# Read by the shell at startup, so a change applies on the next launch.
+# Primary shaping family, or a generic name (serif, sans-serif, monospace). The
+# shell falls back per glyph for anything it lacks, so a family covering only
+# the scripts you read keeps the fonts you never draw out of memory. Read at
+# startup, so a change applies on the next launch.
 family = "Source Han Sans CN"

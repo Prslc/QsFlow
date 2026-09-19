@@ -18,5 +18,6 @@ key keeps the built-in default shown here.
 | `family` | `Source Han Sans CN` | Primary shaping family, or a generic name (`serif`, `sans-serif`, `monospace`). |
 
 The shell reads `family` at startup, so a change takes effect on the next launch
-(`systemctl --user restart wayrun-launcher`). A non-CJK family avoids mapping a
-CJK font when you never draw CJK text.
+(`systemctl --user restart wayrun-launcher`). cosmic-text falls back per glyph
+for anything the family lacks, so a family covering only the scripts you read
+keeps the fonts you never draw out of memory.

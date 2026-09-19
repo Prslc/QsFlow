@@ -19,8 +19,9 @@ pub struct WebSearch {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Font {
-    /// Primary shaping family. A non-CJK family avoids mapping a CJK font when
-    /// the UI never draws CJK text.
+    /// The family the UI shapes with; glyphs it lacks fall back to the system's
+    /// fonts, so a family covering only the scripts you read keeps the rest out
+    /// of memory.
     pub family: String,
 }
 
