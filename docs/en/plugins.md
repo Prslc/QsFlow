@@ -1,0 +1,72 @@
+# Plugins
+
+`~/.config/wayrun/plugins.toml` is the plugin registry. It is generated on the
+first run as a copy of `core/default-plugins.toml` and is watched, so an edit is
+picked up without restarting the core.
+
+## Entry fields
+
+```toml
+[[plugins]]
+id = "runner"
+keyword = "r"
+enable = true
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Which plugin this entry configures. A built-in id, or the id an external host reports. |
+| `keyword` | yes | The prefix that routes input to this plugin. `""` makes it a **default** provider. |
+| `enable` | no | Defaults to `true`. `false` disables the plugin without removing the entry. |
+| `command` | no | An external JSON-RPC 2.0 host. See below. |
+
+Reorder entries to change priority. Unknown or removed ids are ignored. A
+built-in id with no `command` uses the compiled-in plugin; an unknown id with no
+`command` is skipped.
+
+## Routing
+
+The first word of the input routes to a plugin only when some plugin owns that
+keyword. Otherwise the whole input, first word included, is the default
+providers' query: `foo bar` reaches a default provider as `foo bar`, not `bar`.
+
+Default providers (keyword `""`) are tried in entry order and the first one with
+non-empty results wins, so a bare query is app/command search, not a union of
+everything.
+
+## Built-in plugins
+
+| Id | Keyword | What it searches |
+| --- | --- | --- |
+| `calculator` | `""` | Inline arithmetic. |
+| `system-commands` | `""` | `lock`, `reboot`, `shutdown`, `suspend`, `logout`. |
+| `app-search` | `""` | Installed applications (desktop entries). |
+| `runner` | `r` | Fuzzy `$PATH` executables; accepts arguments. |
+| `firefox-bookmarks` | `b` | Firefox bookmarks. |
+| `firefox-history` | `h` | Firefox history. |
+| `web-search` | `s` | Web search suggestions. |
+| `file-search` | `f` | Files under the home directory. |
+| `path-search` | `d` | Directories and paths. |
+| `clipboard` | `c` | Clipboard history. |
+| `window` | `w` | Open windows on niri. |
+
+## External hosts
+
+`command` names a JSON-RPC 2.0 host. The value is a single executable token,
+resolved on `PATH` or given as an absolute path. It takes no arguments and no
+shell syntax, so a script needs a shebang and the exec bit.
+
+The core spawns the host fresh for each call (one request, then its stdin
+closes), bounded by a 5s timeout, so a stalled host costs the deadline and never
+the session. The identity the host reports through `list_plugins` is cached by
+the file's `(mtime, size)`, so a later start does not fork an unchanged host.
+
+Both the identity `icon` and each result `icon` accept an absolute path, a
+`papirus:` spec, or a theme icon name; the core resolves every spec to an
+absolute path before a row reaches the shell.
+
+Hosts can be written by hand. The
+[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) workspace ships a
+Python framework, example plugins, and a `template/` to copy from. The host
+protocol is the JSON-RPC subset documented in
+[jsonrpc.md](jsonrpc.md): `search`, `top`, `select`, `forget`, `list_plugins`.

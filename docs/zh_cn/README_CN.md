@@ -40,7 +40,7 @@ WayRun 是一款 Wayland 原生的 Linux 应用启动器和快速搜索工具。
 - **网页搜索** — Google 搜索建议（`s`）。
 - **内联工具** — 即时计算。
 - **使用历史** — 留空时展示高频项，按 `Delete` 删除。
-- **GTK 主题集成** — 从 GTK4 主题 CSS 读取主题色。
+- **动态主题** — 跟随 DankMaterialShell 的 Material You 调色板，并可在 `theme.toml` 中逐字段覆盖配色，以及调整布局/磨砂/动效。
 - **插件系统** — TOML 注册表，可启用、禁用、调整顺序或修改前缀。
 - **图标解析** — Papirus、Breeze、Adwaita、hicolor 及 Flatpak；会话内缓存。
 
@@ -133,64 +133,12 @@ wayrun-launcher` 并还原绑定的启动方式。
 
 ## 配置
 
-首次运行时，`~/.config/wayrun/plugins.toml` 会自动生成（即
-`core/default-plugins.toml` 的副本）：
+`~/.config/wayrun/` 下有两个可选文件，都会被监听，修改后无需重启即可生效：
 
-```toml
-# ~/.config/wayrun/plugins.toml
-[[plugins]]
-id = "calculator"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "system-commands"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "app-search"
-keyword = ""
-
-[[plugins]]
-id = "runner"
-keyword = "r"
-enable = true
-
-[[plugins]]
-id = "firefox-bookmarks"
-keyword = "b"
-
-[[plugins]]
-id = "firefox-history"
-keyword = "h"
-
-[[plugins]]
-id = "web-search"
-keyword = "s"
-
-[[plugins]]
-id = "file-search"
-keyword = "f"
-
-[[plugins]]
-id = "path-search"
-keyword = "d"
-
-[[plugins]]
-id = "clipboard"
-keyword = "c"
-
-[[plugins]]
-id = "window"
-keyword = "w"
-enable = true
-```
-
-调整条目顺序可改变优先级，修改 `keyword` 可重映射触发前缀，设置 `enable = false` 可禁用插件。未识别或已删除的插件 ID 会被自动跳过。
-条目还可以声明可选的 `command` 字段，指向外部 JSON-RPC 2.0 主机。该值必须是单个可执行文件 token——按 `PATH` 解析或写绝对路径，不含参数、无 shell 语法（脚本需 shebang + 执行位）。core 每次查询时拉起它、转发 `search`，并经主机的 `list_plugins` 响应发现插件身份；身份 `icon` 与结果 `icon` 字段都支持 `papirus:` 规范（core 解析为 Papirus 绝对路径）。主机可以手写；[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) 工作区提供了一套 Python 框架、示例插件与 `template/` 模板，可复制起步。
-
-主题色默认从 `~/.config/gtk-4.0/dank-colors.css` 读取，读取失败则使用内置默认值。
+- **`plugins.toml`** —— 插件注册表，首次运行时生成。可启用/禁用、调整顺序或重映射前缀，
+  以及声明外部 JSON-RPC 主机。见 **[plugins.md](plugins.md)**。
+- **`theme.toml`** —— 配色与外观。跟随 DankMaterialShell 的 Material You 调色板，
+  并可覆盖配色、背景模糊、布局与动效。见 **[theme.md](theme.md)**。
 
 ## JSON-RPC 2.0
 

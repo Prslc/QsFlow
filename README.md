@@ -49,7 +49,8 @@ registry, the JSON-RPC protocol and the usage database.
 - **Web search** — Google suggestions (`s`).
 - **Inline tools** — calculator.
 - **Usage history** — frequent items on empty input; `Delete` removes an entry.
-- **GTK theme integration** — colors from your GTK4 theme CSS.
+- **Dynamic theming** — follows DankMaterialShell's Material You palette, with
+  optional per-field overrides and layout/blur/motion knobs in `theme.toml`.
 - **Plugin system** — TOML registry; enable, disable, reorder, or remap keywords.
 - **Icon resolution** — Papirus, Breeze, Adwaita, hicolor + Flatpak; cached per session.
 
@@ -149,74 +150,16 @@ spawn-per-hotkey binding.
 
 ## Configuration
 
-On first run, `~/.config/wayrun/plugins.toml` is generated (a copy of
-`core/default-plugins.toml`):
+Two optional files under `~/.config/wayrun/`, both watched, so an edit applies
+without restarting:
 
-```toml
-# ~/.config/wayrun/plugins.toml
-[[plugins]]
-id = "calculator"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "system-commands"
-keyword = ""
-enable = true
-
-[[plugins]]
-id = "app-search"
-keyword = ""
-
-[[plugins]]
-id = "runner"
-keyword = "r"
-enable = true
-
-[[plugins]]
-id = "firefox-bookmarks"
-keyword = "b"
-
-[[plugins]]
-id = "firefox-history"
-keyword = "h"
-
-[[plugins]]
-id = "web-search"
-keyword = "s"
-
-[[plugins]]
-id = "file-search"
-keyword = "f"
-
-[[plugins]]
-id = "path-search"
-keyword = "d"
-
-[[plugins]]
-id = "clipboard"
-keyword = "c"
-
-[[plugins]]
-id = "window"
-keyword = "w"
-enable = true
-```
-
-Reorder entries to change priority, edit `keyword` to remap prefixes, or set
-`enable = false` to disable a plugin. Removed or unknown plugin IDs are ignored.
-An entry may also declare `command`, naming an external JSON-RPC 2.0 host. The
-value is a single executable token — resolved on `PATH`, or an absolute path;
-no arguments or shell syntax (scripts need a shebang and exec bit). The core
-spawns it, relays `search`, and discovers the plugin's identity from the
-host's `list_plugins` response; both the identity `icon` and result `icon`
-fields accept the `papirus:` scheme (resolved to an absolute Papirus path).
-Hosts can be written by hand; the
-[WayRun-Plugins](https://github.com/Prslc/WayRun-Plugins) workspace ships a
-Python framework, example plugins, and a `template/` to copy from.
-
-Theme colors are read from `~/.config/gtk-4.0/dank-colors.css` (falling back to
-built-in defaults).
+- **`plugins.toml`** — the plugin registry, generated on first run. Enable,
+  disable, reorder or remap keywords, and declare external JSON-RPC hosts.
+  See **[docs/en/plugins.md](docs/en/plugins.md)**.
+- **`theme.toml`** — colors and the launcher's appearance. It follows
+  DankMaterialShell's Material You palette and can override colors, the
+  background blur, layout and motion.
+  See **[docs/en/theme.md](docs/en/theme.md)**.
 
 ## JSON-RPC 2.0
 
